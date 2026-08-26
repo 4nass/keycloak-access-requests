@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.github.4nass</groupId>
+        <artifactId>keycloak-access-requests</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>access-requests-keycloak</artifactId>
+    <packaging>jar</packaging>
+    <name>Access Requests - Keycloak Provider</name>
+    <description>Keycloak provider integration and provisioning adapters</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.github.4nass</groupId>
+            <artifactId>access-requests-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.4nass</groupId>
+            <artifactId>access-requests-persistence-jpa</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.4nass</groupId>
+            <artifactId>access-requests-rest</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+</project>
