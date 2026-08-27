@@ -28,6 +28,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <keycloak.version>26.4.0</keycloak.version>
+        <junit.version>5.11.4</junit.version>
     </properties>
 
     <build>
