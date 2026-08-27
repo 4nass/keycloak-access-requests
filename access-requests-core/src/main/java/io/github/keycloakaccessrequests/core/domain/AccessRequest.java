@@ -85,7 +85,11 @@ public final class AccessRequest {
 
     public void cancel(String actorId) {
         ensurePending();
-        requireText(actorId, "actorId");
+        String validatedActorId = requireText(actorId, "actorId");
+        if (!requesterId.equals(validatedActorId)) {
+            throw new UnauthorizedRequestActionException(
+                    "Only the request owner can cancel this request.");
+        }
         this.decisionStatus = DecisionStatus.CANCELED;
     }
 
