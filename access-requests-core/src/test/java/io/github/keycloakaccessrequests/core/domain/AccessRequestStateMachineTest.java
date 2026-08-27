@@ -75,6 +75,15 @@ class AccessRequestStateMachineTest {
     }
 
     @Test
+    void approvedRequestCannotBeApprovedAgain() {
+        AccessRequest request = pendingRequest();
+        request.approve("approver-1", "Approved for the project.");
+
+        assertThrows(InvalidRequestStateException.class,
+                () -> request.approve("approver-2", "Approved again."));
+    }
+
+    @Test
     void approvedRequestCannotBeCanceled() {
         AccessRequest request = pendingRequest();
         request.approve("approver-1", "Approved for the project.");
@@ -102,6 +111,15 @@ class AccessRequestStateMachineTest {
     }
 
     @Test
+    void rejectedRequestCannotBeRejectedAgain() {
+        AccessRequest request = pendingRequest();
+        request.reject("approver-1", "The justification is not sufficient.");
+
+        assertThrows(InvalidRequestStateException.class,
+                () -> request.reject("approver-2", "Rejected again."));
+    }
+
+    @Test
     void canceledRequestCannotBeApproved() {
         AccessRequest request = pendingRequest();
         request.cancel("requester-1");
@@ -117,6 +135,44 @@ class AccessRequestStateMachineTest {
 
         assertThrows(InvalidRequestStateException.class,
                 () -> request.reject("approver-1", "Rejected afterwards."));
+    }
+
+    @Test
+    void canceledRequestCannotBeCanceledAgain() {
+        AccessRequest request = pendingRequest();
+        request.cancel("requester-1");
+
+        assertThrows(InvalidRequestStateException.class,
+                () -> request.cancel("requester-1"));
+    }
+
+    @Test
+    void nonRequesterCannotCancelRequest() {
+        AccessRequest request = pendingRequest();
+
+        assertThrows(UnauthorizedRequestActionException.class,
+                () -> request.cancel("another-user"));
+    }
+
+    @Test
+    void blankApproverDoesNotChangeRequestState() {
+        AccessRequest request = pendingRequest();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> request.approve(" ", "Approved for the project."));
+
+        assertEquals(DecisionStatus.PENDING, request.decisionStatus());
+        assertNull(request.approverId());
+        assertNull(request.decisionComment());
+    }
+
+    @Test
+    void blankCancellationActorDoesNotChangeRequestState() {
+        AccessRequest request = pendingRequest();
+
+        assertThrows(IllegalArgumentException.class, () -> request.cancel(" "));
+
+        assertEquals(DecisionStatus.PENDING, request.decisionStatus());
     }
 
     private static AccessRequest pendingRequest() {
