@@ -24,6 +24,34 @@ class AccessRequestStateMachineTest {
     }
 
     @Test
+    void requestCannotBeCreatedWithoutRequiredFields() {
+        assertThrows(NullPointerException.class, () -> AccessRequest.create(
+                null, "realm-1", "requester-1", "entitlement-1", "A valid justification."));
+        assertThrows(NullPointerException.class, () -> AccessRequest.create(
+                "request-1", null, "requester-1", "entitlement-1", "A valid justification."));
+        assertThrows(NullPointerException.class, () -> AccessRequest.create(
+                "request-1", "realm-1", null, "entitlement-1", "A valid justification."));
+        assertThrows(NullPointerException.class, () -> AccessRequest.create(
+                "request-1", "realm-1", "requester-1", null, "A valid justification."));
+        assertThrows(NullPointerException.class, () -> AccessRequest.create(
+                "request-1", "realm-1", "requester-1", "entitlement-1", null));
+    }
+
+    @Test
+    void requestCannotBeCreatedWithBlankRequiredFields() {
+        assertThrows(IllegalArgumentException.class, () -> AccessRequest.create(
+                " ", "realm-1", "requester-1", "entitlement-1", "A valid justification."));
+        assertThrows(IllegalArgumentException.class, () -> AccessRequest.create(
+                "request-1", " ", "requester-1", "entitlement-1", "A valid justification."));
+        assertThrows(IllegalArgumentException.class, () -> AccessRequest.create(
+                "request-1", "realm-1", " ", "entitlement-1", "A valid justification."));
+        assertThrows(IllegalArgumentException.class, () -> AccessRequest.create(
+                "request-1", "realm-1", "requester-1", " ", "A valid justification."));
+        assertThrows(IllegalArgumentException.class, () -> AccessRequest.create(
+                "request-1", "realm-1", "requester-1", "entitlement-1", " "));
+    }
+
+    @Test
     void pendingRequestCanBeApproved() {
         AccessRequest request = pendingRequest();
 
@@ -32,6 +60,17 @@ class AccessRequestStateMachineTest {
         assertEquals(DecisionStatus.APPROVED, request.decisionStatus());
         assertEquals("approver-1", request.approverId());
         assertEquals("Approved for the project.", request.decisionComment());
+    }
+
+    @Test
+    void approvalRequiresAnApprover() {
+        AccessRequest request = pendingRequest();
+
+        assertThrows(NullPointerException.class,
+                () -> request.approve(null, "Approved for the project."));
+
+        assertEquals(DecisionStatus.PENDING, request.decisionStatus());
+        assertNull(request.approverId());
     }
 
     @Test
@@ -46,12 +85,45 @@ class AccessRequestStateMachineTest {
     }
 
     @Test
+    void rejectionRequiresAnApprover() {
+        AccessRequest request = pendingRequest();
+
+        assertThrows(NullPointerException.class,
+                () -> request.reject(null, "The justification is not sufficient."));
+
+        assertEquals(DecisionStatus.PENDING, request.decisionStatus());
+        assertNull(request.approverId());
+    }
+
+    @Test
     void pendingRequestCanBeCanceledByTheRequester() {
         AccessRequest request = pendingRequest();
 
         request.cancel("requester-1");
 
         assertEquals(DecisionStatus.CANCELED, request.decisionStatus());
+    }
+
+    @Test
+    void cancellationRequiresAnActor() {
+        AccessRequest request = pendingRequest();
+
+        assertThrows(NullPointerException.class, () -> request.cancel(null));
+
+        assertEquals(DecisionStatus.PENDING, request.decisionStatus());
+    }
+
+    @Test
+    void requestDetailsRemainUnchangedAfterApproval() {
+        AccessRequest request = pendingRequest();
+
+        request.approve("approver-1", "Approved for the project.");
+
+        assertEquals("request-1", request.id());
+        assertEquals("realm-1", request.realmId());
+        assertEquals("requester-1", request.requesterId());
+        assertEquals("entitlement-1", request.entitlementId());
+        assertEquals("Access is needed for the finance project.", request.justification());
     }
 
     @Test
