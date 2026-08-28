@@ -1,4 +1,4 @@
-package io.github.keycloakaccessrequests.core.domain;
+package ch.anass.keycloak.accessrequests.core.domain;
 
 public enum DecisionStatus {
     PENDING,

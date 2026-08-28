@@ -1,4 +1,4 @@
-package io.github.keycloakaccessrequests.core.domain;
+package ch.anass.keycloak.accessrequests.core.domain;
 
 public final class InvalidRequestStateException extends RuntimeException {
 
