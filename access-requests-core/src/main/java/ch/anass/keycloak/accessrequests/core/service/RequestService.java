@@ -1,11 +1,11 @@
-package io.github.keycloakaccessrequests.core.service;
+package ch.anass.keycloak.accessrequests.core.service;
 
-import io.github.keycloakaccessrequests.core.domain.AccessRequest;
-import io.github.keycloakaccessrequests.core.domain.Entitlement;
-import io.github.keycloakaccessrequests.core.port.AccessRequestRepository;
-import io.github.keycloakaccessrequests.core.port.EffectiveAccessChecker;
-import io.github.keycloakaccessrequests.core.port.EntitlementRepository;
-import io.github.keycloakaccessrequests.core.port.UserStatusReader;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
+import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
+import ch.anass.keycloak.accessrequests.core.port.EffectiveAccessChecker;
+import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
+import ch.anass.keycloak.accessrequests.core.port.UserStatusReader;
 
 import java.util.Objects;
 import java.util.UUID;

@@ -1,6 +1,6 @@
-package io.github.keycloakaccessrequests.core.port;
+package ch.anass.keycloak.accessrequests.core.port;
 
-import io.github.keycloakaccessrequests.core.domain.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 
 import java.util.Optional;
 

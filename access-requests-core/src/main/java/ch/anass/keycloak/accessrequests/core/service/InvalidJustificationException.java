@@ -1,4 +1,4 @@
-package io.github.keycloakaccessrequests.core.service;
+package ch.anass.keycloak.accessrequests.core.service;
 
 public final class InvalidJustificationException extends RuntimeException {
 

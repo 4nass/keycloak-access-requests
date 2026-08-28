@@ -1,4 +1,4 @@
-package io.github.keycloakaccessrequests.core.port;
+package ch.anass.keycloak.accessrequests.core.port;
 
 public interface UserStatusReader {
 
