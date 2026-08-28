@@ -26,29 +26,62 @@ class AccessRequestStateMachineTest {
     @Test
     void requestCannotBeCreatedWithoutRequiredFields() {
         assertThrows(NullPointerException.class, () -> AccessRequest.create(
-                null, "realm-1", "requester-1", "entitlement-1", "A valid justification."));
+                null, "realm-1", "requester-1", "entitlement-1", ResourceType.REALM_ROLE,
+                "resource-1", "Resource", "A valid justification."));
         assertThrows(NullPointerException.class, () -> AccessRequest.create(
-                "request-1", null, "requester-1", "entitlement-1", "A valid justification."));
+                "request-1", null, "requester-1", "entitlement-1", ResourceType.REALM_ROLE,
+                "resource-1", "Resource", "A valid justification."));
         assertThrows(NullPointerException.class, () -> AccessRequest.create(
-                "request-1", "realm-1", null, "entitlement-1", "A valid justification."));
+                "request-1", "realm-1", null, "entitlement-1", ResourceType.REALM_ROLE,
+                "resource-1", "Resource", "A valid justification."));
         assertThrows(NullPointerException.class, () -> AccessRequest.create(
-                "request-1", "realm-1", "requester-1", null, "A valid justification."));
+                "request-1", "realm-1", "requester-1", null, ResourceType.REALM_ROLE,
+                "resource-1", "Resource", "A valid justification."));
         assertThrows(NullPointerException.class, () -> AccessRequest.create(
-                "request-1", "realm-1", "requester-1", "entitlement-1", null));
+                "request-1", "realm-1", "requester-1", "entitlement-1", ResourceType.REALM_ROLE,
+                "resource-1", "Resource", null));
     }
 
     @Test
     void requestCannotBeCreatedWithBlankRequiredFields() {
         assertThrows(IllegalArgumentException.class, () -> AccessRequest.create(
-                " ", "realm-1", "requester-1", "entitlement-1", "A valid justification."));
+                " ", "realm-1", "requester-1", "entitlement-1", ResourceType.REALM_ROLE,
+                "resource-1", "Resource", "A valid justification."));
         assertThrows(IllegalArgumentException.class, () -> AccessRequest.create(
-                "request-1", " ", "requester-1", "entitlement-1", "A valid justification."));
+                "request-1", " ", "requester-1", "entitlement-1", ResourceType.REALM_ROLE,
+                "resource-1", "Resource", "A valid justification."));
         assertThrows(IllegalArgumentException.class, () -> AccessRequest.create(
-                "request-1", "realm-1", " ", "entitlement-1", "A valid justification."));
+                "request-1", "realm-1", " ", "entitlement-1", ResourceType.REALM_ROLE,
+                "resource-1", "Resource", "A valid justification."));
         assertThrows(IllegalArgumentException.class, () -> AccessRequest.create(
-                "request-1", "realm-1", "requester-1", " ", "A valid justification."));
+                "request-1", "realm-1", "requester-1", " ", ResourceType.REALM_ROLE,
+                "resource-1", "Resource", "A valid justification."));
         assertThrows(IllegalArgumentException.class, () -> AccessRequest.create(
-                "request-1", "realm-1", "requester-1", "entitlement-1", " "));
+                "request-1", "realm-1", "requester-1", "entitlement-1", ResourceType.REALM_ROLE,
+                "resource-1", "Resource", " "));
+    }
+
+    @Test
+    void requestCannotBeCreatedWithoutResourceDetails() {
+        assertThrows(NullPointerException.class, () -> AccessRequest.create(
+                "request-1", "realm-1", "requester-1", "entitlement-1", null,
+                "resource-1", "Resource", "A valid justification."));
+        assertThrows(NullPointerException.class, () -> AccessRequest.create(
+                "request-1", "realm-1", "requester-1", "entitlement-1", ResourceType.REALM_ROLE,
+                null, "Resource", "A valid justification."));
+        assertThrows(NullPointerException.class, () -> AccessRequest.create(
+                "request-1", "realm-1", "requester-1", "entitlement-1", ResourceType.REALM_ROLE,
+                "resource-1", null, "A valid justification."));
+    }
+
+    @Test
+    void requestCannotBeCreatedWithBlankResourceDetails() {
+        assertThrows(IllegalArgumentException.class, () -> AccessRequest.create(
+                "request-1", "realm-1", "requester-1", "entitlement-1", ResourceType.REALM_ROLE,
+                " ", "Resource", "A valid justification."));
+        assertThrows(IllegalArgumentException.class, () -> AccessRequest.create(
+                "request-1", "realm-1", "requester-1", "entitlement-1", ResourceType.REALM_ROLE,
+                "resource-1", " ", "A valid justification."));
     }
 
     @Test
@@ -253,6 +286,9 @@ class AccessRequestStateMachineTest {
                 "realm-1",
                 "requester-1",
                 "entitlement-1",
+                ResourceType.REALM_ROLE,
+                "resource-1",
+                "Resource",
                 "Access is needed for the finance project.");
     }
 }

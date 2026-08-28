@@ -1,11 +1,14 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidRequestStateException;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
+import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.EffectiveAccessChecker;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
@@ -17,10 +20,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequestServiceTest {
 
@@ -28,12 +37,14 @@ class RequestServiceTest {
     private final InMemoryAccessRequestRepository requests = new InMemoryAccessRequestRepository();
     private final InMemoryEffectiveAccessChecker effectiveAccess = new InMemoryEffectiveAccessChecker();
     private final InMemoryUserStatusReader users = new InMemoryUserStatusReader();
+    private final InMemoryAccessRequestEventPublisher events = new InMemoryAccessRequestEventPublisher();
     private final RequestService service = new RequestService(
             entitlements,
             requests,
             effectiveAccess,
             users,
-            new RequestPolicy(10, 2000));
+            new RequestPolicy(10, 2000),
+            events);
 
     @Test
     void createsPendingRequestForRequestableEntitlement() {
@@ -53,6 +64,10 @@ class RequestServiceTest {
         assertEquals("finance-reader", created.resourceId());
         assertEquals("Finance Reader", created.resourceNameSnapshot());
         assertEquals(1, requests.saved().size());
+        assertEquals(1, events.published().size());
+        assertEquals(AccessRequestEventType.REQUEST_CREATED, events.published().get(0).type());
+        assertEquals(created.id(), events.published().get(0).requestId());
+        assertEquals("requester-1", events.published().get(0).actorId());
     }
 
     @Test
@@ -135,6 +150,40 @@ class RequestServiceTest {
     }
 
     @Test
+    void rejectsConcurrentDuplicatePendingRequests() throws Exception {
+        entitlements.add(financeEntitlement());
+        requests.coordinateTwoCreateAttempts();
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            List<java.util.concurrent.Future<AccessRequest>> futures = List.of(
+                    executor.submit(() -> service.create(
+                            "realm-1", "requester-1", "entitlement-1", "Access is needed for the finance project.")),
+                    executor.submit(() -> service.create(
+                            "realm-1", "requester-1", "entitlement-1", "Access is needed for the same finance project.")));
+
+            int successfulRequests = 0;
+            int duplicateFailures = 0;
+            for (java.util.concurrent.Future<AccessRequest> future : futures) {
+                try {
+                    future.get(5, TimeUnit.SECONDS);
+                    successfulRequests++;
+                } catch (ExecutionException exception) {
+                    assertTrue(exception.getCause() instanceof RequestAlreadyPendingException);
+                    duplicateFailures++;
+                }
+            }
+
+            assertEquals(1, successfulRequests);
+            assertEquals(1, duplicateFailures);
+            assertEquals(1, requests.saved().size());
+            assertEquals(1, events.published().size());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void enforcesJustificationLengthBounds() {
         entitlements.add(financeEntitlement());
 
@@ -206,7 +255,11 @@ class RequestServiceTest {
 
         service.cancel("realm-1", request.id(), "requester-1");
 
-        assertEquals(DecisionStatus.CANCELED, request.decisionStatus());
+        AccessRequest persisted = requests.findById("realm-1", request.id()).orElseThrow();
+        assertEquals(DecisionStatus.CANCELED, persisted.decisionStatus());
+        assertEquals(1, persisted.version());
+        assertEquals(AccessRequestEventType.REQUEST_CANCELED, events.published().get(1).type());
+        assertEquals("requester-1", events.published().get(1).actorId());
     }
 
     @Test
@@ -326,6 +379,24 @@ class RequestServiceTest {
         assertEquals(DecisionStatus.PENDING, request.decisionStatus());
     }
 
+    @Test
+    void rejectsCancellationWhenRequestWasModifiedConcurrently() {
+        entitlements.add(financeEntitlement());
+        AccessRequest request = service.create(
+                "realm-1",
+                "requester-1",
+                "entitlement-1",
+                "Access is needed for the finance project.");
+        requests.forceNextUpdateConflict();
+
+        assertThrows(ConcurrentRequestModificationException.class,
+                () -> service.cancel("realm-1", request.id(), "requester-1"));
+
+        AccessRequest persisted = requests.findById("realm-1", request.id()).orElseThrow();
+        assertEquals(DecisionStatus.PENDING, persisted.decisionStatus());
+        assertEquals(1, events.published().size());
+    }
+
     private static Entitlement financeEntitlement() {
         return Entitlement.create(
                 "entitlement-1",
@@ -375,9 +446,11 @@ class RequestServiceTest {
     private static final class InMemoryAccessRequestRepository implements AccessRequestRepository {
 
         private final List<AccessRequest> values = new ArrayList<>();
+        private volatile CountDownLatch createAttempts;
+        private volatile boolean forceNextUpdateConflict;
 
         @Override
-        public Optional<AccessRequest> findById(String realmId, String requestId) {
+        public synchronized Optional<AccessRequest> findById(String realmId, String requestId) {
             return values.stream()
                     .filter(request -> request.realmId().equals(realmId))
                     .filter(request -> request.id().equals(requestId))
@@ -385,28 +458,87 @@ class RequestServiceTest {
         }
 
         @Override
-        public boolean existsPending(String realmId, String requesterId, String entitlementId) {
-            return values.stream()
-                    .filter(request -> request.realmId().equals(realmId))
-                    .filter(request -> request.requesterId().equals(requesterId))
-                    .filter(request -> request.entitlementId().equals(entitlementId))
-                    .anyMatch(request -> request.decisionStatus() == DecisionStatus.PENDING);
+        public Optional<AccessRequest> createIfNoPending(AccessRequest request) {
+            CountDownLatch attempts = createAttempts;
+            if (attempts != null) {
+                attempts.countDown();
+                await(attempts);
+            }
+
+            synchronized (this) {
+                boolean pendingExists = values.stream()
+                        .filter(existing -> existing.realmId().equals(request.realmId()))
+                        .filter(existing -> existing.requesterId().equals(request.requesterId()))
+                        .filter(existing -> existing.entitlementId().equals(request.entitlementId()))
+                        .anyMatch(existing -> existing.decisionStatus() == DecisionStatus.PENDING);
+                if (pendingExists) {
+                    return Optional.empty();
+                }
+                values.add(request);
+                return Optional.of(request);
+            }
         }
 
         @Override
-        public AccessRequest save(AccessRequest request) {
-            values.removeIf(existing -> existing.realmId().equals(request.realmId())
-                    && existing.id().equals(request.id()));
-            values.add(request);
-            return request;
+        public synchronized Optional<AccessRequest> updateIfVersionMatches(
+                AccessRequest request,
+                long expectedVersion) {
+            if (forceNextUpdateConflict) {
+                forceNextUpdateConflict = false;
+                return Optional.empty();
+            }
+
+            Optional<AccessRequest> existing = findById(request.realmId(), request.id());
+            if (existing.isEmpty() || existing.get().version() != expectedVersion) {
+                return Optional.empty();
+            }
+
+            AccessRequest persisted = request.withVersion(expectedVersion + 1);
+            values.removeIf(current -> current.realmId().equals(request.realmId())
+                    && current.id().equals(request.id()));
+            values.add(persisted);
+            return Optional.of(persisted);
         }
 
-        List<AccessRequest> saved() {
+        synchronized List<AccessRequest> saved() {
             return List.copyOf(values);
         }
 
-        boolean hasSavedRequests() {
+        synchronized boolean hasSavedRequests() {
             return !values.isEmpty();
+        }
+
+        void coordinateTwoCreateAttempts() {
+            createAttempts = new CountDownLatch(2);
+        }
+
+        void forceNextUpdateConflict() {
+            forceNextUpdateConflict = true;
+        }
+
+        private static void await(CountDownLatch latch) {
+            try {
+                if (!latch.await(5, TimeUnit.SECONDS)) {
+                    throw new AssertionError("Concurrent create attempts were not coordinated");
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("Interrupted while coordinating concurrent create attempts", exception);
+            }
+        }
+    }
+
+    private static final class InMemoryAccessRequestEventPublisher implements AccessRequestEventPublisher {
+
+        private final List<AccessRequestEvent> values = new ArrayList<>();
+
+        @Override
+        public synchronized void publish(AccessRequestEvent event) {
+            values.add(event);
+        }
+
+        synchronized List<AccessRequestEvent> published() {
+            return List.copyOf(values);
         }
     }
 

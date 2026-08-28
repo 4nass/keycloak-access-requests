@@ -16,6 +16,7 @@ public final class AccessRequest {
     private DecisionStatus decisionStatus;
     private String approverId;
     private String decisionComment;
+    private long version;
 
     private AccessRequest(
             String id,
@@ -35,15 +36,6 @@ public final class AccessRequest {
         this.resourceId = resourceId;
         this.resourceNameSnapshot = resourceNameSnapshot;
         this.decisionStatus = DecisionStatus.PENDING;
-    }
-
-    public static AccessRequest create(
-            String id,
-            String realmId,
-            String requesterId,
-            String entitlementId,
-            String justification) {
-        return new AccessRequest(id, realmId, requesterId, entitlementId, justification, null, null, null);
     }
 
     public static AccessRequest create(
@@ -110,6 +102,21 @@ public final class AccessRequest {
         return decisionComment;
     }
 
+    public long version() {
+        return version;
+    }
+
+    public AccessRequest copy() {
+        return copyWithVersion(version);
+    }
+
+    public AccessRequest withVersion(long newVersion) {
+        if (newVersion < 0) {
+            throw new IllegalArgumentException("version must not be negative");
+        }
+        return copyWithVersion(newVersion);
+    }
+
     public void approve(String approverId, String decisionComment) {
         ensurePending();
         this.approverId = requireText(approverId, "approverId");
@@ -138,6 +145,23 @@ public final class AccessRequest {
         if (decisionStatus != DecisionStatus.PENDING) {
             throw new InvalidRequestStateException(decisionStatus);
         }
+    }
+
+    private AccessRequest copyWithVersion(long newVersion) {
+        AccessRequest copy = new AccessRequest(
+                id,
+                realmId,
+                requesterId,
+                entitlementId,
+                justification,
+                resourceType,
+                resourceId,
+                resourceNameSnapshot);
+        copy.decisionStatus = decisionStatus;
+        copy.approverId = approverId;
+        copy.decisionComment = decisionComment;
+        copy.version = newVersion;
+        return copy;
     }
 
     private static String requireText(String value, String fieldName) {
