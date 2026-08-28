@@ -395,6 +395,8 @@ class RequestServiceTest {
 
         @Override
         public AccessRequest save(AccessRequest request) {
+            values.removeIf(existing -> existing.realmId().equals(request.realmId())
+                    && existing.id().equals(request.id()));
             values.add(request);
             return request;
         }
