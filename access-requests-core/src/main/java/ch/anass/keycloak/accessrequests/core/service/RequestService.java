@@ -3,8 +3,12 @@ package ch.anass.keycloak.accessrequests.core.service;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
-import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
+import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
+import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
+import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
+import ch.anass.keycloak.accessrequests.core.port.ApprovalAuthorizer;
+import ch.anass.keycloak.accessrequests.core.port.DuplicatePendingRequestException;
 import ch.anass.keycloak.accessrequests.core.port.EffectiveAccessChecker;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
 import ch.anass.keycloak.accessrequests.core.port.UserStatusReader;
@@ -22,6 +26,8 @@ public final class RequestService {
     private final UserStatusReader userStatusReader;
     private final RequestPolicy requestPolicy;
     private final AccessRequestEventPublisher eventPublisher;
+    private final ApprovalAuthorizer approvalAuthorizer;
+    private final AccessRequestTransaction transaction;
     private final Clock clock;
 
     public RequestService(
@@ -30,9 +36,11 @@ public final class RequestService {
             EffectiveAccessChecker effectiveAccessChecker,
             UserStatusReader userStatusReader,
             RequestPolicy requestPolicy,
-            AccessRequestEventPublisher eventPublisher) {
+            AccessRequestEventPublisher eventPublisher,
+            ApprovalAuthorizer approvalAuthorizer,
+            AccessRequestTransaction transaction) {
         this(entitlementRepository, accessRequestRepository, effectiveAccessChecker, userStatusReader,
-                requestPolicy, eventPublisher, Clock.systemUTC());
+                requestPolicy, eventPublisher, approvalAuthorizer, transaction, Clock.systemUTC());
     }
 
     public RequestService(
@@ -42,6 +50,8 @@ public final class RequestService {
             UserStatusReader userStatusReader,
             RequestPolicy requestPolicy,
             AccessRequestEventPublisher eventPublisher,
+            ApprovalAuthorizer approvalAuthorizer,
+            AccessRequestTransaction transaction,
             Clock clock) {
         this.entitlementRepository = Objects.requireNonNull(entitlementRepository);
         this.accessRequestRepository = Objects.requireNonNull(accessRequestRepository);
@@ -49,6 +59,8 @@ public final class RequestService {
         this.userStatusReader = Objects.requireNonNull(userStatusReader);
         this.requestPolicy = Objects.requireNonNull(requestPolicy);
         this.eventPublisher = Objects.requireNonNull(eventPublisher);
+        this.approvalAuthorizer = Objects.requireNonNull(approvalAuthorizer);
+        this.transaction = Objects.requireNonNull(transaction);
         this.clock = Objects.requireNonNull(clock);
     }
 
@@ -84,20 +96,93 @@ public final class RequestService {
                 entitlement.resourceId(),
                 entitlement.displayName(),
                 justification);
-        AccessRequest persisted = accessRequestRepository.createIfNoPending(request)
-                .orElseThrow(() -> new RequestAlreadyPendingException(entitlementId));
-        eventPublisher.publish(AccessRequestEvent.created(persisted, requesterId, Instant.now(clock)));
-        return persisted;
+        try {
+            return transaction.execute(() -> {
+                AccessRequest persisted = accessRequestRepository.createIfNoPending(request)
+                        .orElseThrow(() -> new RequestAlreadyPendingException(entitlementId));
+                eventPublisher.publish(AccessRequestEvent.created(persisted, requesterId, Instant.now(clock)));
+                return persisted;
+            });
+        } catch (DuplicatePendingRequestException exception) {
+            throw new RequestAlreadyPendingException(entitlementId);
+        }
     }
 
     public void cancel(String realmId, String requestId, String actorId) {
         AccessRequest request = accessRequestRepository.findById(realmId, requestId)
                 .orElseThrow(() -> new RequestNotFoundException(requestId));
-        AccessRequest candidate = request.copy();
-        candidate.cancel(actorId);
-        AccessRequest persisted = accessRequestRepository
-                .updateIfVersionMatches(candidate, request.version())
-                .orElseThrow(() -> new ConcurrentRequestModificationException(requestId));
-        eventPublisher.publish(AccessRequestEvent.canceled(persisted, actorId, Instant.now(clock)));
+        transaction.execute(() -> {
+            AccessRequest candidate = request.copy();
+            candidate.cancel(actorId);
+            AccessRequest persisted = accessRequestRepository
+                    .updateIfVersionMatches(candidate, request.version())
+                    .orElseThrow(() -> new ConcurrentRequestModificationException(requestId));
+            eventPublisher.publish(AccessRequestEvent.canceled(persisted, actorId, Instant.now(clock)));
+            return persisted;
+        });
+    }
+
+    public AccessRequest approve(
+            String realmId,
+            String requestId,
+            String approverId,
+            String decisionComment) {
+        AccessRequest request = findRequest(realmId, requestId);
+        authorizeDecision(realmId, request, approverId);
+        requireCurrentEntitlement(realmId, request.entitlementId());
+
+        return transaction.execute(() -> {
+            AccessRequest candidate = request.copy();
+            candidate.approve(approverId, decisionComment);
+            AccessRequest persisted = updateOrThrow(candidate, request.version());
+            eventPublisher.publish(AccessRequestEvent.approved(
+                    persisted, approverId, Instant.now(clock), decisionComment));
+            return persisted;
+        });
+    }
+
+    public AccessRequest reject(
+            String realmId,
+            String requestId,
+            String approverId,
+            String decisionComment) {
+        AccessRequest request = findRequest(realmId, requestId);
+        authorizeDecision(realmId, request, approverId);
+
+        return transaction.execute(() -> {
+            AccessRequest candidate = request.copy();
+            candidate.reject(approverId, decisionComment);
+            AccessRequest persisted = updateOrThrow(candidate, request.version());
+            eventPublisher.publish(AccessRequestEvent.rejected(
+                    persisted, approverId, Instant.now(clock), decisionComment));
+            return persisted;
+        });
+    }
+
+    private AccessRequest findRequest(String realmId, String requestId) {
+        return accessRequestRepository.findById(realmId, requestId)
+                .orElseThrow(() -> new RequestNotFoundException(requestId));
+    }
+
+    private void authorizeDecision(String realmId, AccessRequest request, String actorId) {
+        if (request.requesterId().equals(actorId)) {
+            throw new UnauthorizedRequestActionException("A requester cannot decide their own request.");
+        }
+        if (!approvalAuthorizer.canDecide(realmId, actorId, request.entitlementId())) {
+            throw new UnauthorizedRequestActionException("The actor cannot decide this request.");
+        }
+    }
+
+    private void requireCurrentEntitlement(String realmId, String entitlementId) {
+        Entitlement entitlement = entitlementRepository.findById(realmId, entitlementId)
+                .orElseThrow(() -> new EntitlementNotFoundException(entitlementId));
+        if (!entitlement.requestable()) {
+            throw new EntitlementNotRequestableException(entitlementId);
+        }
+    }
+
+    private AccessRequest updateOrThrow(AccessRequest candidate, long expectedVersion) {
+        return accessRequestRepository.updateIfVersionMatches(candidate, expectedVersion)
+                .orElseThrow(() -> new ConcurrentRequestModificationException(candidate.id()));
     }
 }

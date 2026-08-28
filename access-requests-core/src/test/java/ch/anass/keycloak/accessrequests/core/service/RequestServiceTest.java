@@ -10,6 +10,8 @@ import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
+import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
+import ch.anass.keycloak.accessrequests.core.port.ApprovalAuthorizer;
 import ch.anass.keycloak.accessrequests.core.port.EffectiveAccessChecker;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
 import ch.anass.keycloak.accessrequests.core.port.UserStatusReader;
@@ -25,6 +27,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -38,13 +41,18 @@ class RequestServiceTest {
     private final InMemoryEffectiveAccessChecker effectiveAccess = new InMemoryEffectiveAccessChecker();
     private final InMemoryUserStatusReader users = new InMemoryUserStatusReader();
     private final InMemoryAccessRequestEventPublisher events = new InMemoryAccessRequestEventPublisher();
+    private final InMemoryApprovalAuthorizer approvalAuthorizer = new InMemoryApprovalAuthorizer();
+    private final InMemoryAccessRequestTransaction transaction =
+            new InMemoryAccessRequestTransaction(requests, events);
     private final RequestService service = new RequestService(
             entitlements,
             requests,
             effectiveAccess,
             users,
             new RequestPolicy(10, 2000),
-            events);
+            events,
+            approvalAuthorizer,
+            transaction);
 
     @Test
     void createsPendingRequestForRequestableEntitlement() {
@@ -263,6 +271,163 @@ class RequestServiceTest {
     }
 
     @Test
+    void approverCanApprovePendingRequestAndAuditDecision() {
+        entitlements.add(financeEntitlement());
+        AccessRequest request = service.create(
+                "realm-1",
+                "requester-1",
+                "entitlement-1",
+                "Access is needed for the finance project.");
+
+        AccessRequest approved = service.approve(
+                "realm-1",
+                request.id(),
+                "approver-1",
+                "Approved for the project.");
+
+        assertEquals(DecisionStatus.APPROVED, approved.decisionStatus());
+        assertEquals("approver-1", approved.approverId());
+        assertEquals("Approved for the project.", approved.decisionComment());
+        assertEquals(1, approved.version());
+        assertEquals(AccessRequestEventType.REQUEST_APPROVED, events.published().get(1).type());
+        assertEquals("Approved for the project.", events.published().get(1).comment());
+    }
+
+    @Test
+    void approverCanRejectPendingRequestAndAuditDecision() {
+        entitlements.add(financeEntitlement());
+        AccessRequest request = service.create(
+                "realm-1",
+                "requester-1",
+                "entitlement-1",
+                "Access is needed for the finance project.");
+
+        AccessRequest rejected = service.reject(
+                "realm-1",
+                request.id(),
+                "approver-1",
+                "The justification is not sufficient.");
+
+        assertEquals(DecisionStatus.REJECTED, rejected.decisionStatus());
+        assertEquals("approver-1", rejected.approverId());
+        assertEquals("The justification is not sufficient.", rejected.decisionComment());
+        assertEquals(1, rejected.version());
+        assertEquals(AccessRequestEventType.REQUEST_REJECTED, events.published().get(1).type());
+        assertEquals("The justification is not sufficient.", events.published().get(1).comment());
+    }
+
+    @Test
+    void requesterCannotApproveOwnRequest() {
+        entitlements.add(financeEntitlement());
+        AccessRequest request = service.create(
+                "realm-1",
+                "requester-1",
+                "entitlement-1",
+                "Access is needed for the finance project.");
+
+        assertThrows(UnauthorizedRequestActionException.class,
+                () -> service.approve("realm-1", request.id(), "requester-1", "Approved."));
+
+        assertEquals(DecisionStatus.PENDING, requests.findById("realm-1", request.id()).orElseThrow().decisionStatus());
+        assertEquals(1, events.published().size());
+    }
+
+    @Test
+    void unauthorizedApproverCannotRejectRequest() {
+        entitlements.add(financeEntitlement());
+        AccessRequest request = service.create(
+                "realm-1",
+                "requester-1",
+                "entitlement-1",
+                "Access is needed for the finance project.");
+        approvalAuthorizer.deny("realm-1", "approver-1", "entitlement-1");
+
+        assertThrows(UnauthorizedRequestActionException.class,
+                () -> service.reject("realm-1", request.id(), "approver-1", "Rejected."));
+
+        assertEquals(DecisionStatus.PENDING, requests.findById("realm-1", request.id()).orElseThrow().decisionStatus());
+        assertEquals(1, events.published().size());
+    }
+
+    @Test
+    void approvalRevalidatesThatEntitlementIsStillRequestable() {
+        entitlements.add(financeEntitlement());
+        AccessRequest request = service.create(
+                "realm-1",
+                "requester-1",
+                "entitlement-1",
+                "Access is needed for the finance project.");
+        entitlements.add(financeEntitlement().asNotRequestable());
+
+        assertThrows(EntitlementNotRequestableException.class,
+                () -> service.approve("realm-1", request.id(), "approver-1", "Approved."));
+
+        assertEquals(DecisionStatus.PENDING, requests.findById("realm-1", request.id()).orElseThrow().decisionStatus());
+        assertEquals(1, events.published().size());
+    }
+
+    @Test
+    void rollsBackRequestWhenAuditPublicationFails() {
+        entitlements.add(financeEntitlement());
+        events.failNextPublication();
+
+        assertThrows(IllegalStateException.class, () -> service.create(
+                "realm-1",
+                "requester-1",
+                "entitlement-1",
+                "Access is needed for the finance project."));
+
+        assertFalse(requests.hasSavedRequests());
+        assertTrue(transaction.wasRolledBack());
+        assertEquals(0, events.published().size());
+    }
+
+    @Test
+    void onlyOneOfTwoConcurrentCancellationsCanWin() throws Exception {
+        entitlements.add(financeEntitlement());
+        AccessRequest request = service.create(
+                "realm-1",
+                "requester-1",
+                "entitlement-1",
+                "Access is needed for the finance project.");
+        requests.coordinateTwoCancellationReads();
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            List<java.util.concurrent.Future<Void>> futures = List.of(
+                    executor.submit(() -> {
+                        service.cancel("realm-1", request.id(), "requester-1");
+                        return null;
+                    }),
+                    executor.submit(() -> {
+                        service.cancel("realm-1", request.id(), "requester-1");
+                        return null;
+                    }));
+
+            int successfulCancellations = 0;
+            int concurrentFailures = 0;
+            for (java.util.concurrent.Future<Void> future : futures) {
+                try {
+                    future.get(5, TimeUnit.SECONDS);
+                    successfulCancellations++;
+                } catch (ExecutionException exception) {
+                    assertTrue(exception.getCause() instanceof ConcurrentRequestModificationException);
+                    concurrentFailures++;
+                }
+            }
+
+            AccessRequest persisted = requests.findById("realm-1", request.id()).orElseThrow();
+            assertEquals(1, successfulCancellations);
+            assertEquals(1, concurrentFailures);
+            assertEquals(DecisionStatus.CANCELED, persisted.decisionStatus());
+            assertEquals(1, persisted.version());
+            assertEquals(2, events.published().size());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void allowsNewRequestAfterRejection() {
         entitlements.add(financeEntitlement());
         AccessRequest rejected = service.create(
@@ -447,14 +612,26 @@ class RequestServiceTest {
 
         private final List<AccessRequest> values = new ArrayList<>();
         private volatile CountDownLatch createAttempts;
+        private volatile CountDownLatch cancellationReads;
         private volatile boolean forceNextUpdateConflict;
 
         @Override
-        public synchronized Optional<AccessRequest> findById(String realmId, String requestId) {
-            return values.stream()
-                    .filter(request -> request.realmId().equals(realmId))
-                    .filter(request -> request.id().equals(requestId))
-                    .findFirst();
+        public Optional<AccessRequest> findById(String realmId, String requestId) {
+            AccessRequest found;
+            synchronized (this) {
+                found = values.stream()
+                        .filter(request -> request.realmId().equals(realmId))
+                        .filter(request -> request.id().equals(requestId))
+                        .findFirst()
+                        .orElse(null);
+            }
+
+            CountDownLatch reads = cancellationReads;
+            if (found != null && reads != null) {
+                reads.countDown();
+                await(reads, "cancellation reads");
+            }
+            return Optional.ofNullable(found).map(AccessRequest::copy);
         }
 
         @Override
@@ -462,7 +639,7 @@ class RequestServiceTest {
             CountDownLatch attempts = createAttempts;
             if (attempts != null) {
                 attempts.countDown();
-                await(attempts);
+                await(attempts, "create attempts");
             }
 
             synchronized (this) {
@@ -512,18 +689,31 @@ class RequestServiceTest {
             createAttempts = new CountDownLatch(2);
         }
 
+        void coordinateTwoCancellationReads() {
+            cancellationReads = new CountDownLatch(2);
+        }
+
         void forceNextUpdateConflict() {
             forceNextUpdateConflict = true;
         }
 
-        private static void await(CountDownLatch latch) {
+        synchronized List<AccessRequest> snapshot() {
+            return values.stream().map(AccessRequest::copy).toList();
+        }
+
+        synchronized void restore(List<AccessRequest> snapshot) {
+            values.clear();
+            snapshot.stream().map(AccessRequest::copy).forEach(values::add);
+        }
+
+        private static void await(CountDownLatch latch, String operation) {
             try {
                 if (!latch.await(5, TimeUnit.SECONDS)) {
-                    throw new AssertionError("Concurrent create attempts were not coordinated");
+                    throw new AssertionError("Concurrent " + operation + " were not coordinated");
                 }
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
-                throw new AssertionError("Interrupted while coordinating concurrent create attempts", exception);
+                throw new AssertionError("Interrupted while coordinating concurrent " + operation, exception);
             }
         }
     }
@@ -531,14 +721,85 @@ class RequestServiceTest {
     private static final class InMemoryAccessRequestEventPublisher implements AccessRequestEventPublisher {
 
         private final List<AccessRequestEvent> values = new ArrayList<>();
+        private boolean failNextPublication;
 
         @Override
         public synchronized void publish(AccessRequestEvent event) {
+            if (failNextPublication) {
+                failNextPublication = false;
+                throw new IllegalStateException("Audit publication failed");
+            }
             values.add(event);
         }
 
         synchronized List<AccessRequestEvent> published() {
             return List.copyOf(values);
+        }
+
+        synchronized void failNextPublication() {
+            failNextPublication = true;
+        }
+
+        synchronized List<AccessRequestEvent> snapshot() {
+            return List.copyOf(values);
+        }
+
+        synchronized void restore(List<AccessRequestEvent> snapshot) {
+            values.clear();
+            values.addAll(snapshot);
+        }
+    }
+
+    private static final class InMemoryApprovalAuthorizer implements ApprovalAuthorizer {
+
+        private final Map<String, Boolean> decisions = new HashMap<>();
+
+        void deny(String realmId, String actorId, String entitlementId) {
+            decisions.put(key(realmId, actorId, entitlementId), false);
+        }
+
+        @Override
+        public boolean canDecide(String realmId, String actorId, String entitlementId) {
+            return decisions.getOrDefault(key(realmId, actorId, entitlementId), true);
+        }
+
+        private static String key(String realmId, String actorId, String entitlementId) {
+            return realmId + ":" + actorId + ":" + entitlementId;
+        }
+    }
+
+    private static final class InMemoryAccessRequestTransaction implements AccessRequestTransaction {
+
+        private final InMemoryAccessRequestRepository requests;
+        private final InMemoryAccessRequestEventPublisher events;
+        private boolean rolledBack;
+
+        private InMemoryAccessRequestTransaction(
+                InMemoryAccessRequestRepository requests,
+                InMemoryAccessRequestEventPublisher events) {
+            this.requests = requests;
+            this.events = events;
+        }
+
+        @Override
+        public <T> T execute(Supplier<T> operation) {
+            List<AccessRequest> requestSnapshot = requests.snapshot();
+            List<AccessRequestEvent> eventSnapshot = events.snapshot();
+            try {
+                return operation.get();
+            } catch (RuntimeException | Error exception) {
+                if (!(exception instanceof ConcurrentRequestModificationException)
+                        && !(exception instanceof RequestAlreadyPendingException)) {
+                    requests.restore(requestSnapshot);
+                    events.restore(eventSnapshot);
+                    rolledBack = true;
+                }
+                throw exception;
+            }
+        }
+
+        boolean wasRolledBack() {
+            return rolledBack;
         }
     }
 

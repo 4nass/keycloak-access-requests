@@ -42,6 +42,22 @@ public final class AccessRequestEvent {
         return from(request, AccessRequestEventType.REQUEST_CANCELED, actorId, occurredAt, null);
     }
 
+    public static AccessRequestEvent approved(
+            AccessRequest request,
+            String actorId,
+            Instant occurredAt,
+            String comment) {
+        return from(request, AccessRequestEventType.REQUEST_APPROVED, actorId, occurredAt, comment);
+    }
+
+    public static AccessRequestEvent rejected(
+            AccessRequest request,
+            String actorId,
+            Instant occurredAt,
+            String comment) {
+        return from(request, AccessRequestEventType.REQUEST_REJECTED, actorId, occurredAt, comment);
+    }
+
     private static AccessRequestEvent from(
             AccessRequest request,
             AccessRequestEventType type,
