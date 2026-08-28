@@ -16,7 +16,7 @@ The scope includes:
 - synchronous provisioning for realm roles, client roles, and groups;
 - idempotency, realm isolation, and self-approval protection;
 - an immutable business history;
-- a REST API and a custom Account Console;
+- Keycloak REST endpoints, declarative administration settings, and optional theme fragments;
 - PostgreSQL and Liquibase for persistence.
 
 Advanced governance, temporary access, revocation, notifications, and external connectors are out of scope.
@@ -25,16 +25,25 @@ Advanced governance, temporary access, revocation, notifications, and external c
 
 ```text
 keycloak-access-requests/
-├── access-requests-core/               # Domain model and business contracts
-├── access-requests-persistence-jpa/    # JPA persistence and Liquibase
-├── access-requests-rest/               # REST API and HTTP boundary
-├── access-requests-keycloak/           # Keycloak provider integration
-├── access-requests-account-ui/         # React Account Console extension
-├── access-requests-integration-tests/  # Keycloak and PostgreSQL tests
-└── distribution/                       # Provider distribution assembly
+├── src/
+│   ├── main/
+│   │   ├── java/ch/anass/keycloak/accessrequests/
+│   │   │   ├── core/                    # Domain model, ports, and business services
+│   │   │   ├── persistence/jpa/         # JPA entities and repository adapters
+│   │   │   └── spi/                     # Keycloak integration as it is implemented
+│   │   │       ├── realm/               # Realm resource provider and endpoints
+│   │   │       ├── jpa/                 # Keycloak JPA entity provider
+│   │   │       └── ui/                  # Declarative Admin UI providers
+│   │   └── resources/
+│   │       ├── META-INF/services/       # Keycloak provider registrations
+│   │       └── theme/                   # Optional FreeMarker theme fragments
+│   └── test/
+│       ├── java/
+│       └── resources/
+└── pom.xml
 ```
 
-The project is a multi-module Maven reactor. The modules are empty placeholders in this first commit; no business implementation is included yet.
+The project is a single Maven module. Keycloak-specific packages and resources are created with their first implementation; empty placeholder directories are not tracked.
 
 ## Requirements
 
@@ -50,9 +59,10 @@ Run these commands from the project root:
 ```bash
 mvn validate
 mvn test
+mvn package
 ```
 
-Supported Keycloak versions and deployment instructions will be added with the implementation.
+The build produces `target/keycloak-access-requests.jar`. When the Keycloak SPI implementations are added, this single JAR will be copied to Keycloak's `providers` directory.
 
 ## License
 
