@@ -13,6 +13,7 @@ public final class AccessRequestEvent {
     private final String actorId;
     private final Instant occurredAt;
     private final String comment;
+    private final String metadata;
 
     private AccessRequestEvent(
             String id,
@@ -21,7 +22,8 @@ public final class AccessRequestEvent {
             AccessRequestEventType type,
             String actorId,
             Instant occurredAt,
-            String comment) {
+            String comment,
+            String metadata) {
         this.id = requireText(id, "id");
         this.requestId = requireText(requestId, "requestId");
         this.realmId = requireText(realmId, "realmId");
@@ -29,6 +31,7 @@ public final class AccessRequestEvent {
         this.actorId = requireText(actorId, "actorId");
         this.occurredAt = Objects.requireNonNull(occurredAt, "occurredAt must not be null");
         this.comment = comment;
+        this.metadata = metadata;
     }
 
     public static AccessRequestEvent created(AccessRequest request, String actorId, Instant occurredAt) {
@@ -72,7 +75,8 @@ public final class AccessRequestEvent {
                 type,
                 actorId,
                 occurredAt,
-                comment);
+                comment,
+                null);
     }
 
     public String id() {
@@ -101,6 +105,10 @@ public final class AccessRequestEvent {
 
     public String comment() {
         return comment;
+    }
+
+    public String metadata() {
+        return metadata;
     }
 
     private static String requireText(String value, String fieldName) {

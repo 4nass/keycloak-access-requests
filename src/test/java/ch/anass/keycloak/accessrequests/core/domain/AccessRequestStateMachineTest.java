@@ -2,6 +2,8 @@ package ch.anass.keycloak.accessrequests.core.domain;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -21,6 +23,26 @@ class AccessRequestStateMachineTest {
 
         assertNull(request.approverId());
         assertNull(request.decisionComment());
+    }
+
+    @Test
+    void newRequestTracksItsLifecycleMetadata() {
+        Instant createdAt = Instant.parse("2026-08-29T10:15:30Z");
+        AccessRequest request = AccessRequest.create(
+                "request-1",
+                "realm-1",
+                "requester-1",
+                "entitlement-1",
+                ResourceType.REALM_ROLE,
+                "resource-1",
+                "Resource",
+                "Access is needed for the finance project.",
+                createdAt);
+
+        assertEquals(ProvisioningStatus.NOT_STARTED, request.provisioningStatus());
+        assertEquals(createdAt, request.createdAt());
+        assertEquals(createdAt, request.updatedAt());
+        assertNull(request.decidedAt());
     }
 
     @Test

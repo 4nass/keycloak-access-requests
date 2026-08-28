@@ -2,15 +2,21 @@ package ch.anass.keycloak.accessrequests.persistence.jpa;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
+import jakarta.persistence.Basic;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
+import org.hibernate.annotations.JdbcTypeCode;
+
+import java.sql.Types;
 
 @Entity
 @Table(
@@ -43,18 +49,35 @@ public class AccessRequestEntity {
     @Column(name = "RESOURCE_NAME_SNAPSHOT", nullable = false, length = 255)
     private String resourceNameSnapshot;
 
-    @Column(name = "JUSTIFICATION", nullable = false, length = 2000)
+    @Basic(fetch = FetchType.LAZY)
+    @JdbcTypeCode(Types.LONGVARCHAR)
+    @Column(name = "JUSTIFICATION", nullable = false, columnDefinition = "TEXT")
     private String justification;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "DECISION_STATUS", nullable = false, length = 30)
     private DecisionStatus decisionStatus;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "PROVISIONING_STATUS", nullable = false, length = 30)
+    private ProvisioningStatus provisioningStatus;
+
     @Column(name = "APPROVER_ID", length = 255)
     private String approverId;
 
-    @Column(name = "DECISION_COMMENT", length = 2000)
+    @Basic(fetch = FetchType.LAZY)
+    @JdbcTypeCode(Types.LONGVARCHAR)
+    @Column(name = "DECISION_COMMENT", columnDefinition = "TEXT")
     private String decisionComment;
+
+    @Column(name = "CREATED_TIMESTAMP", nullable = false)
+    private long createdTimestamp;
+
+    @Column(name = "UPDATED_TIMESTAMP", nullable = false)
+    private long updatedTimestamp;
+
+    @Column(name = "DECIDED_TIMESTAMP")
+    private Long decidedTimestamp;
 
     @Version
     @Column(name = "VERSION", nullable = false)
@@ -81,12 +104,16 @@ public class AccessRequestEntity {
         this.resourceNameSnapshot = request.resourceNameSnapshot();
         this.justification = request.justification();
         this.decisionStatus = request.decisionStatus();
+        this.provisioningStatus = request.provisioningStatus();
         this.approverId = request.approverId();
         this.decisionComment = request.decisionComment();
+        this.createdTimestamp = request.createdAt().toEpochMilli();
+        this.updatedTimestamp = request.updatedAt().toEpochMilli();
+        this.decidedTimestamp = request.decidedAt() == null ? null : request.decidedAt().toEpochMilli();
     }
 
     AccessRequest toDomain() {
-        AccessRequest request = AccessRequest.create(
+        return AccessRequest.rehydrate(
                 id,
                 realmId,
                 requesterId,
@@ -94,15 +121,15 @@ public class AccessRequestEntity {
                 resourceType,
                 resourceId,
                 resourceNameSnapshot,
-                justification);
-        if (decisionStatus == DecisionStatus.APPROVED) {
-            request.approve(approverId, decisionComment);
-        } else if (decisionStatus == DecisionStatus.REJECTED) {
-            request.reject(approverId, decisionComment);
-        } else if (decisionStatus == DecisionStatus.CANCELED) {
-            request.cancel(requesterId);
-        }
-        return request.withVersion(version);
+                justification,
+                decisionStatus,
+                provisioningStatus,
+                approverId,
+                decisionComment,
+                java.time.Instant.ofEpochMilli(createdTimestamp),
+                java.time.Instant.ofEpochMilli(updatedTimestamp),
+                decidedTimestamp == null ? null : java.time.Instant.ofEpochMilli(decidedTimestamp),
+                version);
     }
 
     String realmId() {

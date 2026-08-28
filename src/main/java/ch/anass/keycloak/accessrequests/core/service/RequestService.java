@@ -87,6 +87,7 @@ public final class RequestService {
         if (effectiveAccessChecker.hasAccess(realmId, requesterId, entitlement)) {
             throw new AccessAlreadyGrantedException(entitlementId);
         }
+        Instant occurredAt = Instant.now(clock);
         AccessRequest request = AccessRequest.create(
                 UUID.randomUUID().toString(),
                 realmId,
@@ -95,12 +96,13 @@ public final class RequestService {
                 entitlement.resourceType(),
                 entitlement.resourceId(),
                 entitlement.displayName(),
-                justification);
+                justification,
+                occurredAt);
         try {
             return transaction.execute(() -> {
                 AccessRequest persisted = accessRequestRepository.createIfNoPending(request)
                         .orElseThrow(() -> new RequestAlreadyPendingException(entitlementId));
-                eventPublisher.publish(AccessRequestEvent.created(persisted, requesterId, Instant.now(clock)));
+                eventPublisher.publish(AccessRequestEvent.created(persisted, requesterId, occurredAt));
                 return persisted;
             });
         } catch (DuplicatePendingRequestException exception) {
@@ -113,11 +115,12 @@ public final class RequestService {
                 .orElseThrow(() -> new RequestNotFoundException(requestId));
         transaction.execute(() -> {
             AccessRequest candidate = request.copy();
-            candidate.cancel(actorId);
+            Instant occurredAt = Instant.now(clock);
+            candidate.cancel(actorId, occurredAt);
             AccessRequest persisted = accessRequestRepository
                     .updateIfVersionMatches(candidate, request.version())
                     .orElseThrow(() -> new ConcurrentRequestModificationException(requestId));
-            eventPublisher.publish(AccessRequestEvent.canceled(persisted, actorId, Instant.now(clock)));
+            eventPublisher.publish(AccessRequestEvent.canceled(persisted, actorId, occurredAt));
             return persisted;
         });
     }
@@ -133,10 +136,11 @@ public final class RequestService {
 
         return transaction.execute(() -> {
             AccessRequest candidate = request.copy();
-            candidate.approve(approverId, decisionComment);
+            Instant occurredAt = Instant.now(clock);
+            candidate.approve(approverId, decisionComment, occurredAt);
             AccessRequest persisted = updateOrThrow(candidate, request.version());
             eventPublisher.publish(AccessRequestEvent.approved(
-                    persisted, approverId, Instant.now(clock), decisionComment));
+                    persisted, approverId, occurredAt, decisionComment));
             return persisted;
         });
     }
@@ -151,10 +155,11 @@ public final class RequestService {
 
         return transaction.execute(() -> {
             AccessRequest candidate = request.copy();
-            candidate.reject(approverId, decisionComment);
+            Instant occurredAt = Instant.now(clock);
+            candidate.reject(approverId, decisionComment, occurredAt);
             AccessRequest persisted = updateOrThrow(candidate, request.version());
             eventPublisher.publish(AccessRequestEvent.rejected(
-                    persisted, approverId, Instant.now(clock), decisionComment));
+                    persisted, approverId, occurredAt, decisionComment));
             return persisted;
         });
     }

@@ -1,5 +1,6 @@
 package ch.anass.keycloak.accessrequests.core.domain;
 
+import java.time.Instant;
 import java.util.Objects;
 
 public final class AccessRequest {
@@ -16,6 +17,10 @@ public final class AccessRequest {
     private DecisionStatus decisionStatus;
     private String approverId;
     private String decisionComment;
+    private ProvisioningStatus provisioningStatus;
+    private final Instant createdAt;
+    private Instant updatedAt;
+    private Instant decidedAt;
     private long version;
 
     private AccessRequest(
@@ -26,7 +31,8 @@ public final class AccessRequest {
             String justification,
             ResourceType resourceType,
             String resourceId,
-            String resourceNameSnapshot) {
+            String resourceNameSnapshot,
+            Instant createdAt) {
         this.id = requireText(id, "id");
         this.realmId = requireText(realmId, "realmId");
         this.requesterId = requireText(requesterId, "requesterId");
@@ -36,6 +42,9 @@ public final class AccessRequest {
         this.resourceId = resourceId;
         this.resourceNameSnapshot = resourceNameSnapshot;
         this.decisionStatus = DecisionStatus.PENDING;
+        this.provisioningStatus = ProvisioningStatus.NOT_STARTED;
+        this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
+        this.updatedAt = createdAt;
     }
 
     public static AccessRequest create(
@@ -47,6 +56,28 @@ public final class AccessRequest {
             String resourceId,
             String resourceNameSnapshot,
             String justification) {
+        return create(
+                id,
+                realmId,
+                requesterId,
+                entitlementId,
+                resourceType,
+                resourceId,
+                resourceNameSnapshot,
+                justification,
+                Instant.now());
+    }
+
+    public static AccessRequest create(
+            String id,
+            String realmId,
+            String requesterId,
+            String entitlementId,
+            ResourceType resourceType,
+            String resourceId,
+            String resourceNameSnapshot,
+            String justification,
+            Instant createdAt) {
         return new AccessRequest(
                 id,
                 realmId,
@@ -55,7 +86,45 @@ public final class AccessRequest {
                 justification,
                 Objects.requireNonNull(resourceType, "resourceType must not be null"),
                 requireText(resourceId, "resourceId"),
-                requireText(resourceNameSnapshot, "resourceNameSnapshot"));
+                requireText(resourceNameSnapshot, "resourceNameSnapshot"),
+                createdAt);
+    }
+
+    public static AccessRequest rehydrate(
+            String id,
+            String realmId,
+            String requesterId,
+            String entitlementId,
+            ResourceType resourceType,
+            String resourceId,
+            String resourceNameSnapshot,
+            String justification,
+            DecisionStatus decisionStatus,
+            ProvisioningStatus provisioningStatus,
+            String approverId,
+            String decisionComment,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant decidedAt,
+            long version) {
+        AccessRequest request = create(
+                id,
+                realmId,
+                requesterId,
+                entitlementId,
+                resourceType,
+                resourceId,
+                resourceNameSnapshot,
+                justification,
+                createdAt);
+        request.decisionStatus = Objects.requireNonNull(decisionStatus, "decisionStatus must not be null");
+        request.provisioningStatus = Objects.requireNonNull(provisioningStatus, "provisioningStatus must not be null");
+        request.approverId = approverId;
+        request.decisionComment = decisionComment;
+        request.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
+        request.decidedAt = decidedAt;
+        request.version = requireNonNegativeVersion(version);
+        return request;
     }
 
     public String id() {
@@ -102,6 +171,22 @@ public final class AccessRequest {
         return decisionComment;
     }
 
+    public ProvisioningStatus provisioningStatus() {
+        return provisioningStatus;
+    }
+
+    public Instant createdAt() {
+        return createdAt;
+    }
+
+    public Instant updatedAt() {
+        return updatedAt;
+    }
+
+    public Instant decidedAt() {
+        return decidedAt;
+    }
+
     public long version() {
         return version;
     }
@@ -111,27 +196,38 @@ public final class AccessRequest {
     }
 
     public AccessRequest withVersion(long newVersion) {
-        if (newVersion < 0) {
-            throw new IllegalArgumentException("version must not be negative");
-        }
-        return copyWithVersion(newVersion);
+        return copyWithVersion(requireNonNegativeVersion(newVersion));
     }
 
     public void approve(String approverId, String decisionComment) {
+        approve(approverId, decisionComment, Instant.now());
+    }
+
+    public void approve(String approverId, String decisionComment, Instant decidedAt) {
         ensurePending();
         this.approverId = requireText(approverId, "approverId");
         this.decisionComment = decisionComment;
         this.decisionStatus = DecisionStatus.APPROVED;
+        recordDecision(decidedAt);
     }
 
     public void reject(String approverId, String decisionComment) {
+        reject(approverId, decisionComment, Instant.now());
+    }
+
+    public void reject(String approverId, String decisionComment, Instant decidedAt) {
         ensurePending();
         this.approverId = requireText(approverId, "approverId");
         this.decisionComment = decisionComment;
         this.decisionStatus = DecisionStatus.REJECTED;
+        recordDecision(decidedAt);
     }
 
     public void cancel(String actorId) {
+        cancel(actorId, Instant.now());
+    }
+
+    public void cancel(String actorId, Instant decidedAt) {
         ensurePending();
         String validatedActorId = requireText(actorId, "actorId");
         if (!requesterId.equals(validatedActorId)) {
@@ -139,6 +235,7 @@ public final class AccessRequest {
                     "Only the request owner can cancel this request.");
         }
         this.decisionStatus = DecisionStatus.CANCELED;
+        recordDecision(decidedAt);
     }
 
     private void ensurePending() {
@@ -156,12 +253,28 @@ public final class AccessRequest {
                 justification,
                 resourceType,
                 resourceId,
-                resourceNameSnapshot);
+                resourceNameSnapshot,
+                createdAt);
         copy.decisionStatus = decisionStatus;
         copy.approverId = approverId;
         copy.decisionComment = decisionComment;
+        copy.provisioningStatus = provisioningStatus;
+        copy.updatedAt = updatedAt;
+        copy.decidedAt = decidedAt;
         copy.version = newVersion;
         return copy;
+    }
+
+    private void recordDecision(Instant decisionTime) {
+        this.decidedAt = Objects.requireNonNull(decisionTime, "decidedAt must not be null");
+        this.updatedAt = decisionTime;
+    }
+
+    private static long requireNonNegativeVersion(long version) {
+        if (version < 0) {
+            throw new IllegalArgumentException("version must not be negative");
+        }
+        return version;
     }
 
     private static String requireText(String value, String fieldName) {

@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -72,6 +73,43 @@ class JpaAccessRequestRepositoryTest {
         assertEquals(0, reloaded.version());
         assertEquals(request.id(), reloaded.id());
         assertEquals(DecisionStatus.PENDING, reloaded.decisionStatus());
+    }
+
+    @Test
+    void preservesLifecycleMetadataAndLongDecisionComments() {
+        Instant createdAt = Instant.parse("2026-08-29T10:15:30Z");
+        Instant decidedAt = Instant.parse("2026-08-29T10:20:30Z");
+        String longComment = "Approved after a detailed review. ".repeat(200);
+        AccessRequest request = AccessRequest.create(
+                "request-lifecycle",
+                "realm-lifecycle",
+                "requester-1",
+                "entitlement-1",
+                ResourceType.REALM_ROLE,
+                "resource-1",
+                "Resource",
+                "Access is needed for the project.",
+                createdAt);
+        request.approve("approver-1", longComment, decidedAt);
+        JpaAccessRequestRepository repository = new JpaAccessRequestRepository(entityManager);
+
+        transaction().execute(() -> {
+            AccessRequest persisted = repository.createIfNoPending(request).orElseThrow();
+            new JpaAccessRequestEventPublisher(entityManager).publish(
+                    AccessRequestEvent.approved(persisted, "approver-1", decidedAt, longComment));
+            return persisted;
+        });
+        AccessRequest reloaded = repository.findById("realm-lifecycle", request.id()).orElseThrow();
+
+        assertEquals(DecisionStatus.APPROVED, reloaded.decisionStatus());
+        assertEquals(longComment, reloaded.decisionComment());
+        assertEquals(createdAt, reloaded.createdAt());
+        assertEquals(decidedAt, reloaded.updatedAt());
+        assertEquals(decidedAt, reloaded.decidedAt());
+        assertEquals(1, countEvents("realm-lifecycle"));
+        assertEquals(longComment, entityManager.createNativeQuery(
+                        "select COMMENT from AR_ACCESS_REQUEST_HISTORY where REALM_ID = 'realm-lifecycle'")
+                .getSingleResult());
     }
 
     @Test

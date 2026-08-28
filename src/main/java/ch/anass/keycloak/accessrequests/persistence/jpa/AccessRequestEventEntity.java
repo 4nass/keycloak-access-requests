@@ -7,7 +7,12 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.Basic;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+
+import java.sql.Types;
 
 @Entity
 @Table(name = "AR_ACCESS_REQUEST_HISTORY")
@@ -33,8 +38,15 @@ public class AccessRequestEventEntity {
     @Column(name = "EVENT_TIMESTAMP", nullable = false)
     private long occurredAt;
 
-    @Column(name = "COMMENT", length = 2000)
+    @Basic(fetch = FetchType.LAZY)
+    @JdbcTypeCode(Types.LONGVARCHAR)
+    @Column(name = "COMMENT", columnDefinition = "TEXT")
     private String comment;
+
+    @Basic(fetch = FetchType.LAZY)
+    @JdbcTypeCode(Types.LONGVARCHAR)
+    @Column(name = "METADATA", columnDefinition = "TEXT")
+    private String metadata;
 
     protected AccessRequestEventEntity() {
     }
@@ -47,5 +59,6 @@ public class AccessRequestEventEntity {
         this.actorId = event.actorId();
         this.occurredAt = event.occurredAt().toEpochMilli();
         this.comment = event.comment();
+        this.metadata = event.metadata();
     }
 }
