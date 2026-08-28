@@ -38,7 +38,7 @@
             <groupId>org.keycloak</groupId>
             <artifactId>keycloak-model-jpa</artifactId>
             <version>${keycloak.version}</version>
-            <scope>test</scope>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
