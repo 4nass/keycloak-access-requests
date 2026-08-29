@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.persistence.jpa;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.port.DuplicatePendingRequestException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import jakarta.persistence.EntityManager;
@@ -8,6 +9,7 @@ import jakarta.persistence.PersistenceException;
 import org.hibernate.exception.ConstraintViolationException;
 
 import java.util.Optional;
+import java.util.Set;
 
 public final class JpaAccessRequestRepository implements AccessRequestRepository {
 
@@ -24,6 +26,26 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
             return Optional.empty();
         }
         return Optional.of(entity.toDomain());
+    }
+
+    @Override
+    public Set<String> findPendingEntitlementIds(String realmId, String requesterId, Set<String> entitlementIds) {
+        if (entitlementIds.isEmpty()) {
+            return Set.of();
+        }
+        return Set.copyOf(entityManager.createQuery("""
+                        select entity.entitlementId
+                          from AccessRequestEntity entity
+                         where entity.realmId = :realmId
+                           and entity.requesterId = :requesterId
+                           and entity.decisionStatus = :decisionStatus
+                           and entity.entitlementId in :entitlementIds
+                        """, String.class)
+                .setParameter("realmId", realmId)
+                .setParameter("requesterId", requesterId)
+                .setParameter("decisionStatus", DecisionStatus.PENDING)
+                .setParameter("entitlementIds", entitlementIds)
+                .getResultList());
     }
 
     @Override

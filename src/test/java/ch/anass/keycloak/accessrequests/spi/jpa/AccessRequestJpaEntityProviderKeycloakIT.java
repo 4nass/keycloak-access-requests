@@ -23,15 +23,19 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Testcontainers(disabledWithoutDocker = true)
 class AccessRequestJpaEntityProviderKeycloakIT {
 
+    private static final String ACCESS_REQUESTS_API_AUDIENCE = "access-requests-api";
     private static final Network NETWORK = Network.newNetwork();
 
     @Container
@@ -120,11 +124,27 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(401, unauthorizedResponse.statusCode());
 
+        String adminToken = accessToken(server, "admin-cli");
+        String allowedClientId = "catalog-trusted-" + UUID.randomUUID();
+        createDirectAccessClient(server, adminToken, allowedClientId);
+        String allowedClientInternalId = addAccessRequestsAudience(server, adminToken, allowedClientId);
+        String allowedClientToken = accessToken(server, allowedClientId);
+        assertTrue(hasAccessRequestsApiAudience(allowedClientToken));
+        String untrustedClientId = "catalog-untrusted-" + UUID.randomUUID();
+        createDirectAccessClient(server, allowedClientToken, untrustedClientId);
+        HttpResponse<Void> forbiddenResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(endpoint)
+                        .header("Authorization", "Bearer " + accessToken(server, untrustedClientId))
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(401, forbiddenResponse.statusCode());
+
         String entitlementId = UUID.randomUUID().toString();
         insertPublishedEntitlement(entitlementId);
 
         HttpRequest authenticatedRequest = HttpRequest.newBuilder(endpoint)
-                .header("Authorization", "Bearer " + accessToken(server))
+                .header("Authorization", "Bearer " + allowedClientToken)
                 .GET()
                 .build();
         HttpResponse<String> catalogResponse = HttpClient.newHttpClient().send(
@@ -136,15 +156,36 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertTrue(catalogResponse.body().contains("\"type\":\"CLIENT_ROLE\""));
         assertTrue(catalogResponse.body().contains("\"name\":\"Finance Reader\""));
         assertTrue(catalogResponse.body().contains("\"riskLevel\":\"LOW\""));
+        assertTrue(catalogResponse.body().contains("\"alreadyGranted\":false"));
+        assertTrue(catalogResponse.body().contains("\"pendingRequest\":false"));
+
+        HttpResponse<Void> invalidPaginationResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(endpoint + "?page=" + Integer.MAX_VALUE + "&size=2"))
+                        .header("Authorization", "Bearer " + allowedClientToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(400, invalidPaginationResponse.statusCode());
+
+        removeAccessRequestsAudience(server, adminToken, allowedClientInternalId);
+        String revokedClientToken = accessToken(server, allowedClientId);
+        assertFalse(hasAccessRequestsApiAudience(revokedClientToken));
+        HttpResponse<Void> revokedClientResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(endpoint)
+                        .header("Authorization", "Bearer " + revokedClientToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(401, revokedClientResponse.statusCode());
     }
 
-    private String accessToken(GenericContainer<?> server) throws Exception {
+    private String accessToken(GenericContainer<?> server, String clientId) throws Exception {
         URI tokenEndpoint = URI.create("http://%s:%d/realms/master/protocol/openid-connect/token"
                 .formatted(server.getHost(), server.getMappedPort(8080)));
         HttpRequest request = HttpRequest.newBuilder(tokenEndpoint)
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(
-                        "grant_type=password&client_id=admin-cli&username=admin&password=admin"))
+                        "grant_type=password&client_id=%s&username=admin&password=admin".formatted(clientId)))
                 .build();
         HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
 
@@ -153,6 +194,185 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 .matcher(response.body());
         assertTrue(matcher.find(), "The token response must contain an access token.");
         return matcher.group(1);
+    }
+
+    private void createDirectAccessClient(GenericContainer<?> server, String adminToken, String clientId)
+            throws Exception {
+        URI clientsEndpoint = URI.create("http://%s:%d/admin/realms/master/clients"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpRequest request = HttpRequest.newBuilder(clientsEndpoint)
+                .header("Authorization", "Bearer " + adminToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("""
+                        {"clientId":"%s","enabled":true,"publicClient":true,"directAccessGrantsEnabled":true}
+                        """.formatted(clientId)))
+                .build();
+
+        HttpResponse<Void> response = HttpClient.newHttpClient().send(
+                request, HttpResponse.BodyHandlers.discarding());
+        assertEquals(201, response.statusCode());
+    }
+
+    private String addAccessRequestsAudience(GenericContainer<?> server, String adminToken, String clientId)
+            throws Exception {
+        ensureAccessRequestsApiClient(server, adminToken);
+        String clientScopeId = ensureAccessRequestsApiClientScope(server, adminToken);
+        String clientInternalId = clientInternalId(server, adminToken, clientId);
+
+        URI defaultScopeEndpoint = URI.create("http://%s:%d/admin/realms/master/clients/%s/default-client-scopes/%s"
+                .formatted(server.getHost(), server.getMappedPort(8080), clientInternalId, clientScopeId));
+        HttpResponse<Void> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(defaultScopeEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .PUT(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(204, response.statusCode());
+        return clientInternalId;
+    }
+
+    private void removeAccessRequestsAudience(GenericContainer<?> server, String adminToken, String clientInternalId)
+            throws Exception {
+        String clientScopeId = findAccessRequestsApiClientScopeId(server, adminToken);
+        URI defaultScopeEndpoint = URI.create("http://%s:%d/admin/realms/master/clients/%s/default-client-scopes/%s"
+                .formatted(server.getHost(), server.getMappedPort(8080), clientInternalId, clientScopeId));
+        HttpResponse<Void> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(defaultScopeEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .DELETE()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(204, response.statusCode());
+    }
+
+    private String ensureAccessRequestsApiClientScope(GenericContainer<?> server, String adminToken) throws Exception {
+        String existingScopeId = findAccessRequestsApiClientScopeIdOrNull(server, adminToken);
+        if (existingScopeId != null) {
+            return existingScopeId;
+        }
+
+        URI clientScopesEndpoint = URI.create("http://%s:%d/admin/realms/master/client-scopes"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpResponse<Void> createScopeResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(clientScopesEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("""
+                                {"name":"%s","protocol":"openid-connect"}
+                                """.formatted(ACCESS_REQUESTS_API_AUDIENCE)))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(201, createScopeResponse.statusCode());
+
+        String clientScopeId = findAccessRequestsApiClientScopeId(server, adminToken);
+        URI mapperEndpoint = URI.create("http://%s:%d/admin/realms/master/client-scopes/%s/protocol-mappers/models"
+                .formatted(server.getHost(), server.getMappedPort(8080), clientScopeId));
+        HttpRequest mapperRequest = HttpRequest.newBuilder(mapperEndpoint)
+                .header("Authorization", "Bearer " + adminToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("""
+                        {
+                          "name":"access-requests-api-%s",
+                          "protocol":"openid-connect",
+                          "protocolMapper":"oidc-audience-mapper",
+                          "config":{
+                            "included.client.audience":"%s",
+                            "access.token.claim":"true",
+                            "id.token.claim":"false",
+                            "introspection.token.claim":"true"
+                          }
+                        }
+                        """.formatted(UUID.randomUUID(), ACCESS_REQUESTS_API_AUDIENCE)))
+                .build();
+        HttpResponse<Void> mapperResponse = HttpClient.newHttpClient().send(
+                mapperRequest, HttpResponse.BodyHandlers.discarding());
+        assertEquals(201, mapperResponse.statusCode());
+        return clientScopeId;
+    }
+
+    private String clientInternalId(GenericContainer<?> server, String adminToken, String clientId) throws Exception {
+        URI clientEndpoint = URI.create("http://%s:%d/admin/realms/master/clients?clientId=%s"
+                .formatted(server.getHost(), server.getMappedPort(8080), clientId));
+        HttpResponse<String> clientResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(clientEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, clientResponse.statusCode());
+        var clientIdMatcher = Pattern.compile("\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+                .matcher(clientResponse.body());
+        assertTrue(clientIdMatcher.find(), "The configured client must have an internal identifier.");
+        return clientIdMatcher.group(1);
+    }
+
+    private String findAccessRequestsApiClientScopeId(GenericContainer<?> server, String adminToken) throws Exception {
+        String clientScopeId = findAccessRequestsApiClientScopeIdOrNull(server, adminToken);
+        assertTrue(clientScopeId != null, "The access requests client scope must exist.");
+        return clientScopeId;
+    }
+
+    private String findAccessRequestsApiClientScopeIdOrNull(GenericContainer<?> server, String adminToken)
+            throws Exception {
+        URI clientScopesEndpoint = URI.create("http://%s:%d/admin/realms/master/client-scopes?search=%s"
+                .formatted(server.getHost(), server.getMappedPort(8080), ACCESS_REQUESTS_API_AUDIENCE));
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(clientScopesEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+        var scopeIdMatcher = Pattern.compile(
+                        "\\{[^{}]*\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"[^{}]*\\\"name\\\"\\s*:\\s*\\\""
+                                + ACCESS_REQUESTS_API_AUDIENCE + "\\\"")
+                .matcher(response.body());
+        return scopeIdMatcher.find() ? scopeIdMatcher.group(1) : null;
+    }
+
+    private void ensureAccessRequestsApiClient(GenericContainer<?> server, String adminToken) throws Exception {
+        URI clientEndpoint = URI.create("http://%s:%d/admin/realms/master/clients?clientId=%s"
+                .formatted(server.getHost(), server.getMappedPort(8080), ACCESS_REQUESTS_API_AUDIENCE));
+        HttpResponse<String> existingClientResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(clientEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, existingClientResponse.statusCode());
+        if (existingClientResponse.body().contains("\"clientId\":\"" + ACCESS_REQUESTS_API_AUDIENCE + "\"")) {
+            return;
+        }
+
+        URI clientsEndpoint = URI.create("http://%s:%d/admin/realms/master/clients"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpRequest createClientRequest = HttpRequest.newBuilder(clientsEndpoint)
+                .header("Authorization", "Bearer " + adminToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("""
+                        {
+                          "clientId":"%s",
+                          "enabled":true,
+                          "protocol":"openid-connect",
+                          "standardFlowEnabled":false,
+                          "directAccessGrantsEnabled":false,
+                          "serviceAccountsEnabled":false
+                        }
+                        """.formatted(ACCESS_REQUESTS_API_AUDIENCE)))
+                .build();
+        HttpResponse<Void> createClientResponse = HttpClient.newHttpClient().send(
+                createClientRequest, HttpResponse.BodyHandlers.discarding());
+        assertEquals(201, createClientResponse.statusCode());
+    }
+
+    private boolean hasAccessRequestsApiAudience(String accessToken) {
+        String[] segments = accessToken.split("\\.");
+        assertEquals(3, segments.length, "The access token must be a JWT.");
+        String payload = new String(Base64.getUrlDecoder().decode(segments[1]), StandardCharsets.UTF_8);
+        return Pattern.compile("\\\"aud\\\"\\s*:\\s*(?:\\\"" + ACCESS_REQUESTS_API_AUDIENCE
+                        + "\\\"|\\[[^]]*\\\"" + ACCESS_REQUESTS_API_AUDIENCE + "\\\"[^]]*])")
+                .matcher(payload)
+                .find();
     }
 
     private void insertPublishedEntitlement(String entitlementId) throws SQLException {

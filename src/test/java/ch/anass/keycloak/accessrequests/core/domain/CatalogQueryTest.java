@@ -40,7 +40,7 @@ class CatalogQueryTest {
 
     @Test
     void rejectsPaginationThatWouldOverflowTheJpaOffset() {
-        assertThrows(ArithmeticException.class, () -> new CatalogQuery(
+        assertThrows(IllegalArgumentException.class, () -> new CatalogQuery(
                 "realm-1", null, null, null, Integer.MAX_VALUE, 2));
     }
 }

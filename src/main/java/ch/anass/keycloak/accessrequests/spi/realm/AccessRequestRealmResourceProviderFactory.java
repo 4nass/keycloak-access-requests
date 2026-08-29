@@ -20,7 +20,7 @@ public final class AccessRequestRealmResourceProviderFactory implements RealmRes
 
     @Override
     public void init(Config.Scope config) {
-        // This provider has no configuration.
+        // Client access is configured with OIDC audience client scopes in each realm.
     }
 
     @Override
@@ -37,4 +37,5 @@ public final class AccessRequestRealmResourceProviderFactory implements RealmRes
     public void close() {
         // This factory does not own resources.
     }
+
 }

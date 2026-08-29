@@ -22,11 +22,19 @@ public record CatalogQuery(
         if (size < 1 || size > MAX_PAGE_SIZE) {
             throw new IllegalArgumentException("size must be between 1 and " + MAX_PAGE_SIZE);
         }
-        Math.multiplyExact(page, size);
+        validateOffset(page, size);
     }
 
     public int offset() {
-        return Math.multiplyExact(page, size);
+        return validateOffset(page, size);
+    }
+
+    private static int validateOffset(int page, int size) {
+        try {
+            return Math.multiplyExact(page, size);
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException("page and size are too large", exception);
+        }
     }
 
     private static String normalizeSearch(String search) {

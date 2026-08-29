@@ -52,6 +52,17 @@ The project is a single Maven module. Keycloak-specific packages and resources a
 - Keycloak 26.4.x as the development baseline
 - PostgreSQL for integration tests
 
+## Client access
+
+The catalog API accepts access tokens with the `access-requests-api` audience. Configure this in the Keycloak Admin Console for each realm:
+
+1. Create an OIDC client named `access-requests-api`. It represents this API and does not need login flows.
+2. Create an OIDC client scope named `access-requests-api`.
+3. Add an **Audience** mapper to the scope. Set **Included Client Audience** to `access-requests-api` and enable **Add to access token**.
+4. Add this scope as a **Default** client scope to each client that may call the catalog API.
+
+To revoke a client, remove the scope from that client. Newly issued tokens will no longer be accepted.
+
 ## Commands
 
 Run these commands from the project root:

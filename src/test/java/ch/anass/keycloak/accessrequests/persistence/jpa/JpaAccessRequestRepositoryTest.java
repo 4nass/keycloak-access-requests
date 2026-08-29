@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -142,6 +143,29 @@ class JpaAccessRequestRepositoryTest {
 
         assertEquals(DecisionStatus.PENDING, replacement.decisionStatus());
         assertEquals(2, countRequests("realm-terminal"));
+    }
+
+    @Test
+    void findsOnlyPendingRequestsForTheGivenRequesterAndEntitlements() {
+        JpaAccessRequestRepository repository = new JpaAccessRequestRepository(entityManager);
+        AccessRequest pending = request("realm-catalog", "requester-1", "request-pending");
+        AccessRequest approved = request("realm-catalog", "requester-1", "request-approved");
+        approved.approve("approver-1", "Approved.");
+        AccessRequest anotherRequester = request("realm-catalog", "requester-2", "request-other-requester");
+        AccessRequest anotherRealm = request("realm-other", "requester-1", "request-other-realm");
+
+        transaction().execute(() -> {
+            repository.createIfNoPending(pending).orElseThrow();
+            repository.createIfNoPending(approved).orElseThrow();
+            repository.createIfNoPending(anotherRequester).orElseThrow();
+            repository.createIfNoPending(anotherRealm).orElseThrow();
+            return null;
+        });
+
+        assertEquals(Set.of("entitlement-1"), repository.findPendingEntitlementIds(
+                "realm-catalog", "requester-1", Set.of("entitlement-1", "other-entitlement")));
+        assertEquals(Set.of(), repository.findPendingEntitlementIds(
+                "realm-catalog", "requester-1", Set.of()));
     }
 
     @Test

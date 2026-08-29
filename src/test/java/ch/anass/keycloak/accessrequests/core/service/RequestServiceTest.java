@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -657,6 +658,20 @@ class RequestServiceTest {
                 await(reads, "cancellation reads");
             }
             return Optional.ofNullable(found).map(AccessRequest::copy);
+        }
+
+        @Override
+        public synchronized Set<String> findPendingEntitlementIds(
+                String realmId,
+                String requesterId,
+                Set<String> entitlementIds) {
+            return values.stream()
+                    .filter(request -> request.realmId().equals(realmId))
+                    .filter(request -> request.requesterId().equals(requesterId))
+                    .filter(request -> request.decisionStatus() == DecisionStatus.PENDING)
+                    .map(AccessRequest::entitlementId)
+                    .filter(entitlementIds::contains)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
         }
 
         @Override
