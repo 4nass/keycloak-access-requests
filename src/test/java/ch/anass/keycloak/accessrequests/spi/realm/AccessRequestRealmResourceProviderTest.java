@@ -1,8 +1,10 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
+import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.OPTIONS;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import org.junit.jupiter.api.Test;
@@ -85,6 +87,19 @@ class AccessRequestRealmResourceProviderTest {
         assertTrue(catalogHandler.isAnnotationPresent(GET.class));
         assertEquals("catalog", catalogHandler.getAnnotation(Path.class).value());
         assertEquals(MediaType.APPLICATION_JSON, catalogHandler.getAnnotation(Produces.class).value()[0]);
+    }
+
+    @Test
+    void exposesAJsonPostHandlerForRequestSubmission() {
+        var submitHandler = Arrays.stream(AccessRequestRealmResource.class.getDeclaredMethods())
+                .filter(method -> method.getName().equals("submitRequest"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("The request submission endpoint must expose a POST handler."));
+
+        assertTrue(submitHandler.isAnnotationPresent(POST.class));
+        assertEquals("requests", submitHandler.getAnnotation(Path.class).value());
+        assertEquals(MediaType.APPLICATION_JSON, submitHandler.getAnnotation(Consumes.class).value()[0]);
+        assertEquals(MediaType.APPLICATION_JSON, submitHandler.getAnnotation(Produces.class).value()[0]);
     }
 
     private RealmResourceProviderFactory providerFactory() {

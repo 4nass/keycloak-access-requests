@@ -58,6 +58,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertProviderSchemaApplied();
             assertRealmEndpointExposed(firstServer);
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(firstServer);
+            assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(firstServer);
         }
 
         try (GenericContainer<?> restartedServer = keycloak()) {
@@ -65,6 +66,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertProviderSchemaApplied();
             assertRealmEndpointExposed(restartedServer);
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(restartedServer);
+            assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(restartedServer);
         }
     }
 
@@ -177,6 +179,119 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .build(),
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(401, revokedClientResponse.statusCode());
+    }
+
+    private void assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(
+            GenericContainer<?> server) throws Exception {
+        URI endpoint = URI.create("http://%s:%d/realms/master/access-requests/requests"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        String adminToken = accessToken(server, "admin-cli");
+
+        HttpResponse<Void> unauthenticatedResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(endpoint)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(401, unauthenticatedResponse.statusCode());
+        assertFalse(hasAccessRequestsApiAudience(adminToken));
+
+        HttpResponse<Void> wrongAudienceResponse = HttpClient.newHttpClient().send(
+                requestSubmission(endpoint, adminToken, UUID.randomUUID().toString(), "Need access to finance data."),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(401, wrongAudienceResponse.statusCode());
+
+        String clientId = "request-submitter-" + UUID.randomUUID();
+        createDirectAccessClient(server, adminToken, clientId);
+        addAccessRequestsAudience(server, adminToken, clientId);
+        String accessToken = accessToken(server, clientId);
+        String entitlementId = UUID.randomUUID().toString();
+        String justification = "I need read-only access to Finance Portal reports.";
+        insertPublishedEntitlement(entitlementId);
+
+        HttpResponse<String> createdResponse = HttpClient.newHttpClient().send(
+                requestSubmission(endpoint, accessToken, entitlementId, justification),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(201, createdResponse.statusCode());
+        String requestId = responseId(createdResponse.body());
+        assertTrue(createdResponse.body().contains("\"entitlementId\":\"" + entitlementId + "\""));
+        assertTrue(createdResponse.body().contains("\"decisionStatus\":\"PENDING\""));
+        assertTrue(createdResponse.body().contains("\"provisioningStatus\":\"NOT_STARTED\""));
+        assertPendingRequestAndCreatedAuditEvent(
+                requestId, entitlementId, subjectOf(accessToken), justification);
+
+        HttpResponse<Void> duplicateResponse = HttpClient.newHttpClient().send(
+                requestSubmission(endpoint, accessToken, entitlementId, justification),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(409, duplicateResponse.statusCode());
+
+        HttpResponse<Void> invalidPayloadResponse = HttpClient.newHttpClient().send(
+                requestSubmission(endpoint, accessToken, entitlementId, ""),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(400, invalidPayloadResponse.statusCode());
+    }
+
+    private HttpRequest requestSubmission(URI endpoint, String accessToken, String entitlementId, String justification) {
+        return HttpRequest.newBuilder(endpoint)
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("""
+                        {"entitlementId":"%s","justification":"%s"}
+                        """.formatted(entitlementId, justification)))
+                .build();
+    }
+
+    private String responseId(String response) {
+        var matcher = Pattern.compile("\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(response);
+        assertTrue(matcher.find(), "The created request response must contain an identifier.");
+        return matcher.group(1);
+    }
+
+    private String subjectOf(String accessToken) {
+        String[] segments = accessToken.split("\\.");
+        assertEquals(3, segments.length, "The access token must be a JWT.");
+        String payload = new String(Base64.getUrlDecoder().decode(segments[1]), StandardCharsets.UTF_8);
+        var matcher = Pattern.compile("\\\"sub\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(payload);
+        assertTrue(matcher.find(), "The access token payload must contain a subject.");
+        return matcher.group(1);
+    }
+
+    private void assertPendingRequestAndCreatedAuditEvent(
+            String requestId, String entitlementId, String requesterId, String justification) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var requestStatement = connection.prepareStatement("""
+                     select REQUESTER_ID, JUSTIFICATION, DECISION_STATUS, PROVISIONING_STATUS
+                       from AR_ACCESS_REQUEST
+                      where ID = ?
+                        and ENTITLEMENT_ID = ?
+                     """)) {
+            requestStatement.setString(1, requestId);
+            requestStatement.setString(2, entitlementId);
+            try (ResultSet result = requestStatement.executeQuery()) {
+                assertTrue(result.next(), "The submitted request must be persisted.");
+                assertEquals(requesterId, result.getString("REQUESTER_ID"));
+                assertEquals(justification, result.getString("JUSTIFICATION"));
+                assertEquals("PENDING", result.getString("DECISION_STATUS"));
+                assertEquals("NOT_STARTED", result.getString("PROVISIONING_STATUS"));
+                assertFalse(result.next(), "Exactly one submitted request must be persisted.");
+            }
+
+            try (var eventStatement = connection.prepareStatement("""
+                    select EVENT_TYPE, ACTOR_ID
+                      from AR_ACCESS_REQUEST_HISTORY
+                     where REQUEST_ID = ?
+                    """)) {
+                eventStatement.setString(1, requestId);
+                try (ResultSet result = eventStatement.executeQuery()) {
+                    assertTrue(result.next(), "Creating a request must persist its audit event.");
+                    assertEquals("REQUEST_CREATED", result.getString("EVENT_TYPE"));
+                    assertEquals(requesterId, result.getString("ACTOR_ID"));
+                    assertFalse(result.next(), "Exactly one creation audit event must be persisted.");
+                }
+            }
+        }
     }
 
     private String accessToken(GenericContainer<?> server, String clientId) throws Exception {
