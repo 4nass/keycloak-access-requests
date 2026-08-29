@@ -1,6 +1,7 @@
-package ch.anass.keycloak.accessrequests.spi.rest;
+package ch.anass.keycloak.accessrequests.spi.realm;
 
 import jakarta.ws.rs.OPTIONS;
+import jakarta.ws.rs.Path;
 import jakarta.ws.rs.core.Response;
 import org.keycloak.models.KeycloakSession;
 
@@ -15,7 +16,10 @@ public final class AccessRequestRealmResource {
     }
 
     @OPTIONS
-    public Response options() {
-        return Response.noContent().build();
+    @Path("catalog")
+    public Response catalogOptions() {
+        return Response.noContent()
+                .header("Allow", "GET, OPTIONS")
+                .build();
     }
 }

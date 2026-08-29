@@ -90,7 +90,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     }
 
     private void assertRealmEndpointExposed(GenericContainer<?> server) throws Exception {
-        URI endpoint = URI.create("http://%s:%d/realms/master/access-requests".formatted(
+        URI endpoint = URI.create("http://%s:%d/realms/master/access-requests/catalog".formatted(
                 server.getHost(), server.getMappedPort(8080)));
         HttpRequest request = HttpRequest.newBuilder(endpoint)
                 .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
@@ -100,6 +100,9 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 .send(request, HttpResponse.BodyHandlers.discarding());
 
         assertEquals(204, response.statusCode());
+        assertTrue(response.headers().firstValue("Allow")
+                .map(allowedMethods -> allowedMethods.contains("GET") && allowedMethods.contains("OPTIONS"))
+                .orElse(false));
     }
 
     private boolean tableExists(Connection connection, String tableName) throws SQLException {

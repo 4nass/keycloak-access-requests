@@ -1,6 +1,7 @@
-package ch.anass.keycloak.accessrequests.spi.rest;
+package ch.anass.keycloak.accessrequests.spi.realm;
 
 import jakarta.ws.rs.OPTIONS;
+import jakarta.ws.rs.Path;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.services.resource.RealmResourceProvider;
@@ -22,9 +23,9 @@ class AccessRequestRealmResourceProviderTest {
 
     private static final String FACTORY_ID = "access-requests";
     private static final String FACTORY_CLASS_NAME =
-            "ch.anass.keycloak.accessrequests.spi.rest.AccessRequestRealmResourceProviderFactory";
+            "ch.anass.keycloak.accessrequests.spi.realm.AccessRequestRealmResourceProviderFactory";
     private static final String RESOURCE_CLASS_NAME =
-            "ch.anass.keycloak.accessrequests.spi.rest.AccessRequestRealmResource";
+            "ch.anass.keycloak.accessrequests.spi.realm.AccessRequestRealmResource";
     private static final String SERVICE_CONFIGURATION =
             "META-INF/services/org.keycloak.services.resource.RealmResourceProviderFactory";
 
@@ -61,13 +62,14 @@ class AccessRequestRealmResourceProviderTest {
     }
 
     @Test
-    void exposesAnOptionsJaxRsHandlerAtTheRealmEndpointRoot() {
+    void exposesAnOptionsJaxRsHandlerForTheCatalogEndpoint() {
         var optionsHandler = Arrays.stream(AccessRequestRealmResource.class.getDeclaredMethods())
-                .filter(method -> method.getName().equals("options"))
+                .filter(method -> method.getName().equals("catalogOptions"))
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("The realm endpoint must expose an OPTIONS handler."));
+                .orElseThrow(() -> new AssertionError("The catalog endpoint must expose an OPTIONS handler."));
 
         assertTrue(optionsHandler.isAnnotationPresent(OPTIONS.class));
+        assertEquals("catalog", optionsHandler.getAnnotation(Path.class).value());
     }
 
     private RealmResourceProviderFactory providerFactory() {
