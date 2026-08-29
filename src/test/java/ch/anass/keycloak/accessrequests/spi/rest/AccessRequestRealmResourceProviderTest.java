@@ -1,16 +1,21 @@
 package ch.anass.keycloak.accessrequests.spi.rest;
 
+import jakarta.ws.rs.OPTIONS;
 import org.junit.jupiter.api.Test;
+import org.keycloak.models.KeycloakSession;
 import org.keycloak.services.resource.RealmResourceProvider;
 import org.keycloak.services.resource.RealmResourceProviderFactory;
 
 import java.io.IOException;
+import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.ServiceLoader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AccessRequestRealmResourceProviderTest {
@@ -44,10 +49,25 @@ class AccessRequestRealmResourceProviderTest {
 
     @Test
     void exposesTheAccessRequestJaxRsResource() {
-        RealmResourceProvider provider = providerFactory().create(null);
+        RealmResourceProvider provider = providerFactory().create(keycloakSession());
 
         assertNotNull(provider);
         assertEquals(RESOURCE_CLASS_NAME, provider.getResource().getClass().getName());
+    }
+
+    @Test
+    void rejectsRealmEndpointCreationWithoutAKeycloakSession() {
+        assertThrows(NullPointerException.class, () -> providerFactory().create(null));
+    }
+
+    @Test
+    void exposesAnOptionsJaxRsHandlerAtTheRealmEndpointRoot() {
+        var optionsHandler = Arrays.stream(AccessRequestRealmResource.class.getDeclaredMethods())
+                .filter(method -> method.getName().equals("options"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("The realm endpoint must expose an OPTIONS handler."));
+
+        assertTrue(optionsHandler.isAnnotationPresent(OPTIONS.class));
     }
 
     private RealmResourceProviderFactory providerFactory() {
@@ -58,6 +78,13 @@ class AccessRequestRealmResourceProviderTest {
                 .findFirst()
                 .orElseThrow(() -> new AssertionError(
                         "The access request realm endpoint must be registered through the Keycloak SPI."));
+    }
+
+    private KeycloakSession keycloakSession() {
+        return (KeycloakSession) Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class<?>[]{KeycloakSession.class},
+                (proxy, method, arguments) -> null);
     }
 
     private java.util.stream.Stream<String> registrations(java.net.URL serviceConfiguration) {

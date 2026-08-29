@@ -6,13 +6,16 @@ import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.services.resource.RealmResourceProvider;
 import org.keycloak.services.resource.RealmResourceProviderFactory;
 
+import java.util.Objects;
+
 public final class AccessRequestRealmResourceProviderFactory implements RealmResourceProviderFactory {
 
     static final String FACTORY_ID = "access-requests";
 
     @Override
     public RealmResourceProvider create(KeycloakSession session) {
-        return new AccessRequestRealmResourceProvider();
+        return new AccessRequestRealmResourceProvider(
+                Objects.requireNonNull(session, "session must not be null"));
     }
 
     @Override

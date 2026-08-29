@@ -11,6 +11,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.MountableFile;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -45,11 +49,13 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         try (GenericContainer<?> firstServer = keycloak()) {
             firstServer.start();
             assertProviderSchemaApplied();
+            assertRealmEndpointExposed(firstServer);
         }
 
         try (GenericContainer<?> restartedServer = keycloak()) {
             restartedServer.start();
             assertProviderSchemaApplied();
+            assertRealmEndpointExposed(restartedServer);
         }
     }
 
@@ -81,6 +87,19 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertTrue(tableExists(connection, "ar_access_request_history"));
             assertEquals(1, providerChangeSetCount(connection));
         }
+    }
+
+    private void assertRealmEndpointExposed(GenericContainer<?> server) throws Exception {
+        URI endpoint = URI.create("http://%s:%d/realms/master/access-requests".formatted(
+                server.getHost(), server.getMappedPort(8080)));
+        HttpRequest request = HttpRequest.newBuilder(endpoint)
+                .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+                .build();
+
+        HttpResponse<Void> response = HttpClient.newHttpClient()
+                .send(request, HttpResponse.BodyHandlers.discarding());
+
+        assertEquals(204, response.statusCode());
     }
 
     private boolean tableExists(Connection connection, String tableName) throws SQLException {
