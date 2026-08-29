@@ -2,6 +2,8 @@ package ch.anass.keycloak.accessrequests.persistence.jpa;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
+import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
+import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
@@ -9,6 +11,7 @@ import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
 import ch.anass.keycloak.accessrequests.core.port.ApprovalAuthorizer;
 import ch.anass.keycloak.accessrequests.core.port.DuplicatePendingRequestException;
+import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
 import ch.anass.keycloak.accessrequests.core.service.RequestPolicy;
 import ch.anass.keycloak.accessrequests.core.service.RequestService;
 import jakarta.persistence.EntityManager;
@@ -254,8 +257,10 @@ class JpaAccessRequestRepositoryTest {
                 RiskLevel.LOW,
                 "access-request-approver",
                 Instant.EPOCH).publish(Instant.EPOCH);
-        return new RequestService(
-                (realmId, entitlementId) -> Optional.of(Entitlement.rehydrate(
+        EntitlementRepository entitlementRepository = new EntitlementRepository() {
+            @Override
+            public Optional<Entitlement> findById(String realmId, String entitlementId) {
+                return Optional.of(Entitlement.rehydrate(
                         entitlement.id(),
                         realmId,
                         entitlement.resourceType(),
@@ -267,7 +272,16 @@ class JpaAccessRequestRepositoryTest {
                         entitlement.requestable(),
                         entitlement.createdAt(),
                         entitlement.updatedAt(),
-                        entitlement.version())),
+                        entitlement.version()));
+            }
+
+            @Override
+            public CatalogPage findRequestable(CatalogQuery query) {
+                throw new UnsupportedOperationException("Catalog reads are not used by this test double.");
+            }
+        };
+        return new RequestService(
+                entitlementRepository,
                 new JpaAccessRequestRepository(entityManager),
                 (realmId, requesterId, requestedEntitlement) -> false,
                 (realmId, requesterId) -> true,

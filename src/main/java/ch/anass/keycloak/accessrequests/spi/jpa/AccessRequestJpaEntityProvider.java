@@ -2,6 +2,7 @@ package ch.anass.keycloak.accessrequests.spi.jpa;
 
 import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestEventEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.EntitlementEntity;
 import org.keycloak.Config;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProvider;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProviderFactory;
@@ -14,7 +15,10 @@ public final class AccessRequestJpaEntityProvider implements JpaEntityProvider, 
 
     private static final String FACTORY_ID = "access-requests";
     private static final String CHANGELOG_LOCATION = "META-INF/access-requests-changelog.xml";
-    private static final List<Class<?>> ENTITIES = List.of(AccessRequestEntity.class, AccessRequestEventEntity.class);
+    private static final List<Class<?>> ENTITIES = List.of(
+            AccessRequestEntity.class,
+            AccessRequestEventEntity.class,
+            EntitlementEntity.class);
 
     @Override
     public JpaEntityProvider create(KeycloakSession session) {

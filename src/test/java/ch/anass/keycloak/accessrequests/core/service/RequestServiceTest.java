@@ -3,6 +3,8 @@ package ch.anass.keycloak.accessrequests.core.service;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType;
+import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
+import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidRequestStateException;
@@ -619,6 +621,11 @@ class RequestServiceTest {
         @Override
         public Optional<Entitlement> findById(String realmId, String entitlementId) {
             return Optional.ofNullable(values.get(key(realmId, entitlementId)));
+        }
+
+        @Override
+        public CatalogPage findRequestable(CatalogQuery query) {
+            throw new UnsupportedOperationException("Catalog reads are not used by this test double.");
         }
 
         private static String key(String realmId, String entitlementId) {

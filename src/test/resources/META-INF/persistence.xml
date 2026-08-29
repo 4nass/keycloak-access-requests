@@ -7,6 +7,7 @@
         <provider>org.hibernate.jpa.HibernatePersistenceProvider</provider>
         <class>ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestEntity</class>
         <class>ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestEventEntity</class>
+        <class>ch.anass.keycloak.accessrequests.persistence.jpa.EntitlementEntity</class>
         <properties>
             <property name="jakarta.persistence.jdbc.driver" value="org.h2.Driver"/>
             <property name="jakarta.persistence.jdbc.url" value="jdbc:h2:mem:access_requests;DB_CLOSE_DELAY=-1"/>

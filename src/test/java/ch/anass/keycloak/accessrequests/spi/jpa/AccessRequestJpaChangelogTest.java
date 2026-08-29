@@ -26,7 +26,7 @@ class AccessRequestJpaChangelogTest {
     private static final String CHANGELOG_LOCATION = "META-INF/access-requests-changelog.xml";
 
     @Test
-    void createsTheAccessRequestAndHistoryTablesIdempotently() throws Exception {
+    void createsTheAccessRequestHistoryAndEntitlementTablesIdempotently() throws Exception {
         String databaseUrl = databaseUrl();
 
         applyChangelog(databaseUrl);
@@ -63,6 +63,21 @@ class AccessRequestJpaChangelogTest {
                             "COMMENT",
                             "METADATA"),
                     columnsOf(connection, "AR_ACCESS_REQUEST_HISTORY"));
+            assertEquals(
+                    Set.of(
+                            "ID",
+                            "REALM_ID",
+                            "RESOURCE_TYPE",
+                            "RESOURCE_ID",
+                            "DISPLAY_NAME",
+                            "DESCRIPTION",
+                            "RISK_LEVEL",
+                            "APPROVER_ROLE_ID",
+                            "REQUESTABLE",
+                            "CREATED_TIMESTAMP",
+                            "UPDATED_TIMESTAMP",
+                            "VERSION"),
+                    columnsOf(connection, "AR_ENTITLEMENT"));
         }
     }
 

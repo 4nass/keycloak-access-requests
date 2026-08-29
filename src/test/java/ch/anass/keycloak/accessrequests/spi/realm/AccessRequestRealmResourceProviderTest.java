@@ -1,7 +1,10 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.OPTIONS;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.services.resource.RealmResourceProvider;
@@ -70,6 +73,18 @@ class AccessRequestRealmResourceProviderTest {
 
         assertTrue(optionsHandler.isAnnotationPresent(OPTIONS.class));
         assertEquals("catalog", optionsHandler.getAnnotation(Path.class).value());
+    }
+
+    @Test
+    void exposesAJsonGetHandlerForTheCatalogEndpoint() {
+        var catalogHandler = Arrays.stream(AccessRequestRealmResource.class.getDeclaredMethods())
+                .filter(method -> method.getName().equals("catalog"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("The catalog endpoint must expose a GET handler."));
+
+        assertTrue(catalogHandler.isAnnotationPresent(GET.class));
+        assertEquals("catalog", catalogHandler.getAnnotation(Path.class).value());
+        assertEquals(MediaType.APPLICATION_JSON, catalogHandler.getAnnotation(Produces.class).value()[0]);
     }
 
     private RealmResourceProviderFactory providerFactory() {
