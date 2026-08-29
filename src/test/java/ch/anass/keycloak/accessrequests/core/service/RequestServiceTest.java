@@ -7,6 +7,7 @@ import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidRequestStateException;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
@@ -17,6 +18,7 @@ import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
 import ch.anass.keycloak.accessrequests.core.port.UserStatusReader;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -91,7 +93,7 @@ class RequestServiceTest {
 
     @Test
     void rejectsEntitlementThatIsNotRequestable() {
-        entitlements.add(financeEntitlement().asNotRequestable());
+        entitlements.add(financeEntitlement().unpublish(Instant.EPOCH.plusSeconds(1)));
 
         assertThrows(EntitlementNotRequestableException.class, () -> service.create(
                 "realm-1",
@@ -104,7 +106,8 @@ class RequestServiceTest {
 
     @Test
     void doesNotExposeEntitlementFromAnotherRealm() {
-        entitlements.add(financeEntitlement().inRealm("realm-2"));
+        entitlements.add(entitlement("entitlement-1", "realm-2", ResourceType.REALM_ROLE, "finance-reader",
+                "Finance Reader"));
 
         assertThrows(EntitlementNotFoundException.class, () -> service.create(
                 "realm-1",
@@ -212,8 +215,10 @@ class RequestServiceTest {
 
     @Test
     void acceptsJustificationAtConfiguredBoundaries() {
-        entitlements.add(financeEntitlement().withId("entitlement-min"));
-        entitlements.add(financeEntitlement().withId("entitlement-max"));
+        entitlements.add(entitlement("entitlement-min", "realm-1", ResourceType.REALM_ROLE, "finance-reader",
+                "Finance Reader"));
+        entitlements.add(entitlement("entitlement-max", "realm-1", ResourceType.REALM_ROLE, "finance-reader",
+                "Finance Reader"));
 
         AccessRequest minimum = service.create(
                 "realm-1",
@@ -234,13 +239,12 @@ class RequestServiceTest {
     void acceptsAllSupportedResourceTypes() {
         for (ResourceType resourceType : ResourceType.values()) {
             String entitlementId = "entitlement-" + resourceType.name().toLowerCase();
-            entitlements.add(Entitlement.create(
+            entitlements.add(entitlement(
                     entitlementId,
                     "realm-1",
                     resourceType,
                     "resource-" + resourceType.name().toLowerCase(),
-                    resourceType.name() + " display name",
-                    true));
+                    resourceType.name() + " display name"));
 
             AccessRequest created = service.create(
                     "realm-1",
@@ -357,7 +361,7 @@ class RequestServiceTest {
                 "requester-1",
                 "entitlement-1",
                 "Access is needed for the finance project.");
-        entitlements.add(financeEntitlement().asNotRequestable());
+        entitlements.add(financeEntitlement().unpublish(Instant.EPOCH.plusSeconds(1)));
 
         assertThrows(EntitlementNotRequestableException.class,
                 () -> service.approve("realm-1", request.id(), "approver-1", "Approved."));
@@ -563,13 +567,27 @@ class RequestServiceTest {
     }
 
     private static Entitlement financeEntitlement() {
+        return entitlement("entitlement-1", "realm-1", ResourceType.REALM_ROLE, "finance-reader",
+                "Finance Reader");
+    }
+
+    private static Entitlement entitlement(
+            String id,
+            String realmId,
+            ResourceType resourceType,
+            String resourceId,
+            String displayName) {
         return Entitlement.create(
-                "entitlement-1",
-                "realm-1",
-                ResourceType.REALM_ROLE,
-                "finance-reader",
-                "Finance Reader",
-                true);
+                        id,
+                        realmId,
+                        resourceType,
+                        resourceId,
+                        displayName,
+                        "A requestable Keycloak resource.",
+                        RiskLevel.LOW,
+                        "access-request-approver",
+                        Instant.EPOCH)
+                .publish(Instant.EPOCH);
     }
 
     private static final class InMemoryUserStatusReader implements UserStatusReader {

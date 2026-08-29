@@ -5,6 +5,7 @@ import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
 import ch.anass.keycloak.accessrequests.core.port.ApprovalAuthorizer;
 import ch.anass.keycloak.accessrequests.core.port.DuplicatePendingRequestException;
@@ -249,9 +250,24 @@ class JpaAccessRequestRepositoryTest {
                 ResourceType.REALM_ROLE,
                 "finance-reader",
                 "Finance Reader",
-                true);
+                "Read-only access to the Finance Portal.",
+                RiskLevel.LOW,
+                "access-request-approver",
+                Instant.EPOCH).publish(Instant.EPOCH);
         return new RequestService(
-                (realmId, entitlementId) -> Optional.of(entitlement.inRealm(realmId)),
+                (realmId, entitlementId) -> Optional.of(Entitlement.rehydrate(
+                        entitlement.id(),
+                        realmId,
+                        entitlement.resourceType(),
+                        entitlement.resourceId(),
+                        entitlement.displayName(),
+                        entitlement.description(),
+                        entitlement.riskLevel(),
+                        entitlement.approverRoleId(),
+                        entitlement.requestable(),
+                        entitlement.createdAt(),
+                        entitlement.updatedAt(),
+                        entitlement.version())),
                 new JpaAccessRequestRepository(entityManager),
                 (realmId, requesterId, requestedEntitlement) -> false,
                 (realmId, requesterId) -> true,
