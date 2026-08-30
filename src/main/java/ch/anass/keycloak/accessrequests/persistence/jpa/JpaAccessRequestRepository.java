@@ -10,6 +10,8 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceException;
 import org.hibernate.exception.ConstraintViolationException;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -32,24 +34,14 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
 
     @Override
     public AccessRequestPage findByRequester(AccessRequestQuery query) {
-        long total = entityManager.createQuery("""
-                        select count(entity)
-                          from AccessRequestEntity entity
-                         where entity.realmId = :realmId
-                           and entity.requesterId = :requesterId
-                        """, Long.class)
-                .setParameter("realmId", query.realmId())
-                .setParameter("requesterId", query.requesterId())
+        RequesterQueryDefinition definition = requesterQueryDefinition(query);
+        long total = bind(entityManager.createQuery(
+                        "select count(entity) " + definition.fromAndWhere(), Long.class), definition, query)
                 .getSingleResult();
-        var items = entityManager.createQuery("""
-                        select entity
-                          from AccessRequestEntity entity
-                         where entity.realmId = :realmId
-                           and entity.requesterId = :requesterId
-                         order by entity.createdTimestamp desc, entity.id asc
-                        """, AccessRequestEntity.class)
-                .setParameter("realmId", query.realmId())
-                .setParameter("requesterId", query.requesterId())
+        var items = bind(entityManager.createQuery(
+                        "select entity " + definition.fromAndWhere()
+                                + " order by entity.createdTimestamp desc, entity.id asc",
+                        AccessRequestEntity.class), definition, query)
                 .setFirstResult(query.offset())
                 .setMaxResults(query.size())
                 .getResultList()
@@ -57,6 +49,63 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
                 .map(AccessRequestEntity::toDomain)
                 .toList();
         return new AccessRequestPage(items, query.page(), query.size(), total);
+    }
+
+    private static <T> jakarta.persistence.TypedQuery<T> bind(
+            jakarta.persistence.TypedQuery<T> typedQuery,
+            RequesterQueryDefinition definition,
+            AccessRequestQuery query) {
+        typedQuery.setParameter("realmId", query.realmId());
+        typedQuery.setParameter("requesterId", query.requesterId());
+        if (definition.hasDecisionStatus()) {
+            typedQuery.setParameter("decisionStatus", query.decisionStatus());
+        }
+        if (definition.hasResourceType()) {
+            typedQuery.setParameter("resourceType", query.resourceType());
+        }
+        if (definition.hasFrom()) {
+            typedQuery.setParameter("from", query.from().toEpochMilli());
+        }
+        if (definition.hasTo()) {
+            typedQuery.setParameter("to", query.to().toEpochMilli());
+        }
+        return typedQuery;
+    }
+
+    private static RequesterQueryDefinition requesterQueryDefinition(AccessRequestQuery query) {
+        List<String> predicates = new ArrayList<>(List.of(
+                "entity.realmId = :realmId",
+                "entity.requesterId = :requesterId"));
+        boolean hasDecisionStatus = query.decisionStatus() != null;
+        if (hasDecisionStatus) {
+            predicates.add("entity.decisionStatus = :decisionStatus");
+        }
+        boolean hasResourceType = query.resourceType() != null;
+        if (hasResourceType) {
+            predicates.add("entity.resourceType = :resourceType");
+        }
+        boolean hasFrom = query.from() != null;
+        if (hasFrom) {
+            predicates.add("entity.createdTimestamp >= :from");
+        }
+        boolean hasTo = query.to() != null;
+        if (hasTo) {
+            predicates.add("entity.createdTimestamp <= :to");
+        }
+        return new RequesterQueryDefinition(
+                "from AccessRequestEntity entity where " + String.join(" and ", predicates),
+                hasDecisionStatus,
+                hasResourceType,
+                hasFrom,
+                hasTo);
+    }
+
+    private record RequesterQueryDefinition(
+            String fromAndWhere,
+            boolean hasDecisionStatus,
+            boolean hasResourceType,
+            boolean hasFrom,
+            boolean hasTo) {
     }
 
     @Override

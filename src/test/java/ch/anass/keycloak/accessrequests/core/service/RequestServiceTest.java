@@ -96,7 +96,8 @@ class RequestServiceTest {
         requests.add(ownedRequest);
         requests.add(otherRequesterRequest);
 
-        AccessRequestPage page = service.findByRequester("realm-1", "requester-1", 0, 20);
+        AccessRequestPage page = service.findByRequester(
+                new AccessRequestQuery("realm-1", "requester-1", 0, 20));
 
         assertEquals(List.of(ownedRequest.id()), page.items().stream().map(AccessRequest::id).toList());
         assertEquals(0, page.page());

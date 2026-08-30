@@ -124,4 +124,13 @@
                 columnNames="REALM_ID, RESOURCE_TYPE, RESOURCE_ID"
                 constraintName="UK_ENTITLEMENT_RESOURCE"/>
     </changeSet>
+
+    <changeSet id="3" author="4nass">
+        <createIndex indexName="IDX_ACCESS_REQUEST_REQUESTER_CREATED" tableName="AR_ACCESS_REQUEST">
+            <column name="REALM_ID"/>
+            <column name="REQUESTER_ID"/>
+            <column name="CREATED_TIMESTAMP" descending="true"/>
+            <column name="ID"/>
+        </createIndex>
+    </changeSet>
 </databaseChangeLog>

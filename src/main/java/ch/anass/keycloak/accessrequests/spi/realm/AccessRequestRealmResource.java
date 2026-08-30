@@ -5,6 +5,7 @@ import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogResult;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidRequestStateException;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
@@ -29,7 +30,6 @@ import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ClientErrorException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
-import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.NotAuthorizedException;
@@ -49,6 +49,8 @@ import org.keycloak.models.UserModel;
 import org.keycloak.services.managers.AppAuthManager;
 import org.keycloak.services.managers.AuthenticationManager;
 
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Objects;
 
@@ -122,23 +124,36 @@ public final class AccessRequestRealmResource {
     }
 
     @GET
-    @Path("requests")
+    @Path("mine")
     @Produces(MediaType.APPLICATION_JSON)
-    public RequestListResponse listRequests(
+    public Response listRequests(
+            @QueryParam("status") String decisionStatus,
+            @QueryParam("resourceType") String resourceType,
+            @QueryParam("from") String from,
+            @QueryParam("to") String to,
             @DefaultValue("0") @QueryParam("page") int page,
             @DefaultValue("20") @QueryParam("size") int size) {
         AuthenticatedRequest authenticatedRequest = authenticate();
         try {
             AccessRequestPage requestPage = requestService(authenticatedRequest).findByRequester(
-                    authenticatedRequest.realm().getId(), authenticatedRequest.user().getId(), page, size);
-            return RequestListResponse.from(requestPage);
+                    new AccessRequestQuery(
+                            authenticatedRequest.realm().getId(),
+                            authenticatedRequest.user().getId(),
+                            parseDecisionStatus(decisionStatus),
+                            parseResourceType(resourceType),
+                            parseInstant(from, "from"),
+                            parseInstant(to, "to"),
+                            page,
+                            size));
+            return Response.ok(RequestListResponse.from(requestPage)).build();
         } catch (IllegalArgumentException exception) {
-            throw new BadRequestException(exception.getMessage(), exception);
+            return error(Response.Status.BAD_REQUEST, "INVALID_REQUEST_QUERY", exception.getMessage(), null);
         }
     }
 
-    @DELETE
-    @Path("requests/{requestId}")
+    @POST
+    @Path("{requestId}/cancel")
+    @Produces(MediaType.APPLICATION_JSON)
     public Response cancelRequest(@PathParam("requestId") String requestId) {
         AuthenticatedRequest authenticatedRequest = authenticate();
         try {
@@ -146,11 +161,13 @@ public final class AccessRequestRealmResource {
                     authenticatedRequest.realm().getId(), requestId, authenticatedRequest.user().getId());
             return Response.noContent().build();
         } catch (RequestNotFoundException exception) {
-            throw new NotFoundException(exception.getMessage(), exception);
+            return error(Response.Status.NOT_FOUND, "REQUEST_NOT_FOUND", exception.getMessage(), requestId);
         } catch (UnauthorizedRequestActionException exception) {
-            throw new ForbiddenException(exception.getMessage(), exception);
-        } catch (InvalidRequestStateException | ConcurrentRequestModificationException exception) {
-            throw new ClientErrorException(Response.Status.CONFLICT, exception);
+            return error(Response.Status.FORBIDDEN, "REQUEST_CANCELLATION_FORBIDDEN", exception.getMessage(), requestId);
+        } catch (InvalidRequestStateException exception) {
+            return error(Response.Status.CONFLICT, "INVALID_REQUEST_STATE", exception.getMessage(), requestId);
+        } catch (ConcurrentRequestModificationException exception) {
+            return error(Response.Status.CONFLICT, "CONCURRENT_MODIFICATION", exception.getMessage(), requestId);
         }
     }
 
@@ -206,6 +223,43 @@ public final class AccessRequestRealmResource {
             throw new BadRequestException("entitlementId and justification must be provided");
         }
         return submission;
+    }
+
+    private static DecisionStatus parseDecisionStatus(String value) {
+        return parseEnum(DecisionStatus.class, value, "status");
+    }
+
+    private static ResourceType parseResourceType(String value) {
+        return parseEnum(ResourceType.class, value, "resourceType");
+    }
+
+    private static <T extends Enum<T>> T parseEnum(Class<T> enumType, String value, String parameter) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Enum.valueOf(enumType, value);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException(parameter + " is invalid", exception);
+        }
+    }
+
+    private static Instant parseInstant(String value, String parameter) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (DateTimeParseException exception) {
+            throw new IllegalArgumentException(parameter + " must be an ISO-8601 instant", exception);
+        }
+    }
+
+    private static Response error(Response.Status status, String code, String message, String requestId) {
+        return Response.status(status)
+                .type(MediaType.APPLICATION_JSON)
+                .entity(new ErrorResponse(code, message, requestId))
+                .build();
     }
 
     public record CatalogResponse(List<CatalogItemResponse> items, int page, int size, long total) {
@@ -275,7 +329,8 @@ public final class AccessRequestRealmResource {
             ResourceType resourceType,
             String resourceName,
             DecisionStatus decisionStatus,
-            ProvisioningStatus provisioningStatus) {
+            ProvisioningStatus provisioningStatus,
+            String createdAt) {
 
         private static RequestSummaryResponse from(AccessRequest request) {
             return new RequestSummaryResponse(
@@ -284,8 +339,12 @@ public final class AccessRequestRealmResource {
                     request.resourceType(),
                     request.resourceNameSnapshot(),
                     request.decisionStatus(),
-                    request.provisioningStatus());
+                    request.provisioningStatus(),
+                    request.createdAt().toString());
         }
+    }
+
+    public record ErrorResponse(String code, String message, String requestId) {
     }
 
     private record AuthenticatedRequest(RealmModel realm, UserModel user) {

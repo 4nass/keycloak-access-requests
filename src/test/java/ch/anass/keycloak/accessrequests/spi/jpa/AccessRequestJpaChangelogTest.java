@@ -20,6 +20,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AccessRequestJpaChangelogTest {
 
@@ -78,6 +79,8 @@ class AccessRequestJpaChangelogTest {
                             "UPDATED_TIMESTAMP",
                             "VERSION"),
                     columnsOf(connection, "AR_ENTITLEMENT"));
+            assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
+                    .contains("IDX_ACCESS_REQUEST_REQUESTER_CREATED"));
         }
     }
 
@@ -131,6 +134,19 @@ class AccessRequestJpaChangelogTest {
             }
         }
         return columnNames;
+    }
+
+    private Set<String> indexNamesOf(Connection connection, String tableName) throws SQLException {
+        Set<String> indexNames = new HashSet<>();
+        try (ResultSet indexes = connection.getMetaData().getIndexInfo(null, null, tableName, false, false)) {
+            while (indexes.next()) {
+                String indexName = indexes.getString("INDEX_NAME");
+                if (indexName != null) {
+                    indexNames.add(indexName);
+                }
+            }
+        }
+        return indexNames;
     }
 
     private void insertPendingRequest(Connection connection, String requestId) throws SQLException {

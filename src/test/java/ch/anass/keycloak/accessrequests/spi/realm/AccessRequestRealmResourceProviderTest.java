@@ -1,7 +1,6 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
 import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.OPTIONS;
 import jakarta.ws.rs.Path;
@@ -111,19 +110,20 @@ class AccessRequestRealmResourceProviderTest {
                 .orElseThrow(() -> new AssertionError("The requester request list must expose a GET handler."));
 
         assertTrue(listHandler.isAnnotationPresent(GET.class));
-        assertEquals("requests", listHandler.getAnnotation(Path.class).value());
+        assertEquals("mine", listHandler.getAnnotation(Path.class).value());
         assertEquals(MediaType.APPLICATION_JSON, listHandler.getAnnotation(Produces.class).value()[0]);
     }
 
     @Test
-    void exposesADeleteHandlerForRequesterCancellation() {
+    void exposesAJsonPostHandlerForRequesterCancellation() {
         var cancelHandler = Arrays.stream(AccessRequestRealmResource.class.getDeclaredMethods())
                 .filter(method -> method.getName().equals("cancelRequest"))
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("The request cancellation endpoint must expose a DELETE handler."));
+                .orElseThrow(() -> new AssertionError("The request cancellation endpoint must expose a POST handler."));
 
-        assertTrue(cancelHandler.isAnnotationPresent(DELETE.class));
-        assertEquals("requests/{requestId}", cancelHandler.getAnnotation(Path.class).value());
+        assertTrue(cancelHandler.isAnnotationPresent(POST.class));
+        assertEquals("{requestId}/cancel", cancelHandler.getAnnotation(Path.class).value());
+        assertEquals(MediaType.APPLICATION_JSON, cancelHandler.getAnnotation(Produces.class).value()[0]);
     }
 
     private RealmResourceProviderFactory providerFactory() {

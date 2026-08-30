@@ -127,8 +127,8 @@ public final class RequestService {
         });
     }
 
-    public AccessRequestPage findByRequester(String realmId, String requesterId, int page, int size) {
-        return accessRequestRepository.findByRequester(new AccessRequestQuery(realmId, requesterId, page, size));
+    public AccessRequestPage findByRequester(AccessRequestQuery query) {
+        return accessRequestRepository.findByRequester(query);
     }
 
     public AccessRequest approve(

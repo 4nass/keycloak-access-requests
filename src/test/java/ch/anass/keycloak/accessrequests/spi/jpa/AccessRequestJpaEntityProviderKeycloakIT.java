@@ -99,7 +99,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertTrue(tableExists(connection, "ar_access_request"));
             assertTrue(tableExists(connection, "ar_access_request_history"));
             assertTrue(tableExists(connection, "ar_entitlement"));
-            assertEquals(2, providerChangeSetCount(connection));
+            assertEquals(3, providerChangeSetCount(connection));
         }
     }
 
@@ -184,9 +184,22 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     }
 
     private void assertRequesterCanListAndCancelOnlyOwnRequests(GenericContainer<?> server) throws Exception {
-        URI requestsEndpoint = URI.create("http://%s:%d/realms/master/access-requests/requests"
+        URI accessRequestsEndpoint = URI.create("http://%s:%d/realms/master/access-requests"
                 .formatted(server.getHost(), server.getMappedPort(8080)));
+        URI requestsEndpoint = URI.create(accessRequestsEndpoint + "/requests");
+        URI myRequestsEndpoint = URI.create(accessRequestsEndpoint + "/mine");
         String adminToken = accessToken(server, "admin-cli");
+        HttpResponse<Void> unauthenticatedListResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(myRequestsEndpoint).GET().build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(401, unauthenticatedListResponse.statusCode());
+        HttpResponse<Void> wrongAudienceListResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(myRequestsEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(401, wrongAudienceListResponse.statusCode());
         String clientId = "request-manager-" + UUID.randomUUID();
         createDirectAccessClient(server, adminToken, clientId);
         addAccessRequestsAudience(server, adminToken, clientId);
@@ -219,7 +232,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         String secondRequestId = responseId(secondCreatedResponse.body());
 
         HttpResponse<String> firstPageResponse = HttpClient.newHttpClient().send(
-                HttpRequest.newBuilder(URI.create(requestsEndpoint + "?page=0&size=1"))
+                HttpRequest.newBuilder(URI.create(myRequestsEndpoint + "?page=0&size=1"))
                         .header("Authorization", "Bearer " + requesterToken)
                         .GET()
                         .build(),
@@ -228,7 +241,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertRequestPage(firstPageResponse.body(), 0, 1, 2, firstRequestId, secondRequestId);
 
         HttpResponse<String> secondPageResponse = HttpClient.newHttpClient().send(
-                HttpRequest.newBuilder(URI.create(requestsEndpoint + "?page=1&size=1"))
+                HttpRequest.newBuilder(URI.create(myRequestsEndpoint + "?page=1&size=1"))
                         .header("Authorization", "Bearer " + requesterToken)
                         .GET()
                         .build(),
@@ -237,20 +250,66 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertRequestPage(secondPageResponse.body(), 1, 1, 2, firstRequestId, secondRequestId);
         assertFalse(firstPageResponse.body().equals(secondPageResponse.body()));
 
-        HttpResponse<Void> invalidPaginationResponse = HttpClient.newHttpClient().send(
-                HttpRequest.newBuilder(URI.create(requestsEndpoint + "?page=" + Integer.MAX_VALUE + "&size=2"))
+        HttpResponse<String> invalidPaginationResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(myRequestsEndpoint + "?page=" + Integer.MAX_VALUE + "&size=2"))
                         .header("Authorization", "Bearer " + requesterToken)
                         .GET()
                         .build(),
-                HttpResponse.BodyHandlers.discarding());
+                HttpResponse.BodyHandlers.ofString());
         assertEquals(400, invalidPaginationResponse.statusCode());
+        assertError(invalidPaginationResponse.body(), "INVALID_REQUEST_QUERY", null);
+
+        HttpResponse<String> excessiveOffsetResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(myRequestsEndpoint + "?page=101&size=100"))
+                        .header("Authorization", "Bearer " + requesterToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, excessiveOffsetResponse.statusCode());
+        assertError(excessiveOffsetResponse.body(), "INVALID_REQUEST_QUERY", null);
+
+        HttpResponse<String> invalidFilterResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(myRequestsEndpoint + "?status=UNKNOWN"))
+                        .header("Authorization", "Bearer " + requesterToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, invalidFilterResponse.statusCode());
+        assertError(invalidFilterResponse.body(), "INVALID_REQUEST_QUERY", null);
+
+        HttpResponse<String> resourceTypeFilterResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(myRequestsEndpoint + "?resourceType=GROUP"))
+                        .header("Authorization", "Bearer " + requesterToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, resourceTypeFilterResponse.statusCode());
+        assertTrue(resourceTypeFilterResponse.body().contains("\"total\":0"));
+
+        HttpResponse<String> fromFilterResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(myRequestsEndpoint + "?from=2100-01-01T00:00:00Z"))
+                        .header("Authorization", "Bearer " + requesterToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, fromFilterResponse.statusCode());
+        assertTrue(fromFilterResponse.body().contains("\"total\":0"));
+
+        HttpResponse<String> toFilterResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(myRequestsEndpoint + "?to=1970-01-01T00:00:00Z"))
+                        .header("Authorization", "Bearer " + requesterToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, toFilterResponse.statusCode());
+        assertTrue(toFilterResponse.body().contains("\"total\":0"));
 
         String otherUsername = "other-requester-" + UUID.randomUUID();
         String otherPassword = "other-requester-password";
         createEnabledUser(server, adminToken, otherUsername, otherPassword);
         String otherRequesterToken = accessToken(server, clientId, otherUsername, otherPassword);
         HttpResponse<String> otherRequesterListResponse = HttpClient.newHttpClient().send(
-                HttpRequest.newBuilder(requestsEndpoint)
+                HttpRequest.newBuilder(myRequestsEndpoint)
                         .header("Authorization", "Bearer " + otherRequesterToken)
                         .GET()
                         .build(),
@@ -260,32 +319,47 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertFalse(otherRequesterListResponse.body().contains(firstRequestId));
         assertFalse(otherRequesterListResponse.body().contains(secondRequestId));
 
-        HttpResponse<Void> unauthorizedCancellationResponse = HttpClient.newHttpClient().send(
-                requestCancellation(requestsEndpoint, otherRequesterToken, firstRequestId),
-                HttpResponse.BodyHandlers.discarding());
+        HttpResponse<String> unauthorizedCancellationResponse = HttpClient.newHttpClient().send(
+                requestCancellation(accessRequestsEndpoint, otherRequesterToken, firstRequestId),
+                HttpResponse.BodyHandlers.ofString());
         assertEquals(403, unauthorizedCancellationResponse.statusCode());
+        assertError(unauthorizedCancellationResponse.body(), "REQUEST_CANCELLATION_FORBIDDEN", firstRequestId);
 
-        HttpResponse<Void> unknownRequestResponse = HttpClient.newHttpClient().send(
-                requestCancellation(requestsEndpoint, requesterToken, UUID.randomUUID().toString()),
-                HttpResponse.BodyHandlers.discarding());
+        String unknownRequestId = UUID.randomUUID().toString();
+        HttpResponse<String> unknownRequestResponse = HttpClient.newHttpClient().send(
+                requestCancellation(accessRequestsEndpoint, requesterToken, unknownRequestId),
+                HttpResponse.BodyHandlers.ofString());
         assertEquals(404, unknownRequestResponse.statusCode());
+        assertError(unknownRequestResponse.body(), "REQUEST_NOT_FOUND", unknownRequestId);
 
         String requestFromAnotherRealm = UUID.randomUUID().toString();
         insertPendingRequestFromAnotherRealm(requestFromAnotherRealm);
-        HttpResponse<Void> otherRealmRequestResponse = HttpClient.newHttpClient().send(
-                requestCancellation(requestsEndpoint, requesterToken, requestFromAnotherRealm),
-                HttpResponse.BodyHandlers.discarding());
+        HttpResponse<String> otherRealmRequestResponse = HttpClient.newHttpClient().send(
+                requestCancellation(accessRequestsEndpoint, requesterToken, requestFromAnotherRealm),
+                HttpResponse.BodyHandlers.ofString());
         assertEquals(404, otherRealmRequestResponse.statusCode());
+        assertError(otherRealmRequestResponse.body(), "REQUEST_NOT_FOUND", requestFromAnotherRealm);
 
         HttpResponse<Void> canceledResponse = HttpClient.newHttpClient().send(
-                requestCancellation(requestsEndpoint, requesterToken, firstRequestId),
+                requestCancellation(accessRequestsEndpoint, requesterToken, firstRequestId),
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(204, canceledResponse.statusCode());
 
-        HttpResponse<Void> terminalRequestResponse = HttpClient.newHttpClient().send(
-                requestCancellation(requestsEndpoint, requesterToken, firstRequestId),
-                HttpResponse.BodyHandlers.discarding());
+        HttpResponse<String> canceledRequestsResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(myRequestsEndpoint + "?status=CANCELED"))
+                        .header("Authorization", "Bearer " + requesterToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, canceledRequestsResponse.statusCode());
+        assertTrue(canceledRequestsResponse.body().contains(firstRequestId));
+        assertFalse(canceledRequestsResponse.body().contains(secondRequestId));
+
+        HttpResponse<String> terminalRequestResponse = HttpClient.newHttpClient().send(
+                requestCancellation(accessRequestsEndpoint, requesterToken, firstRequestId),
+                HttpResponse.BodyHandlers.ofString());
         assertEquals(409, terminalRequestResponse.statusCode());
+        assertError(terminalRequestResponse.body(), "INVALID_REQUEST_STATE", firstRequestId);
     }
 
     private void assertRequestPage(
@@ -295,12 +369,22 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertTrue(body.contains("\"total\":" + total));
         int requestCount = (body.contains(firstRequestId) ? 1 : 0) + (body.contains(secondRequestId) ? 1 : 0);
         assertEquals(1, requestCount, "A page of size one must contain exactly one request.");
+        var createdAtMatcher = Pattern.compile("\\\"createdAt\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(body);
+        assertTrue(createdAtMatcher.find(), "Each request summary must expose its creation timestamp.");
+        Instant.parse(createdAtMatcher.group(1));
     }
 
-    private HttpRequest requestCancellation(URI requestsEndpoint, String accessToken, String requestId) {
-        return HttpRequest.newBuilder(URI.create(requestsEndpoint + "/" + requestId))
+    private void assertError(String body, String code, String requestId) {
+        assertTrue(body.contains("\"code\":\"" + code + "\""));
+        if (requestId != null) {
+            assertTrue(body.contains("\"requestId\":\"" + requestId + "\""));
+        }
+    }
+
+    private HttpRequest requestCancellation(URI accessRequestsEndpoint, String accessToken, String requestId) {
+        return HttpRequest.newBuilder(URI.create(accessRequestsEndpoint + "/" + requestId + "/cancel"))
                 .header("Authorization", "Bearer " + accessToken)
-                .DELETE()
+                .POST(HttpRequest.BodyPublishers.noBody())
                 .build();
     }
 
