@@ -205,6 +205,41 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         createDirectAccessClient(server, adminToken, clientId);
         addAccessRequestsAudience(server, adminToken, clientId);
         String accessToken = accessToken(server, clientId);
+
+        HttpResponse<Void> missingEntitlementResponse = HttpClient.newHttpClient().send(
+                requestSubmission(endpoint, accessToken, "{\"justification\":\"Need access to finance data.\"}"),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(400, missingEntitlementResponse.statusCode());
+
+        HttpResponse<Void> missingJustificationResponse = HttpClient.newHttpClient().send(
+                requestSubmission(endpoint, accessToken, "{\"entitlementId\":\"" + UUID.randomUUID() + "\"}"),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(400, missingJustificationResponse.statusCode());
+
+        HttpResponse<Void> unknownEntitlementResponse = HttpClient.newHttpClient().send(
+                requestSubmission(endpoint, accessToken, UUID.randomUUID().toString(), "Need access to finance data."),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(404, unknownEntitlementResponse.statusCode());
+
+        String nonRequestableEntitlementId = UUID.randomUUID().toString();
+        insertEntitlement(nonRequestableEntitlementId, "CLIENT_ROLE", "unpublished-role-" + nonRequestableEntitlementId,
+                false);
+        HttpResponse<Void> nonRequestableResponse = HttpClient.newHttpClient().send(
+                requestSubmission(endpoint, accessToken, nonRequestableEntitlementId, "Need access to finance data."),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(409, nonRequestableResponse.statusCode());
+
+        String roleName = "already-granted-" + UUID.randomUUID();
+        String roleId = createRealmRoleAndAssignToUser(server, adminToken, subjectOf(accessToken), roleName);
+        String alreadyGrantedEntitlementId = UUID.randomUUID().toString();
+        insertEntitlement(alreadyGrantedEntitlementId, "REALM_ROLE", roleId, true);
+        String refreshedAccessToken = accessToken(server, clientId);
+        HttpResponse<Void> alreadyGrantedResponse = HttpClient.newHttpClient().send(
+                requestSubmission(
+                        endpoint, refreshedAccessToken, alreadyGrantedEntitlementId, "Need access to finance data."),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(409, alreadyGrantedResponse.statusCode());
+
         String entitlementId = UUID.randomUUID().toString();
         String justification = "I need read-only access to Finance Portal reports.";
         insertPublishedEntitlement(entitlementId);
@@ -233,12 +268,16 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     }
 
     private HttpRequest requestSubmission(URI endpoint, String accessToken, String entitlementId, String justification) {
+        return requestSubmission(endpoint, accessToken, """
+                {"entitlementId":"%s","justification":"%s"}
+                """.formatted(entitlementId, justification));
+    }
+
+    private HttpRequest requestSubmission(URI endpoint, String accessToken, String jsonBody) {
         return HttpRequest.newBuilder(endpoint)
                 .header("Authorization", "Bearer " + accessToken)
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString("""
-                        {"entitlementId":"%s","justification":"%s"}
-                        """.formatted(entitlementId, justification)))
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
     }
 
@@ -480,6 +519,48 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(201, createClientResponse.statusCode());
     }
 
+    private String createRealmRoleAndAssignToUser(
+            GenericContainer<?> server, String adminToken, String userId, String roleName) throws Exception {
+        URI rolesEndpoint = URI.create("http://%s:%d/admin/realms/master/roles"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpResponse<Void> createRoleResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(rolesEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("""
+                                {"name":"%s"}
+                                """.formatted(roleName)))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(201, createRoleResponse.statusCode());
+
+        URI roleEndpoint = URI.create("%s/%s".formatted(rolesEndpoint, roleName));
+        HttpResponse<String> roleResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(roleEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, roleResponse.statusCode());
+        var roleIdMatcher = Pattern.compile("\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(roleResponse.body());
+        assertTrue(roleIdMatcher.find(), "The created realm role must have an identifier.");
+        String roleId = roleIdMatcher.group(1);
+
+        URI roleMappingsEndpoint = URI.create("http://%s:%d/admin/realms/master/users/%s/role-mappings/realm"
+                .formatted(server.getHost(), server.getMappedPort(8080), userId));
+        HttpResponse<Void> assignRoleResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(roleMappingsEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("""
+                                [{"id":"%s","name":"%s"}]
+                                """.formatted(roleId, roleName)))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(204, assignRoleResponse.statusCode());
+        return roleId;
+    }
+
     private boolean hasAccessRequestsApiAudience(String accessToken) {
         String[] segments = accessToken.split("\\.");
         assertEquals(3, segments.length, "The access token must be a JWT.");
@@ -491,6 +572,11 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     }
 
     private void insertPublishedEntitlement(String entitlementId) throws SQLException {
+        insertEntitlement(entitlementId, "CLIENT_ROLE", "finance-reader-" + entitlementId, true);
+    }
+
+    private void insertEntitlement(
+            String entitlementId, String resourceType, String resourceId, boolean requestable) throws SQLException {
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var statement = connection.prepareStatement("""
@@ -512,13 +598,13 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             long now = Instant.now().toEpochMilli();
             statement.setString(1, entitlementId);
             statement.setString(2, masterRealmId(connection));
-            statement.setString(3, "CLIENT_ROLE");
-            statement.setString(4, "finance-reader-" + entitlementId);
+            statement.setString(3, resourceType);
+            statement.setString(4, resourceId);
             statement.setString(5, "Finance Reader");
             statement.setString(6, "Read-only access to the Finance Portal.");
             statement.setString(7, "LOW");
             statement.setString(8, "access-request-approver");
-            statement.setBoolean(9, true);
+            statement.setBoolean(9, requestable);
             statement.setLong(10, now);
             statement.setLong(11, now);
             statement.setLong(12, 0);
