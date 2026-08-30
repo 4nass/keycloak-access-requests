@@ -1,6 +1,8 @@
 package ch.anass.keycloak.accessrequests.core.port;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
 
 import java.util.Optional;
 import java.util.Set;
@@ -8,6 +10,8 @@ import java.util.Set;
 public interface AccessRequestRepository {
 
     Optional<AccessRequest> findById(String realmId, String requestId);
+
+    AccessRequestPage findByRequester(AccessRequestQuery query);
 
     /**
      * Returns the entitlement identifiers with a pending request for the requester.

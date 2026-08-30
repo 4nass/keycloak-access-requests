@@ -190,7 +190,10 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         String clientId = "request-manager-" + UUID.randomUUID();
         createDirectAccessClient(server, adminToken, clientId);
         addAccessRequestsAudience(server, adminToken, clientId);
-        String requesterToken = accessToken(server, clientId);
+        String requesterUsername = "requester-" + UUID.randomUUID();
+        String requesterPassword = "requester-password";
+        createEnabledUser(server, adminToken, requesterUsername, requesterPassword);
+        String requesterToken = accessToken(server, clientId, requesterUsername, requesterPassword);
 
         String firstEntitlementId = UUID.randomUUID().toString();
         String secondEntitlementId = UUID.randomUUID().toString();

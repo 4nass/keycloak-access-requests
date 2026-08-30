@@ -1,6 +1,8 @@
 package ch.anass.keycloak.accessrequests.persistence.jpa;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.port.DuplicatePendingRequestException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
@@ -26,6 +28,35 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
             return Optional.empty();
         }
         return Optional.of(entity.toDomain());
+    }
+
+    @Override
+    public AccessRequestPage findByRequester(AccessRequestQuery query) {
+        long total = entityManager.createQuery("""
+                        select count(entity)
+                          from AccessRequestEntity entity
+                         where entity.realmId = :realmId
+                           and entity.requesterId = :requesterId
+                        """, Long.class)
+                .setParameter("realmId", query.realmId())
+                .setParameter("requesterId", query.requesterId())
+                .getSingleResult();
+        var items = entityManager.createQuery("""
+                        select entity
+                          from AccessRequestEntity entity
+                         where entity.realmId = :realmId
+                           and entity.requesterId = :requesterId
+                         order by entity.createdTimestamp desc, entity.id asc
+                        """, AccessRequestEntity.class)
+                .setParameter("realmId", query.realmId())
+                .setParameter("requesterId", query.requesterId())
+                .setFirstResult(query.offset())
+                .setMaxResults(query.size())
+                .getResultList()
+                .stream()
+                .map(AccessRequestEntity::toDomain)
+                .toList();
+        return new AccessRequestPage(items, query.page(), query.size(), total);
     }
 
     @Override

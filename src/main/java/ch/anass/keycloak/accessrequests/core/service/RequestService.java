@@ -2,6 +2,8 @@ package ch.anass.keycloak.accessrequests.core.service;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
@@ -123,6 +125,10 @@ public final class RequestService {
             eventPublisher.publish(AccessRequestEvent.canceled(persisted, actorId, occurredAt));
             return persisted;
         });
+    }
+
+    public AccessRequestPage findByRequester(String realmId, String requesterId, int page, int size) {
+        return accessRequestRepository.findByRequester(new AccessRequestQuery(realmId, requesterId, page, size));
     }
 
     public AccessRequest approve(

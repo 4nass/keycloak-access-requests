@@ -1,6 +1,8 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogResult;
@@ -117,6 +119,11 @@ class CatalogServiceTest {
         @Override
         public Optional<AccessRequest> findById(String realmId, String requestId) {
             return Optional.empty();
+        }
+
+        @Override
+        public AccessRequestPage findByRequester(AccessRequestQuery query) {
+            throw new UnsupportedOperationException("Requester request reads are not used by this test double.");
         }
 
         @Override

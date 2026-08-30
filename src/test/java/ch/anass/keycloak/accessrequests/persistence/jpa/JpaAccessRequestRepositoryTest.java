@@ -2,6 +2,8 @@ package ch.anass.keycloak.accessrequests.persistence.jpa;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
@@ -169,6 +171,33 @@ class JpaAccessRequestRepositoryTest {
     }
 
     @Test
+    void pagesRequestsWithinTheRequesterAndRealmBoundary() {
+        JpaAccessRequestRepository repository = new JpaAccessRequestRepository(entityManager);
+        AccessRequest first = request("realm-requests", "requester-1", "request-1", "entitlement-1");
+        AccessRequest second = request("realm-requests", "requester-1", "request-2", "entitlement-2");
+        AccessRequest anotherRequester = request("realm-requests", "requester-2", "request-3", "entitlement-3");
+        AccessRequest anotherRealm = request("realm-other", "requester-1", "request-4", "entitlement-4");
+        transaction().execute(() -> {
+            repository.createIfNoPending(first).orElseThrow();
+            repository.createIfNoPending(second).orElseThrow();
+            repository.createIfNoPending(anotherRequester).orElseThrow();
+            repository.createIfNoPending(anotherRealm).orElseThrow();
+            return null;
+        });
+
+        AccessRequestPage firstPage = repository.findByRequester(
+                new AccessRequestQuery("realm-requests", "requester-1", 0, 1));
+        AccessRequestPage secondPage = repository.findByRequester(
+                new AccessRequestQuery("realm-requests", "requester-1", 1, 1));
+
+        assertEquals(2, firstPage.total());
+        assertEquals(2, secondPage.total());
+        assertEquals(1, firstPage.items().size());
+        assertEquals(1, secondPage.items().size());
+        assertFalse(firstPage.items().get(0).id().equals(secondPage.items().get(0).id()));
+    }
+
+    @Test
     void concurrentCreatesAllowOnlyOnePendingRequest() throws Exception {
         String realmId = "realm-concurrent-" + UUID.randomUUID();
         CountDownLatch start = new CountDownLatch(1);
@@ -316,11 +345,15 @@ class JpaAccessRequestRepositoryTest {
     }
 
     private AccessRequest request(String realmId, String requesterId, String requestId) {
+        return request(realmId, requesterId, requestId, "entitlement-1");
+    }
+
+    private AccessRequest request(String realmId, String requesterId, String requestId, String entitlementId) {
         return AccessRequest.create(
                 requestId,
                 realmId,
                 requesterId,
-                "entitlement-1",
+                entitlementId,
                 ResourceType.REALM_ROLE,
                 "resource-1",
                 "Resource",

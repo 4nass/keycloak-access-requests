@@ -3,6 +3,8 @@ package ch.anass.keycloak.accessrequests.core.service;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
@@ -81,6 +83,25 @@ class RequestServiceTest {
         assertEquals(AccessRequestEventType.REQUEST_CREATED, events.published().get(0).type());
         assertEquals(created.id(), events.published().get(0).requestId());
         assertEquals("requester-1", events.published().get(0).actorId());
+    }
+
+    @Test
+    void listsOnlyTheCurrentRequestersRequestsUsingTheRequestedPage() {
+        AccessRequest ownedRequest = AccessRequest.create(
+                "request-owned", "realm-1", "requester-1", "entitlement-1", ResourceType.REALM_ROLE,
+                "finance-reader", "Finance Reader", "Access is needed for the finance project.");
+        AccessRequest otherRequesterRequest = AccessRequest.create(
+                "request-other", "realm-1", "requester-2", "entitlement-2", ResourceType.REALM_ROLE,
+                "hr-reader", "HR Reader", "Access is needed for the human resources project.");
+        requests.add(ownedRequest);
+        requests.add(otherRequesterRequest);
+
+        AccessRequestPage page = service.findByRequester("realm-1", "requester-1", 0, 20);
+
+        assertEquals(List.of(ownedRequest.id()), page.items().stream().map(AccessRequest::id).toList());
+        assertEquals(0, page.page());
+        assertEquals(20, page.size());
+        assertEquals(1, page.total());
     }
 
     @Test
@@ -661,6 +682,18 @@ class RequestServiceTest {
         }
 
         @Override
+        public synchronized AccessRequestPage findByRequester(AccessRequestQuery query) {
+            List<AccessRequest> matching = values.stream()
+                    .filter(request -> request.realmId().equals(query.realmId()))
+                    .filter(request -> request.requesterId().equals(query.requesterId()))
+                    .map(AccessRequest::copy)
+                    .toList();
+            int from = Math.min(query.offset(), matching.size());
+            int to = Math.min(from + query.size(), matching.size());
+            return new AccessRequestPage(matching.subList(from, to), query.page(), query.size(), matching.size());
+        }
+
+        @Override
         public synchronized Set<String> findPendingEntitlementIds(
                 String realmId,
                 String requesterId,
@@ -719,6 +752,10 @@ class RequestServiceTest {
 
         synchronized List<AccessRequest> saved() {
             return List.copyOf(values);
+        }
+
+        synchronized void add(AccessRequest request) {
+            values.add(request);
         }
 
         synchronized boolean hasSavedRequests() {

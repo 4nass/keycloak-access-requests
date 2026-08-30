@@ -4,16 +4,21 @@ import ch.anass.keycloak.accessrequests.core.domain.CatalogEntry;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogResult;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
+import ch.anass.keycloak.accessrequests.core.domain.InvalidRequestStateException;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
+import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
 import ch.anass.keycloak.accessrequests.core.service.AccessAlreadyGrantedException;
 import ch.anass.keycloak.accessrequests.core.service.CatalogService;
 import ch.anass.keycloak.accessrequests.core.service.EntitlementNotFoundException;
 import ch.anass.keycloak.accessrequests.core.service.EntitlementNotRequestableException;
 import ch.anass.keycloak.accessrequests.core.service.InvalidJustificationException;
+import ch.anass.keycloak.accessrequests.core.service.ConcurrentRequestModificationException;
 import ch.anass.keycloak.accessrequests.core.service.RequestAlreadyPendingException;
+import ch.anass.keycloak.accessrequests.core.service.RequestNotFoundException;
 import ch.anass.keycloak.accessrequests.core.service.RequestPolicy;
 import ch.anass.keycloak.accessrequests.core.service.RequestService;
 import ch.anass.keycloak.accessrequests.core.service.UserDisabledException;
@@ -24,12 +29,14 @@ import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ClientErrorException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.NotAuthorizedException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.OPTIONS;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
@@ -111,6 +118,39 @@ public final class AccessRequestRealmResource {
             throw new ClientErrorException(Response.Status.CONFLICT, exception);
         } catch (UserDisabledException exception) {
             throw new ForbiddenException(exception.getMessage(), exception);
+        }
+    }
+
+    @GET
+    @Path("requests")
+    @Produces(MediaType.APPLICATION_JSON)
+    public RequestListResponse listRequests(
+            @DefaultValue("0") @QueryParam("page") int page,
+            @DefaultValue("20") @QueryParam("size") int size) {
+        AuthenticatedRequest authenticatedRequest = authenticate();
+        try {
+            AccessRequestPage requestPage = requestService(authenticatedRequest).findByRequester(
+                    authenticatedRequest.realm().getId(), authenticatedRequest.user().getId(), page, size);
+            return RequestListResponse.from(requestPage);
+        } catch (IllegalArgumentException exception) {
+            throw new BadRequestException(exception.getMessage(), exception);
+        }
+    }
+
+    @DELETE
+    @Path("requests/{requestId}")
+    public Response cancelRequest(@PathParam("requestId") String requestId) {
+        AuthenticatedRequest authenticatedRequest = authenticate();
+        try {
+            requestService(authenticatedRequest).cancel(
+                    authenticatedRequest.realm().getId(), requestId, authenticatedRequest.user().getId());
+            return Response.noContent().build();
+        } catch (RequestNotFoundException exception) {
+            throw new NotFoundException(exception.getMessage(), exception);
+        } catch (UnauthorizedRequestActionException exception) {
+            throw new ForbiddenException(exception.getMessage(), exception);
+        } catch (InvalidRequestStateException | ConcurrentRequestModificationException exception) {
+            throw new ClientErrorException(Response.Status.CONFLICT, exception);
         }
     }
 
@@ -213,6 +253,36 @@ public final class AccessRequestRealmResource {
             return new RequestResponse(
                     request.id(),
                     request.entitlementId(),
+                    request.decisionStatus(),
+                    request.provisioningStatus());
+        }
+    }
+
+    public record RequestListResponse(List<RequestSummaryResponse> items, int page, int size, long total) {
+
+        private static RequestListResponse from(AccessRequestPage page) {
+            return new RequestListResponse(
+                    page.items().stream().map(RequestSummaryResponse::from).toList(),
+                    page.page(),
+                    page.size(),
+                    page.total());
+        }
+    }
+
+    public record RequestSummaryResponse(
+            String id,
+            String entitlementId,
+            ResourceType resourceType,
+            String resourceName,
+            DecisionStatus decisionStatus,
+            ProvisioningStatus provisioningStatus) {
+
+        private static RequestSummaryResponse from(AccessRequest request) {
+            return new RequestSummaryResponse(
+                    request.id(),
+                    request.entitlementId(),
+                    request.resourceType(),
+                    request.resourceNameSnapshot(),
                     request.decisionStatus(),
                     request.provisioningStatus());
         }
