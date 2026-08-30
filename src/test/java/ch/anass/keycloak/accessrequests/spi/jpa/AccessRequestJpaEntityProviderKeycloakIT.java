@@ -59,6 +59,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertRealmEndpointExposed(firstServer);
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(firstServer);
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(firstServer);
+            assertRequesterCanListAndCancelOnlyOwnRequests(firstServer);
         }
 
         try (GenericContainer<?> restartedServer = keycloak()) {
@@ -67,6 +68,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertRealmEndpointExposed(restartedServer);
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(restartedServer);
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(restartedServer);
+            assertRequesterCanListAndCancelOnlyOwnRequests(restartedServer);
         }
     }
 
@@ -179,6 +181,124 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .build(),
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(401, revokedClientResponse.statusCode());
+    }
+
+    private void assertRequesterCanListAndCancelOnlyOwnRequests(GenericContainer<?> server) throws Exception {
+        URI requestsEndpoint = URI.create("http://%s:%d/realms/master/access-requests/requests"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        String adminToken = accessToken(server, "admin-cli");
+        String clientId = "request-manager-" + UUID.randomUUID();
+        createDirectAccessClient(server, adminToken, clientId);
+        addAccessRequestsAudience(server, adminToken, clientId);
+        String requesterToken = accessToken(server, clientId);
+
+        String firstEntitlementId = UUID.randomUUID().toString();
+        String secondEntitlementId = UUID.randomUUID().toString();
+        insertPublishedEntitlement(firstEntitlementId);
+        insertPublishedEntitlement(secondEntitlementId);
+        HttpResponse<String> firstCreatedResponse = HttpClient.newHttpClient().send(
+                requestSubmission(
+                        requestsEndpoint,
+                        requesterToken,
+                        firstEntitlementId,
+                        "I need access to the first Finance Portal report."),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, firstCreatedResponse.statusCode());
+        String firstRequestId = responseId(firstCreatedResponse.body());
+        HttpResponse<String> secondCreatedResponse = HttpClient.newHttpClient().send(
+                requestSubmission(
+                        requestsEndpoint,
+                        requesterToken,
+                        secondEntitlementId,
+                        "I need access to the second Finance Portal report."),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, secondCreatedResponse.statusCode());
+        String secondRequestId = responseId(secondCreatedResponse.body());
+
+        HttpResponse<String> firstPageResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(requestsEndpoint + "?page=0&size=1"))
+                        .header("Authorization", "Bearer " + requesterToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, firstPageResponse.statusCode());
+        assertRequestPage(firstPageResponse.body(), 0, 1, 2, firstRequestId, secondRequestId);
+
+        HttpResponse<String> secondPageResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(requestsEndpoint + "?page=1&size=1"))
+                        .header("Authorization", "Bearer " + requesterToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, secondPageResponse.statusCode());
+        assertRequestPage(secondPageResponse.body(), 1, 1, 2, firstRequestId, secondRequestId);
+        assertFalse(firstPageResponse.body().equals(secondPageResponse.body()));
+
+        HttpResponse<Void> invalidPaginationResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(requestsEndpoint + "?page=" + Integer.MAX_VALUE + "&size=2"))
+                        .header("Authorization", "Bearer " + requesterToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(400, invalidPaginationResponse.statusCode());
+
+        String otherUsername = "other-requester-" + UUID.randomUUID();
+        String otherPassword = "other-requester-password";
+        createEnabledUser(server, adminToken, otherUsername, otherPassword);
+        String otherRequesterToken = accessToken(server, clientId, otherUsername, otherPassword);
+        HttpResponse<String> otherRequesterListResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(requestsEndpoint)
+                        .header("Authorization", "Bearer " + otherRequesterToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, otherRequesterListResponse.statusCode());
+        assertTrue(otherRequesterListResponse.body().contains("\"total\":0"));
+        assertFalse(otherRequesterListResponse.body().contains(firstRequestId));
+        assertFalse(otherRequesterListResponse.body().contains(secondRequestId));
+
+        HttpResponse<Void> unauthorizedCancellationResponse = HttpClient.newHttpClient().send(
+                requestCancellation(requestsEndpoint, otherRequesterToken, firstRequestId),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(403, unauthorizedCancellationResponse.statusCode());
+
+        HttpResponse<Void> unknownRequestResponse = HttpClient.newHttpClient().send(
+                requestCancellation(requestsEndpoint, requesterToken, UUID.randomUUID().toString()),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(404, unknownRequestResponse.statusCode());
+
+        String requestFromAnotherRealm = UUID.randomUUID().toString();
+        insertPendingRequestFromAnotherRealm(requestFromAnotherRealm);
+        HttpResponse<Void> otherRealmRequestResponse = HttpClient.newHttpClient().send(
+                requestCancellation(requestsEndpoint, requesterToken, requestFromAnotherRealm),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(404, otherRealmRequestResponse.statusCode());
+
+        HttpResponse<Void> canceledResponse = HttpClient.newHttpClient().send(
+                requestCancellation(requestsEndpoint, requesterToken, firstRequestId),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(204, canceledResponse.statusCode());
+
+        HttpResponse<Void> terminalRequestResponse = HttpClient.newHttpClient().send(
+                requestCancellation(requestsEndpoint, requesterToken, firstRequestId),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(409, terminalRequestResponse.statusCode());
+    }
+
+    private void assertRequestPage(
+            String body, int page, int size, long total, String firstRequestId, String secondRequestId) {
+        assertTrue(body.contains("\"page\":" + page));
+        assertTrue(body.contains("\"size\":" + size));
+        assertTrue(body.contains("\"total\":" + total));
+        int requestCount = (body.contains(firstRequestId) ? 1 : 0) + (body.contains(secondRequestId) ? 1 : 0);
+        assertEquals(1, requestCount, "A page of size one must contain exactly one request.");
+    }
+
+    private HttpRequest requestCancellation(URI requestsEndpoint, String accessToken, String requestId) {
+        return HttpRequest.newBuilder(URI.create(requestsEndpoint + "/" + requestId))
+                .header("Authorization", "Bearer " + accessToken)
+                .DELETE()
+                .build();
     }
 
     private void assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(
@@ -334,12 +454,17 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     }
 
     private String accessToken(GenericContainer<?> server, String clientId) throws Exception {
+        return accessToken(server, clientId, "admin", "admin");
+    }
+
+    private String accessToken(GenericContainer<?> server, String clientId, String username, String password) throws Exception {
         URI tokenEndpoint = URI.create("http://%s:%d/realms/master/protocol/openid-connect/token"
                 .formatted(server.getHost(), server.getMappedPort(8080)));
         HttpRequest request = HttpRequest.newBuilder(tokenEndpoint)
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(
-                        "grant_type=password&client_id=%s&username=admin&password=admin".formatted(clientId)))
+                        "grant_type=password&client_id=%s&username=%s&password=%s"
+                                .formatted(clientId, username, password)))
                 .build();
         HttpResponse<String> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
 
@@ -348,6 +473,26 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 .matcher(response.body());
         assertTrue(matcher.find(), "The token response must contain an access token.");
         return matcher.group(1);
+    }
+
+    private void createEnabledUser(
+            GenericContainer<?> server, String adminToken, String username, String password) throws Exception {
+        URI usersEndpoint = URI.create("http://%s:%d/admin/realms/master/users"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpResponse<Void> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(usersEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("""
+                                {
+                                  "username":"%s",
+                                  "enabled":true,
+                                  "credentials":[{"type":"password","value":"%s","temporary":false}]
+                                }
+                                """.formatted(username, password)))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(201, response.statusCode());
     }
 
     private void createDirectAccessClient(GenericContainer<?> server, String adminToken, String clientId)
@@ -608,6 +753,44 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             statement.setLong(10, now);
             statement.setLong(11, now);
             statement.setLong(12, 0);
+            statement.executeUpdate();
+        }
+    }
+
+    private void insertPendingRequestFromAnotherRealm(String requestId) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var statement = connection.prepareStatement("""
+                     insert into AR_ACCESS_REQUEST (
+                         ID,
+                         REALM_ID,
+                         REQUESTER_ID,
+                         ENTITLEMENT_ID,
+                         RESOURCE_TYPE,
+                         RESOURCE_ID,
+                         RESOURCE_NAME_SNAPSHOT,
+                         JUSTIFICATION,
+                         DECISION_STATUS,
+                         PROVISIONING_STATUS,
+                         CREATED_TIMESTAMP,
+                         UPDATED_TIMESTAMP,
+                         VERSION)
+                     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     """)) {
+            long now = Instant.now().toEpochMilli();
+            statement.setString(1, requestId);
+            statement.setString(2, "another-realm-" + UUID.randomUUID());
+            statement.setString(3, "another-requester");
+            statement.setString(4, UUID.randomUUID().toString());
+            statement.setString(5, "REALM_ROLE");
+            statement.setString(6, "another-resource");
+            statement.setString(7, "Another Resource");
+            statement.setString(8, "A request that belongs to another realm.");
+            statement.setString(9, "PENDING");
+            statement.setString(10, "NOT_STARTED");
+            statement.setLong(11, now);
+            statement.setLong(12, now);
+            statement.setLong(13, 0);
             statement.executeUpdate();
         }
     }
