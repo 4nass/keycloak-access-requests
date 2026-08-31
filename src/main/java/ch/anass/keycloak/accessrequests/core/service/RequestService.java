@@ -5,6 +5,8 @@ import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.SelfApprovalException;
+import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedApprovalException;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
@@ -177,10 +179,10 @@ public final class RequestService {
 
     private void authorizeDecision(String realmId, AccessRequest request, String actorId) {
         if (request.requesterId().equals(actorId)) {
-            throw new UnauthorizedRequestActionException("A requester cannot decide their own request.");
+            throw new SelfApprovalException();
         }
         if (!approvalAuthorizer.canDecide(realmId, actorId, request.entitlementId())) {
-            throw new UnauthorizedRequestActionException("The actor cannot decide this request.");
+            throw new UnauthorizedApprovalException();
         }
     }
 

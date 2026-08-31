@@ -11,9 +11,12 @@ import ch.anass.keycloak.accessrequests.core.domain.InvalidRequestStateException
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
+import ch.anass.keycloak.accessrequests.core.domain.SelfApprovalException;
+import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedApprovalException;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
 import ch.anass.keycloak.accessrequests.core.service.AccessAlreadyGrantedException;
 import ch.anass.keycloak.accessrequests.core.service.CatalogService;
+import ch.anass.keycloak.accessrequests.core.service.EntitlementScopedApprovalAuthorizer;
 import ch.anass.keycloak.accessrequests.core.service.EntitlementNotFoundException;
 import ch.anass.keycloak.accessrequests.core.service.EntitlementNotRequestableException;
 import ch.anass.keycloak.accessrequests.core.service.InvalidJustificationException;
@@ -171,6 +174,26 @@ public final class AccessRequestRealmResource {
         }
     }
 
+    @POST
+    @Path("{requestId}/approve")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response approveRequest(
+            @PathParam("requestId") String requestId,
+            DecisionSubmission submission) {
+        return decide(requestId, submission, true);
+    }
+
+    @POST
+    @Path("{requestId}/reject")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response rejectRequest(
+            @PathParam("requestId") String requestId,
+            DecisionSubmission submission) {
+        return decide(requestId, submission, false);
+    }
+
     private AuthenticatedRequest authenticate() {
         RealmModel realm = Objects.requireNonNull(session.getContext().getRealm(), "realm must not be null");
         AuthenticationManager.AuthResult authentication = new AppAuthManager.BearerTokenAuthenticator(session)
@@ -203,16 +226,54 @@ public final class AccessRequestRealmResource {
                 session.getProvider(JpaConnectionProvider.class),
                 "Keycloak JPA connection provider must not be null")
                 .getEntityManager();
+        var entitlementRepository = new JpaEntitlementRepository(entityManager);
         return new RequestService(
-                new JpaEntitlementRepository(entityManager),
+                entitlementRepository,
                 new JpaAccessRequestRepository(entityManager),
                 new KeycloakEffectiveAccessChecker(
                         session, authenticatedRequest.realm(), authenticatedRequest.user()),
                 new KeycloakUserStatusReader(authenticatedRequest.realm(), authenticatedRequest.user()),
                 REQUEST_POLICY,
                 new JpaAccessRequestEventPublisher(entityManager),
-                (realmId, actorId, entitlementId) -> false,
+                new EntitlementScopedApprovalAuthorizer(
+                        entitlementRepository,
+                        new KeycloakRoleMembershipReader(
+                                authenticatedRequest.realm(), authenticatedRequest.user())),
                 new KeycloakAccessRequestTransaction(session));
+    }
+
+    private Response decide(String requestId, DecisionSubmission submission, boolean approved) {
+        AuthenticatedRequest authenticatedRequest = authenticate();
+        DecisionSubmission validatedSubmission = requireDecisionSubmission(submission);
+        try {
+            RequestService requestService = requestService(authenticatedRequest);
+            AccessRequest decided = approved
+                    ? requestService.approve(
+                            authenticatedRequest.realm().getId(),
+                            requestId,
+                            authenticatedRequest.user().getId(),
+                            validatedSubmission.comment())
+                    : requestService.reject(
+                            authenticatedRequest.realm().getId(),
+                            requestId,
+                            authenticatedRequest.user().getId(),
+                            validatedSubmission.comment());
+            return Response.ok(RequestResponse.from(decided)).build();
+        } catch (RequestNotFoundException exception) {
+            return error(Response.Status.NOT_FOUND, "REQUEST_NOT_FOUND", exception.getMessage(), requestId);
+        } catch (SelfApprovalException exception) {
+            return error(Response.Status.FORBIDDEN, "SELF_APPROVAL_FORBIDDEN", exception.getMessage(), requestId);
+        } catch (UnauthorizedApprovalException exception) {
+            return error(Response.Status.FORBIDDEN, "NOT_AUTHORIZED_APPROVER", exception.getMessage(), requestId);
+        } catch (EntitlementNotFoundException exception) {
+            return error(Response.Status.NOT_FOUND, "ENTITLEMENT_NOT_FOUND", exception.getMessage(), requestId);
+        } catch (EntitlementNotRequestableException exception) {
+            return error(Response.Status.CONFLICT, "ENTITLEMENT_NOT_REQUESTABLE", exception.getMessage(), requestId);
+        } catch (InvalidRequestStateException exception) {
+            return error(Response.Status.CONFLICT, "INVALID_REQUEST_STATE", exception.getMessage(), requestId);
+        } catch (ConcurrentRequestModificationException exception) {
+            return error(Response.Status.CONFLICT, "CONCURRENT_MODIFICATION", exception.getMessage(), requestId);
+        }
     }
 
     private static RequestSubmission requireSubmission(RequestSubmission submission) {
@@ -221,6 +282,13 @@ public final class AccessRequestRealmResource {
                 || submission.entitlementId().isBlank()
                 || submission.justification() == null) {
             throw new BadRequestException("entitlementId and justification must be provided");
+        }
+        return submission;
+    }
+
+    private static DecisionSubmission requireDecisionSubmission(DecisionSubmission submission) {
+        if (submission == null) {
+            throw new BadRequestException("A decision payload must be provided");
         }
         return submission;
     }
@@ -295,6 +363,9 @@ public final class AccessRequestRealmResource {
     }
 
     public record RequestSubmission(String entitlementId, String justification) {
+    }
+
+    public record DecisionSubmission(String comment) {
     }
 
     public record RequestResponse(

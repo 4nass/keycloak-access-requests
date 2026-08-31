@@ -60,6 +60,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(firstServer);
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(firstServer);
             assertRequesterCanListAndCancelOnlyOwnRequests(firstServer);
+            assertEntitlementScopedApproversCanDecideRequests(firstServer);
         }
 
         try (GenericContainer<?> restartedServer = keycloak()) {
@@ -69,6 +70,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(restartedServer);
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(restartedServer);
             assertRequesterCanListAndCancelOnlyOwnRequests(restartedServer);
+            assertEntitlementScopedApproversCanDecideRequests(restartedServer);
         }
     }
 
@@ -362,6 +364,101 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertError(terminalRequestResponse.body(), "INVALID_REQUEST_STATE", firstRequestId);
     }
 
+    private void assertEntitlementScopedApproversCanDecideRequests(GenericContainer<?> server) throws Exception {
+        URI accessRequestsEndpoint = URI.create("http://%s:%d/realms/master/access-requests"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        URI requestsEndpoint = URI.create(accessRequestsEndpoint + "/requests");
+        String adminToken = accessToken(server, "admin-cli");
+        String clientId = "request-approver-" + UUID.randomUUID();
+        createDirectAccessClient(server, adminToken, clientId);
+        addAccessRequestsAudience(server, adminToken, clientId);
+
+        String requesterUsername = "approval-requester-" + UUID.randomUUID();
+        String requesterPassword = "requester-password";
+        createEnabledUser(server, adminToken, requesterUsername, requesterPassword);
+        String requesterToken = accessToken(server, clientId, requesterUsername, requesterPassword);
+
+        String rejectedRequesterUsername = "rejection-requester-" + UUID.randomUUID();
+        String rejectedRequesterPassword = "rejection-requester-password";
+        createEnabledUser(server, adminToken, rejectedRequesterUsername, rejectedRequesterPassword);
+        String rejectedRequesterToken = accessToken(
+                server, clientId, rejectedRequesterUsername, rejectedRequesterPassword);
+
+        String approverUsername = "finance-approver-" + UUID.randomUUID();
+        String approverPassword = "approver-password";
+        createEnabledUser(server, adminToken, approverUsername, approverPassword);
+        String approverToken = accessToken(server, clientId, approverUsername, approverPassword);
+        String approverId = subjectOf(approverToken);
+        String approverRoleId = createRealmRoleAndAssignToUser(
+                server, adminToken, approverId, "finance-approver-" + UUID.randomUUID());
+
+        String unauthorizedUsername = "unauthorized-approver-" + UUID.randomUUID();
+        String unauthorizedPassword = "unauthorized-password";
+        createEnabledUser(server, adminToken, unauthorizedUsername, unauthorizedPassword);
+        String unauthorizedToken = accessToken(server, clientId, unauthorizedUsername, unauthorizedPassword);
+
+        String entitlementId = UUID.randomUUID().toString();
+        insertPublishedEntitlement(entitlementId, approverRoleId);
+
+        HttpResponse<String> approvedRequestResponse = HttpClient.newHttpClient().send(
+                requestSubmission(
+                        requestsEndpoint,
+                        requesterToken,
+                        entitlementId,
+                        "I need access to Finance Portal reports for the project."),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, approvedRequestResponse.statusCode());
+        String approvedRequestId = responseId(approvedRequestResponse.body());
+
+        HttpResponse<String> selfApprovalResponse = HttpClient.newHttpClient().send(
+                requestDecision(accessRequestsEndpoint, requesterToken, approvedRequestId, "approve", "Approved."),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, selfApprovalResponse.statusCode());
+        assertError(selfApprovalResponse.body(), "SELF_APPROVAL_FORBIDDEN", approvedRequestId);
+
+        HttpResponse<String> unauthorizedApprovalResponse = HttpClient.newHttpClient().send(
+                requestDecision(accessRequestsEndpoint, unauthorizedToken, approvedRequestId, "approve", "Approved."),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, unauthorizedApprovalResponse.statusCode());
+        assertError(unauthorizedApprovalResponse.body(), "NOT_AUTHORIZED_APPROVER", approvedRequestId);
+
+        String approvalComment = "Approved for the Finance Portal project.";
+        HttpResponse<String> approvalResponse = HttpClient.newHttpClient().send(
+                requestDecision(accessRequestsEndpoint, approverToken, approvedRequestId, "approve", approvalComment),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, approvalResponse.statusCode());
+        assertTrue(approvalResponse.body().contains("\"id\":\"" + approvedRequestId + "\""));
+        assertTrue(approvalResponse.body().contains("\"decisionStatus\":\"APPROVED\""));
+        assertDecisionAndAuditEvent(
+                approvedRequestId, "APPROVED", "REQUEST_APPROVED", approverId, approvalComment);
+
+        HttpResponse<String> repeatedDecisionResponse = HttpClient.newHttpClient().send(
+                requestDecision(accessRequestsEndpoint, approverToken, approvedRequestId, "reject", "Too late."),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, repeatedDecisionResponse.statusCode());
+        assertError(repeatedDecisionResponse.body(), "INVALID_REQUEST_STATE", approvedRequestId);
+
+        HttpResponse<String> rejectedRequestResponse = HttpClient.newHttpClient().send(
+                requestSubmission(
+                        requestsEndpoint,
+                        rejectedRequesterToken,
+                        entitlementId,
+                        "I need access to Finance Portal reports for another project."),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, rejectedRequestResponse.statusCode());
+        String rejectedRequestId = responseId(rejectedRequestResponse.body());
+
+        String rejectionComment = "The requested access is not justified.";
+        HttpResponse<String> rejectionResponse = HttpClient.newHttpClient().send(
+                requestDecision(accessRequestsEndpoint, approverToken, rejectedRequestId, "reject", rejectionComment),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, rejectionResponse.statusCode());
+        assertTrue(rejectionResponse.body().contains("\"id\":\"" + rejectedRequestId + "\""));
+        assertTrue(rejectionResponse.body().contains("\"decisionStatus\":\"REJECTED\""));
+        assertDecisionAndAuditEvent(
+                rejectedRequestId, "REJECTED", "REQUEST_REJECTED", approverId, rejectionComment);
+    }
+
     private void assertRequestPage(
             String body, int page, int size, long total, String firstRequestId, String secondRequestId) {
         assertTrue(body.contains("\"page\":" + page));
@@ -385,6 +482,21 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         return HttpRequest.newBuilder(URI.create(accessRequestsEndpoint + "/" + requestId + "/cancel"))
                 .header("Authorization", "Bearer " + accessToken)
                 .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+    }
+
+    private HttpRequest requestDecision(
+            URI accessRequestsEndpoint,
+            String accessToken,
+            String requestId,
+            String decision,
+            String comment) {
+        return HttpRequest.newBuilder(URI.create(accessRequestsEndpoint + "/" + requestId + "/" + decision))
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("""
+                        {"comment":"%s"}
+                        """.formatted(comment)))
                 .build();
     }
 
@@ -535,6 +647,47 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                     assertEquals("REQUEST_CREATED", result.getString("EVENT_TYPE"));
                     assertEquals(requesterId, result.getString("ACTOR_ID"));
                     assertFalse(result.next(), "Exactly one creation audit event must be persisted.");
+                }
+            }
+        }
+    }
+
+    private void assertDecisionAndAuditEvent(
+            String requestId,
+            String decisionStatus,
+            String eventType,
+            String approverId,
+            String comment) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var requestStatement = connection.prepareStatement("""
+                     select DECISION_STATUS, APPROVER_ID, DECISION_COMMENT
+                       from AR_ACCESS_REQUEST
+                      where ID = ?
+                     """)) {
+            requestStatement.setString(1, requestId);
+            try (ResultSet result = requestStatement.executeQuery()) {
+                assertTrue(result.next(), "The decided request must be persisted.");
+                assertEquals(decisionStatus, result.getString("DECISION_STATUS"));
+                assertEquals(approverId, result.getString("APPROVER_ID"));
+                assertEquals(comment, result.getString("DECISION_COMMENT"));
+                assertFalse(result.next(), "Exactly one decided request must be persisted.");
+            }
+
+            try (var eventStatement = connection.prepareStatement("""
+                    select EVENT_TYPE, ACTOR_ID, COMMENT
+                      from AR_ACCESS_REQUEST_HISTORY
+                     where REQUEST_ID = ?
+                       and EVENT_TYPE = ?
+                    """)) {
+                eventStatement.setString(1, requestId);
+                eventStatement.setString(2, eventType);
+                try (ResultSet result = eventStatement.executeQuery()) {
+                    assertTrue(result.next(), "Deciding a request must persist its audit event.");
+                    assertEquals(eventType, result.getString("EVENT_TYPE"));
+                    assertEquals(approverId, result.getString("ACTOR_ID"));
+                    assertEquals(comment, result.getString("COMMENT"));
+                    assertFalse(result.next(), "Exactly one decision audit event must be persisted.");
                 }
             }
         }
@@ -804,11 +957,34 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     }
 
     private void insertPublishedEntitlement(String entitlementId) throws SQLException {
-        insertEntitlement(entitlementId, "CLIENT_ROLE", "finance-reader-" + entitlementId, true);
+        insertPublishedEntitlement(entitlementId, "access-request-approver");
+    }
+
+    private void insertPublishedEntitlement(String entitlementId, String approverRoleId) throws SQLException {
+        insertEntitlement(
+                entitlementId,
+                "CLIENT_ROLE",
+                "finance-reader-" + entitlementId,
+                approverRoleId,
+                true);
     }
 
     private void insertEntitlement(
             String entitlementId, String resourceType, String resourceId, boolean requestable) throws SQLException {
+        insertEntitlement(
+                entitlementId,
+                resourceType,
+                resourceId,
+                "access-request-approver",
+                requestable);
+    }
+
+    private void insertEntitlement(
+            String entitlementId,
+            String resourceType,
+            String resourceId,
+            String approverRoleId,
+            boolean requestable) throws SQLException {
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var statement = connection.prepareStatement("""
@@ -835,7 +1011,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             statement.setString(5, "Finance Reader");
             statement.setString(6, "Read-only access to the Finance Portal.");
             statement.setString(7, "LOW");
-            statement.setString(8, "access-request-approver");
+            statement.setString(8, approverRoleId);
             statement.setBoolean(9, requestable);
             statement.setLong(10, now);
             statement.setLong(11, now);
