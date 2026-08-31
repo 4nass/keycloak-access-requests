@@ -244,7 +244,13 @@ public final class AccessRequestRealmResource {
 
     private Response decide(String requestId, DecisionSubmission submission, boolean approved) {
         AuthenticatedRequest authenticatedRequest = authenticate();
-        DecisionSubmission validatedSubmission = requireDecisionSubmission(submission);
+        if (submission == null) {
+            return error(
+                    Response.Status.BAD_REQUEST,
+                    "INVALID_DECISION_SUBMISSION",
+                    "A decision payload must be provided",
+                    requestId);
+        }
         try {
             RequestService requestService = requestService(authenticatedRequest);
             AccessRequest decided = approved
@@ -252,12 +258,12 @@ public final class AccessRequestRealmResource {
                             authenticatedRequest.realm().getId(),
                             requestId,
                             authenticatedRequest.user().getId(),
-                            validatedSubmission.comment())
+                            submission.comment())
                     : requestService.reject(
                             authenticatedRequest.realm().getId(),
                             requestId,
                             authenticatedRequest.user().getId(),
-                            validatedSubmission.comment());
+                            submission.comment());
             return Response.ok(RequestResponse.from(decided)).build();
         } catch (RequestNotFoundException exception) {
             return error(Response.Status.NOT_FOUND, "REQUEST_NOT_FOUND", exception.getMessage(), requestId);
@@ -282,13 +288,6 @@ public final class AccessRequestRealmResource {
                 || submission.entitlementId().isBlank()
                 || submission.justification() == null) {
             throw new BadRequestException("entitlementId and justification must be provided");
-        }
-        return submission;
-    }
-
-    private static DecisionSubmission requireDecisionSubmission(DecisionSubmission submission) {
-        if (submission == null) {
-            throw new BadRequestException("A decision payload must be provided");
         }
         return submission;
     }

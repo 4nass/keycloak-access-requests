@@ -147,16 +147,24 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
         int updated = entityManager.createQuery("""
                         update AccessRequestEntity entity
                            set entity.decisionStatus = :decisionStatus,
-                               entity.approverId = :approverId,
-                               entity.decisionComment = :decisionComment,
-                               entity.version = entity.version + 1
+                                entity.provisioningStatus = :provisioningStatus,
+                                entity.approverId = :approverId,
+                                entity.decisionComment = :decisionComment,
+                                entity.updatedTimestamp = :updatedTimestamp,
+                                entity.decidedTimestamp = :decidedTimestamp,
+                                entity.version = entity.version + 1
                          where entity.id = :id
                            and entity.realmId = :realmId
                            and entity.version = :expectedVersion
                         """)
                 .setParameter("decisionStatus", request.decisionStatus())
+                .setParameter("provisioningStatus", request.provisioningStatus())
                 .setParameter("approverId", request.approverId())
                 .setParameter("decisionComment", request.decisionComment())
+                .setParameter("updatedTimestamp", request.updatedAt().toEpochMilli())
+                .setParameter(
+                        "decidedTimestamp",
+                        request.decidedAt() == null ? null : request.decidedAt().toEpochMilli())
                 .setParameter("id", request.id())
                 .setParameter("realmId", request.realmId())
                 .setParameter("expectedVersion", expectedVersion)

@@ -410,6 +410,12 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(201, approvedRequestResponse.statusCode());
         String approvedRequestId = responseId(approvedRequestResponse.body());
 
+        HttpResponse<String> missingDecisionPayloadResponse = HttpClient.newHttpClient().send(
+                requestDecisionWithoutPayload(accessRequestsEndpoint, approverToken, approvedRequestId, "approve"),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, missingDecisionPayloadResponse.statusCode());
+        assertError(missingDecisionPayloadResponse.body(), "INVALID_DECISION_SUBMISSION", approvedRequestId);
+
         HttpResponse<String> selfApprovalResponse = HttpClient.newHttpClient().send(
                 requestDecision(accessRequestsEndpoint, requesterToken, approvedRequestId, "approve", "Approved."),
                 HttpResponse.BodyHandlers.ofString());
@@ -497,6 +503,18 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 .POST(HttpRequest.BodyPublishers.ofString("""
                         {"comment":"%s"}
                         """.formatted(comment)))
+                .build();
+    }
+
+    private HttpRequest requestDecisionWithoutPayload(
+            URI accessRequestsEndpoint,
+            String accessToken,
+            String requestId,
+            String decision) {
+        return HttpRequest.newBuilder(URI.create(accessRequestsEndpoint + "/" + requestId + "/" + decision))
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.noBody())
                 .build();
     }
 

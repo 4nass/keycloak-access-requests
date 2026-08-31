@@ -8,6 +8,7 @@ import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
@@ -145,6 +146,34 @@ class JpaAccessRequestRepositoryTest {
 
         assertEquals(DecisionStatus.PENDING, replacement.decisionStatus());
         assertEquals(2, countRequests("realm-terminal"));
+    }
+
+    @Test
+    void persistsDecisionLifecycleMetadataWhenUpdatingARequest() {
+        Instant createdAt = Instant.parse("2026-08-29T10:15:30Z");
+        Instant decidedAt = Instant.parse("2026-08-29T10:20:30Z");
+        AccessRequest request = AccessRequest.create(
+                "request-decision-metadata",
+                "realm-decision-metadata",
+                "requester-1",
+                "entitlement-1",
+                ResourceType.REALM_ROLE,
+                "resource-1",
+                "Resource",
+                "Access is needed for the project.",
+                createdAt);
+        JpaAccessRequestRepository repository = new JpaAccessRequestRepository(entityManager);
+        AccessRequest persisted = transaction().execute(() -> repository.createIfNoPending(request).orElseThrow());
+        AccessRequest approved = persisted.copy();
+        approved.approve("approver-1", "Approved for the project.", decidedAt);
+
+        AccessRequest reloaded = transaction().execute(
+                () -> repository.updateIfVersionMatches(approved, persisted.version()).orElseThrow());
+
+        assertEquals(DecisionStatus.APPROVED, reloaded.decisionStatus());
+        assertEquals(ProvisioningStatus.NOT_STARTED, reloaded.provisioningStatus());
+        assertEquals(decidedAt, reloaded.updatedAt());
+        assertEquals(decidedAt, reloaded.decidedAt());
     }
 
     @Test
