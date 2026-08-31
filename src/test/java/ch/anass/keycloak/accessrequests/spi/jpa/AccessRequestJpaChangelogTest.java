@@ -81,6 +81,8 @@ class AccessRequestJpaChangelogTest {
                     columnsOf(connection, "AR_ENTITLEMENT"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
                     .contains("IDX_ACCESS_REQUEST_REQUESTER_CREATED"));
+            assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
+                    .contains("IDX_ACCESS_REQUEST_APPROVAL_QUEUE"));
         }
     }
 

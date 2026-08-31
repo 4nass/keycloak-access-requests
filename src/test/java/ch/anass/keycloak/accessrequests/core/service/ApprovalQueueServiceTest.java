@@ -2,19 +2,21 @@ package ch.anass.keycloak.accessrequests.core.service;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
+import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
+import ch.anass.keycloak.accessrequests.core.port.RoleMembershipReader;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -24,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ApprovalQueueServiceTest {
 
     private final InMemoryApprovalQueue approvalQueue = new InMemoryApprovalQueue();
+    private final InMemoryRoleMembershipReader roleMembershipReader = new InMemoryRoleMembershipReader();
 
     @Test
     void returnsOnlyPendingRequestsWithinTheApproversEntitlementScope() {
@@ -34,7 +37,7 @@ class ApprovalQueueServiceTest {
         approvalQueue.add(pending("request-other-realm", "realm-2", "requester-4", "finance", 5));
         approvalQueue.configuresEntitlement("finance", "finance-approver");
         approvalQueue.configuresEntitlement("hr", "hr-approver");
-        approvalQueue.grantsRole("realm-1", "approver-1", "finance-approver");
+        roleMembershipReader.grantsRole("realm-1", "approver-1", "finance-approver");
 
         AccessRequestPage page = queue("realm-1", "approver-1", 0, 20);
 
@@ -51,7 +54,7 @@ class ApprovalQueueServiceTest {
         approvalQueue.add(pending("eligible-new", "realm-1", "requester-4", "finance", 3));
         approvalQueue.configuresEntitlement("finance", "finance-approver");
         approvalQueue.configuresEntitlement("hr", "hr-approver");
-        approvalQueue.grantsRole("realm-1", "approver-1", "finance-approver");
+        roleMembershipReader.grantsRole("realm-1", "approver-1", "finance-approver");
 
         AccessRequestPage page = queue("realm-1", "approver-1", 1, 1);
 
@@ -77,7 +80,7 @@ class ApprovalQueueServiceTest {
     void doesNotUseRolesGrantedToTheApproverInAnotherRealm() {
         approvalQueue.add(pending("request-finance", "realm-1", "requester-1", "finance", 1));
         approvalQueue.configuresEntitlement("finance", "finance-approver");
-        approvalQueue.grantsRole("realm-2", "approver-1", "finance-approver");
+        roleMembershipReader.grantsRole("realm-2", "approver-1", "finance-approver");
 
         AccessRequestPage page = queue("realm-1", "approver-1", 0, 20);
 
@@ -87,21 +90,8 @@ class ApprovalQueueServiceTest {
     }
 
     private AccessRequestPage queue(String realmId, String approverId, int page, int size) {
-        try {
-            Class<?> roleMembershipReader = Class.forName(
-                    "ch.anass.keycloak.accessrequests.core.port.RoleMembershipReader");
-            Object service = Class.forName(
-                            "ch.anass.keycloak.accessrequests.core.service.ApprovalQueueService")
-                    .getDeclaredConstructor(AccessRequestRepository.class, roleMembershipReader)
-                    .newInstance(approvalQueue.repository(), approvalQueue.roleMembershipReader());
-            Method findPending = service.getClass().getMethod(
-                    "findPending", String.class, String.class, int.class, int.class);
-            return (AccessRequestPage) findPending.invoke(service, realmId, approverId, page, size);
-        } catch (ReflectiveOperationException exception) {
-            throw new AssertionError(
-                    "The core must provide an approval queue service, query, and repository port.",
-                    exception);
-        }
+        return new ApprovalQueueService(approvalQueue, roleMembershipReader)
+                .findPending(realmId, approverId, page, size);
     }
 
     private static AccessRequest pending(
@@ -130,11 +120,10 @@ class ApprovalQueueServiceTest {
                 Instant.ofEpochSecond(createdAtSeconds));
     }
 
-    private static final class InMemoryApprovalQueue {
+    private static final class InMemoryApprovalQueue implements AccessRequestRepository {
 
         private final List<AccessRequest> requests = new ArrayList<>();
         private final Map<String, String> approverRoles = new HashMap<>();
-        private final Map<String, Set<String>> memberships = new HashMap<>();
         private boolean queried;
 
         void add(AccessRequest request) {
@@ -144,6 +133,63 @@ class ApprovalQueueServiceTest {
         void configuresEntitlement(String entitlementId, String approverRoleId) {
             approverRoles.put(entitlementId, approverRoleId);
         }
+
+        @Override
+        public Optional<AccessRequest> findById(String realmId, String requestId) {
+            throw new UnsupportedOperationException("Request reads are not used by this test double.");
+        }
+
+        @Override
+        public AccessRequestPage findByRequester(AccessRequestQuery query) {
+            throw new UnsupportedOperationException("Requester request reads are not used by this test double.");
+        }
+
+        @Override
+        public AccessRequestPage findPendingForApprover(ApprovalQueueQuery query) {
+            queried = true;
+            return findPending(query);
+        }
+
+        @Override
+        public Set<String> findPendingEntitlementIds(
+                String realmId,
+                String requesterId,
+                Set<String> entitlementIds) {
+            throw new UnsupportedOperationException("Catalog reads are not used by this test double.");
+        }
+
+        @Override
+        public Optional<AccessRequest> createIfNoPending(AccessRequest request) {
+            throw new UnsupportedOperationException("Request creation is not used by this test double.");
+        }
+
+        @Override
+        public Optional<AccessRequest> updateIfVersionMatches(AccessRequest request, long expectedVersion) {
+            throw new UnsupportedOperationException("Request updates are not used by this test double.");
+        }
+
+        boolean wasQueried() {
+            return queried;
+        }
+
+        private AccessRequestPage findPending(ApprovalQueueQuery query) {
+            List<AccessRequest> matching = requests.stream()
+                    .filter(request -> request.realmId().equals(query.realmId()))
+                    .filter(request -> request.decisionStatus() == DecisionStatus.PENDING)
+                    .filter(request -> !request.requesterId().equals(query.approverId()))
+                    .filter(request -> query.approverRoleIds().contains(approverRoles.get(request.entitlementId())))
+                    .sorted(Comparator.comparing(AccessRequest::createdAt).reversed())
+                    .map(AccessRequest::copy)
+                    .toList();
+            int from = Math.min(query.offset(), matching.size());
+            int to = Math.min(from + query.size(), matching.size());
+            return new AccessRequestPage(matching.subList(from, to), query.page(), query.size(), matching.size());
+        }
+    }
+
+    private static final class InMemoryRoleMembershipReader implements RoleMembershipReader {
+
+        private final Map<String, Set<String>> memberships = new HashMap<>();
 
         void grantsRole(String realmId, String approverId, String roleId) {
             memberships.merge(
@@ -156,67 +202,14 @@ class ApprovalQueueServiceTest {
                     });
         }
 
-        Object repository() {
-            return Proxy.newProxyInstance(
-                    getClass().getClassLoader(),
-                    new Class<?>[]{AccessRequestRepository.class},
-                    (proxy, method, arguments) -> {
-                        if (method.getName().equals("findPendingForApprover")) {
-                            queried = true;
-                            return findPending(arguments[0]);
-                        }
-                        throw new UnsupportedOperationException(method.getName());
-                    });
+        @Override
+        public boolean hasRole(String realmId, String actorId, String roleId) {
+            return findEffectiveRoleIds(realmId, actorId).contains(roleId);
         }
 
-        Object roleMembershipReader() throws ReflectiveOperationException {
-            Class<?> roleMembershipReader = Class.forName(
-                    "ch.anass.keycloak.accessrequests.core.port.RoleMembershipReader");
-            return Proxy.newProxyInstance(
-                    getClass().getClassLoader(),
-                    new Class<?>[]{roleMembershipReader},
-                    (proxy, method, arguments) -> {
-                        if (method.getName().equals("findEffectiveRoleIds")) {
-                            return memberships.getOrDefault(
-                                    membershipKey((String) arguments[0], (String) arguments[1]),
-                                    Set.of());
-                        }
-                        if (method.getName().equals("hasRole")) {
-                            return memberships.getOrDefault(
-                                            membershipKey((String) arguments[0], (String) arguments[1]),
-                                            Set.of())
-                                    .contains(arguments[2]);
-                        }
-                        throw new UnsupportedOperationException(method.getName());
-                    });
-        }
-
-        boolean wasQueried() {
-            return queried;
-        }
-
-        private AccessRequestPage findPending(Object query) throws ReflectiveOperationException {
-            String realmId = (String) property(query, "realmId");
-            String approverId = (String) property(query, "approverId");
-            @SuppressWarnings("unchecked")
-            Set<String> roleIds = (Set<String>) property(query, "approverRoleIds");
-            int page = (int) property(query, "page");
-            int size = (int) property(query, "size");
-            List<AccessRequest> matching = requests.stream()
-                    .filter(request -> request.realmId().equals(realmId))
-                    .filter(request -> request.decisionStatus() == DecisionStatus.PENDING)
-                    .filter(request -> !request.requesterId().equals(approverId))
-                    .filter(request -> roleIds.contains(approverRoles.get(request.entitlementId())))
-                    .sorted(Comparator.comparing(AccessRequest::createdAt).reversed())
-                    .map(AccessRequest::copy)
-                    .toList();
-            int from = Math.min(page * size, matching.size());
-            int to = Math.min(from + size, matching.size());
-            return new AccessRequestPage(matching.subList(from, to), page, size, matching.size());
-        }
-
-        private static Object property(Object value, String name) throws ReflectiveOperationException {
-            return value.getClass().getMethod(name).invoke(value);
+        @Override
+        public Set<String> findEffectiveRoleIds(String realmId, String actorId) {
+            return memberships.getOrDefault(membershipKey(realmId, actorId), Set.of());
         }
 
         private static String membershipKey(String realmId, String approverId) {

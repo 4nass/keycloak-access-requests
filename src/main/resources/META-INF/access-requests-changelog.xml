@@ -133,4 +133,13 @@
             <column name="ID"/>
         </createIndex>
     </changeSet>
+
+    <changeSet id="4" author="4nass">
+        <createIndex indexName="IDX_ACCESS_REQUEST_APPROVAL_QUEUE" tableName="AR_ACCESS_REQUEST">
+            <column name="REALM_ID"/>
+            <column name="DECISION_STATUS"/>
+            <column name="CREATED_TIMESTAMP" descending="true"/>
+            <column name="ID"/>
+        </createIndex>
+    </changeSet>
 </databaseChangeLog>
