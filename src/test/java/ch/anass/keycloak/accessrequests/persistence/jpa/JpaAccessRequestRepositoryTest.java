@@ -4,6 +4,7 @@ import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
+import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
@@ -227,6 +228,38 @@ class JpaAccessRequestRepositoryTest {
     }
 
     @Test
+    void pagesOnlyPendingRequestsWithinTheApproversEntitlementScope() {
+        JpaAccessRequestRepository repository = new JpaAccessRequestRepository(entityManager);
+        AccessRequest eligibleOld = requestAt("realm-queue", "requester-1", "eligible-old", "finance", 1);
+        AccessRequest ineligibleNew = requestAt("realm-queue", "requester-2", "ineligible-new", "hr", 5);
+        AccessRequest eligibleMiddle = requestAt("realm-queue", "requester-3", "eligible-middle", "finance", 3);
+        AccessRequest eligibleNew = requestAt("realm-queue", "requester-4", "eligible-new", "finance", 4);
+        AccessRequest ownRequest = requestAt("realm-queue", "approver-1", "own-request", "finance", 6);
+        AccessRequest decided = requestAt("realm-queue", "requester-5", "decided", "finance", 2);
+        decided.approve("approver-2", "Approved.", Instant.ofEpochSecond(7));
+
+        transaction().execute(() -> {
+            entityManager.persist(EntitlementEntity.from(entitlement("realm-queue", "finance", "finance-role")));
+            entityManager.persist(EntitlementEntity.from(entitlement("realm-queue", "hr", "hr-role")));
+            repository.createIfNoPending(eligibleOld).orElseThrow();
+            repository.createIfNoPending(ineligibleNew).orElseThrow();
+            repository.createIfNoPending(eligibleMiddle).orElseThrow();
+            repository.createIfNoPending(eligibleNew).orElseThrow();
+            repository.createIfNoPending(ownRequest).orElseThrow();
+            repository.createIfNoPending(decided).orElseThrow();
+            return null;
+        });
+
+        AccessRequestPage page = repository.findPendingForApprover(
+                new ApprovalQueueQuery("realm-queue", "approver-1", Set.of("finance-role"), 1, 1));
+
+        assertEquals(List.of("eligible-middle"), page.items().stream().map(AccessRequest::id).toList());
+        assertEquals(3, page.total());
+        assertEquals(1, page.page());
+        assertEquals(1, page.size());
+    }
+
+    @Test
     void concurrentCreatesAllowOnlyOnePendingRequest() throws Exception {
         String realmId = "realm-concurrent-" + UUID.randomUUID();
         CountDownLatch start = new CountDownLatch(1);
@@ -389,6 +422,38 @@ class JpaAccessRequestRepositoryTest {
                 "Access is needed for the project.");
     }
 
+    private AccessRequest requestAt(
+            String realmId,
+            String requesterId,
+            String requestId,
+            String entitlementId,
+            long createdAtSeconds) {
+        return AccessRequest.create(
+                requestId,
+                realmId,
+                requesterId,
+                entitlementId,
+                ResourceType.REALM_ROLE,
+                "resource-" + entitlementId,
+                "Resource " + entitlementId,
+                "Access is needed for the project.",
+                Instant.ofEpochSecond(createdAtSeconds));
+    }
+
+    private Entitlement entitlement(String realmId, String entitlementId, String approverRoleId) {
+        return Entitlement.create(
+                        entitlementId,
+                        realmId,
+                        ResourceType.REALM_ROLE,
+                        "resource-" + entitlementId,
+                        "Resource " + entitlementId,
+                        "Access to resource " + entitlementId + ".",
+                        RiskLevel.LOW,
+                        approverRoleId,
+                        Instant.EPOCH)
+                .publish(Instant.EPOCH);
+    }
+
     private JpaAccessRequestTransaction transaction() {
         return new JpaAccessRequestTransaction(entityManager);
     }
@@ -397,6 +462,7 @@ class JpaAccessRequestRepositoryTest {
         EntityTransactionSupport.execute(entityManager, () -> {
             entityManager.createQuery("delete from AccessRequestEventEntity").executeUpdate();
             entityManager.createQuery("delete from AccessRequestEntity").executeUpdate();
+            entityManager.createQuery("delete from EntitlementEntity").executeUpdate();
         });
     }
 

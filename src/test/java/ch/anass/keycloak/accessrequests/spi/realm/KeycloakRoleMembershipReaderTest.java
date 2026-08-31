@@ -6,7 +6,10 @@ import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
 
 import java.lang.reflect.Proxy;
+import java.util.Set;
+import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -31,6 +34,32 @@ class KeycloakRoleMembershipReaderTest {
         assertFalse(reader.hasRole("another-realm", "approver-1", "finance-approver"));
         assertFalse(reader.hasRole("realm-1", "another-user", "finance-approver"));
         assertFalse(reader.hasRole("realm-1", "approver-1", "unknown-role"));
+    }
+
+    @Test
+    void resolvesEffectiveRoleIdentifiersOnlyForTheAuthenticatedActorInTheCurrentRealm() {
+        RoleModel approverRole = proxy(RoleModel.class, (proxy, method, arguments) -> switch (method.getName()) {
+            case "getId" -> "finance-approver";
+            case "hashCode" -> System.identityHashCode(proxy);
+            case "equals" -> proxy == arguments[0];
+            case "isComposite" -> false;
+            default -> null;
+        });
+        RealmModel realm = proxy(RealmModel.class, (proxy, method, arguments) -> switch (method.getName()) {
+            case "getId" -> "realm-1";
+            default -> null;
+        });
+        UserModel user = proxy(UserModel.class, (proxy, method, arguments) -> switch (method.getName()) {
+            case "getId" -> "approver-1";
+            case "getRoleMappingsStream" -> Stream.of(approverRole);
+            case "getGroupsStream" -> Stream.empty();
+            default -> null;
+        });
+        KeycloakRoleMembershipReader reader = new KeycloakRoleMembershipReader(realm, user);
+
+        assertEquals(Set.of("finance-approver"), reader.findEffectiveRoleIds("realm-1", "approver-1"));
+        assertEquals(Set.of(), reader.findEffectiveRoleIds("another-realm", "approver-1"));
+        assertEquals(Set.of(), reader.findEffectiveRoleIds("realm-1", "another-user"));
     }
 
     @SuppressWarnings("unchecked")

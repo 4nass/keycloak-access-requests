@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * A page of access requests belonging to one requester.
+ * A page of access requests.
  */
 public record AccessRequestPage(List<AccessRequest> items, int page, int size, long total) {
 

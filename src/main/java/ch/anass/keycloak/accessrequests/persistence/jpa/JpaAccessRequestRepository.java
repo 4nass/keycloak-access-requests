@@ -3,6 +3,7 @@ package ch.anass.keycloak.accessrequests.persistence.jpa;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
+import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.port.DuplicatePendingRequestException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
@@ -49,6 +50,53 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
                 .map(AccessRequestEntity::toDomain)
                 .toList();
         return new AccessRequestPage(items, query.page(), query.size(), total);
+    }
+
+    @Override
+    public AccessRequestPage findPendingForApprover(ApprovalQueueQuery query) {
+        if (query.approverRoleIds().isEmpty()) {
+            return new AccessRequestPage(List.of(), query.page(), query.size(), 0);
+        }
+        long total = bindApprovalQueueQuery(entityManager.createQuery(
+                "select count(request) " + approvalQueueFromAndWhere(), Long.class), query)
+                .getSingleResult();
+        var items = bindApprovalQueueQuery(entityManager.createQuery(
+                        "select request " + approvalQueueFromAndWhere()
+                                + " order by request.createdTimestamp desc, request.id asc",
+                        AccessRequestEntity.class), query)
+                .setFirstResult(query.offset())
+                .setMaxResults(query.size())
+                .getResultList()
+                .stream()
+                .map(AccessRequestEntity::toDomain)
+                .toList();
+        return new AccessRequestPage(items, query.page(), query.size(), total);
+    }
+
+    private static String approvalQueueFromAndWhere() {
+        return """
+                from AccessRequestEntity request
+                 where request.realmId = :realmId
+                   and request.decisionStatus = :decisionStatus
+                   and request.requesterId <> :approverId
+                   and exists (
+                       select 1
+                         from EntitlementEntity entitlement
+                        where entitlement.id = request.entitlementId
+                          and entitlement.realmId = request.realmId
+                          and entitlement.approverRoleId in :approverRoleIds
+                   )
+                """;
+    }
+
+    private static <T> jakarta.persistence.TypedQuery<T> bindApprovalQueueQuery(
+            jakarta.persistence.TypedQuery<T> typedQuery,
+            ApprovalQueueQuery query) {
+        return typedQuery
+                .setParameter("realmId", query.realmId())
+                .setParameter("decisionStatus", DecisionStatus.PENDING)
+                .setParameter("approverId", query.approverId())
+                .setParameter("approverRoleIds", query.approverRoleIds());
     }
 
     private static <T> jakarta.persistence.TypedQuery<T> bind(
