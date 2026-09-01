@@ -32,6 +32,7 @@ import ch.anass.keycloak.accessrequests.core.service.UserDisabledException;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestEventPublisher;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaEntitlementRepository;
+import ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakEntitlementProvisioner;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ClientErrorException;
 import jakarta.ws.rs.Consumes;
@@ -261,7 +262,8 @@ public final class AccessRequestRealmResource {
                         entitlementRepository,
                         new KeycloakRoleMembershipReader(
                                 authenticatedRequest.realm(), authenticatedRequest.user())),
-                new KeycloakAccessRequestTransaction(session));
+                new KeycloakAccessRequestTransaction(session),
+                List.of(new KeycloakEntitlementProvisioner(session, authenticatedRequest.realm())));
     }
 
     private ApprovalQueueService approvalQueueService(AuthenticatedRequest authenticatedRequest) {

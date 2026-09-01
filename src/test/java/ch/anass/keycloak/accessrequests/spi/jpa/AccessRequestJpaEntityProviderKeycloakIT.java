@@ -398,8 +398,10 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         createEnabledUser(server, adminToken, unauthorizedUsername, unauthorizedPassword);
         String unauthorizedToken = accessToken(server, clientId, unauthorizedUsername, unauthorizedPassword);
 
+        String provisionedRoleId = createRealmRole(
+                server, adminToken, "finance-reader-" + UUID.randomUUID());
         String entitlementId = UUID.randomUUID().toString();
-        insertPublishedEntitlement(entitlementId, approverRoleId);
+        insertEntitlement(entitlementId, "REALM_ROLE", provisionedRoleId, approverRoleId, true);
         String approvalRequestJustification = "I need access to Finance Portal reports for the project.";
 
         HttpResponse<String> approvedRequestResponse = HttpClient.newHttpClient().send(
@@ -478,8 +480,11 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(200, approvalResponse.statusCode());
         assertTrue(approvalResponse.body().contains("\"id\":\"" + approvedRequestId + "\""));
         assertTrue(approvalResponse.body().contains("\"decisionStatus\":\"APPROVED\""));
+        assertTrue(approvalResponse.body().contains("\"provisioningStatus\":\"SUCCEEDED\""));
         assertDecisionAndAuditEvent(
                 approvedRequestId, "APPROVED", "REQUEST_APPROVED", approverId, approvalComment);
+        assertProvisioningAndAuditEvents(approvedRequestId, approverId);
+        assertRealmRoleAssigned(server, adminToken, subjectOf(requesterToken), provisionedRoleId);
 
         HttpResponse<String> repeatedDecisionResponse = HttpClient.newHttpClient().send(
                 requestDecision(accessRequestsEndpoint, approverToken, approvedRequestId, "reject", "Too late."),
@@ -761,6 +766,48 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         }
     }
 
+    private void assertProvisioningAndAuditEvents(String requestId, String approverId) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var requestStatement = connection.prepareStatement("""
+                     select PROVISIONING_STATUS
+                       from AR_ACCESS_REQUEST
+                      where ID = ?
+                     """)) {
+            requestStatement.setString(1, requestId);
+            try (ResultSet result = requestStatement.executeQuery()) {
+                assertTrue(result.next(), "The provisioned request must be persisted.");
+                assertEquals("SUCCEEDED", result.getString("PROVISIONING_STATUS"));
+                assertFalse(result.next(), "Exactly one provisioned request must be persisted.");
+            }
+
+            assertProvisioningAuditEvent(connection, requestId, "PROVISIONING_STARTED", approverId);
+            assertProvisioningAuditEvent(connection, requestId, "PROVISIONING_SUCCEEDED", approverId);
+        }
+    }
+
+    private void assertProvisioningAuditEvent(
+            Connection connection,
+            String requestId,
+            String eventType,
+            String approverId) throws SQLException {
+        try (var eventStatement = connection.prepareStatement("""
+                select EVENT_TYPE, ACTOR_ID
+                  from AR_ACCESS_REQUEST_HISTORY
+                 where REQUEST_ID = ?
+                   and EVENT_TYPE = ?
+                """)) {
+            eventStatement.setString(1, requestId);
+            eventStatement.setString(2, eventType);
+            try (ResultSet result = eventStatement.executeQuery()) {
+                assertTrue(result.next(), "Provisioning must persist its audit event.");
+                assertEquals(eventType, result.getString("EVENT_TYPE"));
+                assertEquals(approverId, result.getString("ACTOR_ID"));
+                assertFalse(result.next(), "Exactly one provisioning audit event must be persisted.");
+            }
+        }
+    }
+
     private String accessToken(GenericContainer<?> server, String clientId) throws Exception {
         return accessToken(server, clientId, "admin", "admin");
     }
@@ -974,6 +1021,24 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
     private String createRealmRoleAndAssignToUser(
             GenericContainer<?> server, String adminToken, String userId, String roleName) throws Exception {
+        String roleId = createRealmRole(server, adminToken, roleName);
+
+        URI roleMappingsEndpoint = URI.create("http://%s:%d/admin/realms/master/users/%s/role-mappings/realm"
+                .formatted(server.getHost(), server.getMappedPort(8080), userId));
+        HttpResponse<Void> assignRoleResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(roleMappingsEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("""
+                                [{"id":"%s","name":"%s"}]
+                                """.formatted(roleId, roleName)))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(204, assignRoleResponse.statusCode());
+        return roleId;
+    }
+
+    private String createRealmRole(GenericContainer<?> server, String adminToken, String roleName) throws Exception {
         URI rolesEndpoint = URI.create("http://%s:%d/admin/realms/master/roles"
                 .formatted(server.getHost(), server.getMappedPort(8080)));
         HttpResponse<Void> createRoleResponse = HttpClient.newHttpClient().send(
@@ -997,21 +1062,25 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(200, roleResponse.statusCode());
         var roleIdMatcher = Pattern.compile("\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(roleResponse.body());
         assertTrue(roleIdMatcher.find(), "The created realm role must have an identifier.");
-        String roleId = roleIdMatcher.group(1);
+        return roleIdMatcher.group(1);
+    }
 
+    private void assertRealmRoleAssigned(
+            GenericContainer<?> server,
+            String adminToken,
+            String userId,
+            String roleId) throws Exception {
         URI roleMappingsEndpoint = URI.create("http://%s:%d/admin/realms/master/users/%s/role-mappings/realm"
                 .formatted(server.getHost(), server.getMappedPort(8080), userId));
-        HttpResponse<Void> assignRoleResponse = HttpClient.newHttpClient().send(
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(roleMappingsEndpoint)
                         .header("Authorization", "Bearer " + adminToken)
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString("""
-                                [{"id":"%s","name":"%s"}]
-                                """.formatted(roleId, roleName)))
+                        .GET()
                         .build(),
-                HttpResponse.BodyHandlers.discarding());
-        assertEquals(204, assignRoleResponse.statusCode());
-        return roleId;
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"id\":\"" + roleId + "\""),
+                "Provisioning must grant the configured realm role to the requester.");
     }
 
     private boolean hasAccessRequestsApiAudience(String accessToken) {

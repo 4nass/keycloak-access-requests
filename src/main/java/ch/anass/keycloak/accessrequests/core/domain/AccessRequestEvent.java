@@ -61,6 +61,28 @@ public final class AccessRequestEvent {
         return from(request, AccessRequestEventType.REQUEST_REJECTED, actorId, occurredAt, comment);
     }
 
+    public static AccessRequestEvent provisioningStarted(
+            AccessRequest request,
+            String actorId,
+            Instant occurredAt) {
+        return from(request, AccessRequestEventType.PROVISIONING_STARTED, actorId, occurredAt, null);
+    }
+
+    public static AccessRequestEvent provisioningSucceeded(
+            AccessRequest request,
+            String actorId,
+            Instant occurredAt) {
+        return from(request, AccessRequestEventType.PROVISIONING_SUCCEEDED, actorId, occurredAt, null);
+    }
+
+    public static AccessRequestEvent provisioningFailed(
+            AccessRequest request,
+            String actorId,
+            Instant occurredAt,
+            String failureReason) {
+        return from(request, AccessRequestEventType.PROVISIONING_FAILED, actorId, occurredAt, failureReason);
+    }
+
     private static AccessRequestEvent from(
             AccessRequest request,
             AccessRequestEventType type,

@@ -11,12 +11,14 @@ import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
 import ch.anass.keycloak.accessrequests.core.port.ApprovalAuthorizer;
 import ch.anass.keycloak.accessrequests.core.port.DuplicatePendingRequestException;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
+import ch.anass.keycloak.accessrequests.core.port.EntitlementProvisioner;
 import ch.anass.keycloak.accessrequests.core.service.RequestPolicy;
 import ch.anass.keycloak.accessrequests.core.service.RequestService;
 import jakarta.persistence.EntityManager;
@@ -406,7 +408,18 @@ class JpaAccessRequestRepositoryTest {
                 new RequestPolicy(10, 2000),
                 publisher,
                 (realmId, actorId, entitlementId) -> true,
-                new JpaAccessRequestTransaction(entityManager));
+                new JpaAccessRequestTransaction(entityManager),
+                List.of(new EntitlementProvisioner() {
+                    @Override
+                    public boolean supports(ResourceType resourceType) {
+                        return true;
+                    }
+
+                    @Override
+                    public ProvisioningResult grant(String realmId, String requesterId, Entitlement entitlement) {
+                        return ProvisioningResult.succeeded();
+                    }
+                }));
     }
 
     private AccessRequest request(String realmId, String requesterId, String requestId) {

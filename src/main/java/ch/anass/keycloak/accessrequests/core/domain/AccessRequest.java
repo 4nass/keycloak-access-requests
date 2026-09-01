@@ -211,6 +211,14 @@ public final class AccessRequest {
         recordDecision(decidedAt);
     }
 
+    public void markProvisioningSucceeded(Instant completedAt) {
+        completeProvisioning(ProvisioningStatus.SUCCEEDED, completedAt);
+    }
+
+    public void markProvisioningFailed(Instant completedAt) {
+        completeProvisioning(ProvisioningStatus.FAILED, completedAt);
+    }
+
     public void reject(String approverId, String decisionComment) {
         reject(approverId, decisionComment, Instant.now());
     }
@@ -242,6 +250,14 @@ public final class AccessRequest {
         if (decisionStatus != DecisionStatus.PENDING) {
             throw new InvalidRequestStateException(decisionStatus);
         }
+    }
+
+    private void completeProvisioning(ProvisioningStatus result, Instant completedAt) {
+        if (decisionStatus != DecisionStatus.APPROVED || provisioningStatus != ProvisioningStatus.NOT_STARTED) {
+            throw new InvalidRequestStateException(decisionStatus);
+        }
+        this.provisioningStatus = Objects.requireNonNull(result, "result must not be null");
+        this.updatedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
     }
 
     private AccessRequest copyWithVersion(long newVersion) {

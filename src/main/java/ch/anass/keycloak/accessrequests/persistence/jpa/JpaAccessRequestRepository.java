@@ -221,6 +221,7 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
         if (updated == 0) {
             return Optional.empty();
         }
+        entityManager.flush();
         entityManager.clear();
         return findById(request.realmId(), request.id());
     }

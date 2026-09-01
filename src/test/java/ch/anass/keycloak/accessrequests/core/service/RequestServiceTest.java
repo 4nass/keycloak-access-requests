@@ -10,6 +10,8 @@ import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidRequestStateException;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
@@ -18,6 +20,7 @@ import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
 import ch.anass.keycloak.accessrequests.core.port.ApprovalAuthorizer;
 import ch.anass.keycloak.accessrequests.core.port.EffectiveAccessChecker;
+import ch.anass.keycloak.accessrequests.core.port.EntitlementProvisioner;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
 import ch.anass.keycloak.accessrequests.core.port.UserStatusReader;
 import org.junit.jupiter.api.Test;
@@ -49,6 +52,7 @@ class RequestServiceTest {
     private final InMemoryUserStatusReader users = new InMemoryUserStatusReader();
     private final InMemoryAccessRequestEventPublisher events = new InMemoryAccessRequestEventPublisher();
     private final InMemoryApprovalAuthorizer approvalAuthorizer = new InMemoryApprovalAuthorizer();
+    private final InMemoryEntitlementProvisioner provisioner = new InMemoryEntitlementProvisioner();
     private final InMemoryAccessRequestTransaction transaction =
             new InMemoryAccessRequestTransaction(requests, events);
     private final RequestService service = new RequestService(
@@ -59,7 +63,8 @@ class RequestServiceTest {
             new RequestPolicy(10, 2000),
             events,
             approvalAuthorizer,
-            transaction);
+            transaction,
+            List.of(provisioner));
 
     @Test
     void createsPendingRequestForRequestableEntitlement() {
@@ -315,11 +320,18 @@ class RequestServiceTest {
                 "Approved for the project.");
 
         assertEquals(DecisionStatus.APPROVED, approved.decisionStatus());
+        assertEquals(ProvisioningStatus.SUCCEEDED, approved.provisioningStatus());
         assertEquals("approver-1", approved.approverId());
         assertEquals("Approved for the project.", approved.decisionComment());
-        assertEquals(1, approved.version());
+        assertEquals(2, approved.version());
         assertEquals(AccessRequestEventType.REQUEST_APPROVED, events.published().get(1).type());
         assertEquals("Approved for the project.", events.published().get(1).comment());
+        assertEquals(List.of(
+                        AccessRequestEventType.REQUEST_CREATED,
+                        AccessRequestEventType.REQUEST_APPROVED,
+                        AccessRequestEventType.PROVISIONING_STARTED,
+                        AccessRequestEventType.PROVISIONING_SUCCEEDED),
+                events.published().stream().map(AccessRequestEvent::type).toList());
     }
 
     @Test
@@ -902,6 +914,19 @@ class RequestServiceTest {
 
         private static String key(String realmId, String requesterId, String entitlementId) {
             return realmId + ":" + requesterId + ":" + entitlementId;
+        }
+    }
+
+    private static final class InMemoryEntitlementProvisioner implements EntitlementProvisioner {
+
+        @Override
+        public boolean supports(ResourceType resourceType) {
+            return true;
+        }
+
+        @Override
+        public ProvisioningResult grant(String realmId, String requesterId, Entitlement entitlement) {
+            return ProvisioningResult.succeeded();
         }
     }
 }
