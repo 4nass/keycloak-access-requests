@@ -15,6 +15,7 @@ import ch.anass.keycloak.accessrequests.core.domain.SelfApprovalException;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedApprovalException;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
 import ch.anass.keycloak.accessrequests.core.service.AccessAlreadyGrantedException;
+import ch.anass.keycloak.accessrequests.core.service.ApprovalQueueService;
 import ch.anass.keycloak.accessrequests.core.service.CatalogService;
 import ch.anass.keycloak.accessrequests.core.service.EntitlementScopedApprovalAuthorizer;
 import ch.anass.keycloak.accessrequests.core.service.EntitlementNotFoundException;
@@ -154,6 +155,25 @@ public final class AccessRequestRealmResource {
         }
     }
 
+    @GET
+    @Path("pending")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listPendingRequests(
+            @DefaultValue("0") @QueryParam("page") int page,
+            @DefaultValue("20") @QueryParam("size") int size) {
+        AuthenticatedRequest authenticatedRequest = authenticate();
+        try {
+            AccessRequestPage requestPage = approvalQueueService(authenticatedRequest).findPending(
+                    authenticatedRequest.realm().getId(),
+                    authenticatedRequest.user().getId(),
+                    page,
+                    size);
+            return Response.ok(RequestListResponse.from(requestPage)).build();
+        } catch (IllegalArgumentException exception) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_REQUEST_QUERY", exception.getMessage(), null);
+        }
+    }
+
     @POST
     @Path("{requestId}/cancel")
     @Produces(MediaType.APPLICATION_JSON)
@@ -240,6 +260,17 @@ public final class AccessRequestRealmResource {
                         new KeycloakRoleMembershipReader(
                                 authenticatedRequest.realm(), authenticatedRequest.user())),
                 new KeycloakAccessRequestTransaction(session));
+    }
+
+    private ApprovalQueueService approvalQueueService(AuthenticatedRequest authenticatedRequest) {
+        var entityManager = Objects.requireNonNull(
+                session.getProvider(JpaConnectionProvider.class),
+                "Keycloak JPA connection provider must not be null")
+                .getEntityManager();
+        return new ApprovalQueueService(
+                new JpaAccessRequestRepository(entityManager),
+                new KeycloakRoleMembershipReader(
+                        authenticatedRequest.realm(), authenticatedRequest.user()));
     }
 
     private Response decide(String requestId, DecisionSubmission submission, boolean approved) {

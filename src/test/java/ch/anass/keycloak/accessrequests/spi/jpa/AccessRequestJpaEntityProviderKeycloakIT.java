@@ -368,6 +368,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         URI accessRequestsEndpoint = URI.create("http://%s:%d/realms/master/access-requests"
                 .formatted(server.getHost(), server.getMappedPort(8080)));
         URI requestsEndpoint = URI.create(accessRequestsEndpoint + "/requests");
+        URI pendingRequestsEndpoint = URI.create(accessRequestsEndpoint + "/pending");
         String adminToken = accessToken(server, "admin-cli");
         String clientId = "request-approver-" + UUID.randomUUID();
         createDirectAccessClient(server, adminToken, clientId);
@@ -409,6 +410,42 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(201, approvedRequestResponse.statusCode());
         String approvedRequestId = responseId(approvedRequestResponse.body());
+
+        HttpResponse<Void> unauthenticatedQueueResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(pendingRequestsEndpoint).GET().build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(401, unauthenticatedQueueResponse.statusCode());
+
+        HttpResponse<String> requesterQueueResponse = HttpClient.newHttpClient().send(
+                pendingRequests(pendingRequestsEndpoint, requesterToken),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, requesterQueueResponse.statusCode());
+        assertTrue(requesterQueueResponse.body().contains("\"total\":0"));
+        assertFalse(requesterQueueResponse.body().contains(approvedRequestId));
+
+        HttpResponse<String> unauthorizedQueueResponse = HttpClient.newHttpClient().send(
+                pendingRequests(pendingRequestsEndpoint, unauthorizedToken),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, unauthorizedQueueResponse.statusCode());
+        assertTrue(unauthorizedQueueResponse.body().contains("\"total\":0"));
+        assertFalse(unauthorizedQueueResponse.body().contains(approvedRequestId));
+
+        HttpResponse<String> approverQueueResponse = HttpClient.newHttpClient().send(
+                pendingRequests(pendingRequestsEndpoint, approverToken),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, approverQueueResponse.statusCode());
+        assertTrue(approverQueueResponse.body().contains("\"total\":1"));
+        assertTrue(approverQueueResponse.body().contains(approvedRequestId));
+        assertTrue(approverQueueResponse.body().contains("\"decisionStatus\":\"PENDING\""));
+
+        HttpResponse<String> invalidQueuePageResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(pendingRequestsEndpoint + "?page=-1"))
+                        .header("Authorization", "Bearer " + approverToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, invalidQueuePageResponse.statusCode());
+        assertError(invalidQueuePageResponse.body(), "INVALID_REQUEST_QUERY", null);
 
         HttpResponse<String> missingDecisionPayloadResponse = HttpClient.newHttpClient().send(
                 requestDecisionWithoutPayload(accessRequestsEndpoint, approverToken, approvedRequestId, "approve"),
@@ -488,6 +525,13 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         return HttpRequest.newBuilder(URI.create(accessRequestsEndpoint + "/" + requestId + "/cancel"))
                 .header("Authorization", "Bearer " + accessToken)
                 .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+    }
+
+    private HttpRequest pendingRequests(URI endpoint, String accessToken) {
+        return HttpRequest.newBuilder(endpoint)
+                .header("Authorization", "Bearer " + accessToken)
+                .GET()
                 .build();
     }
 
