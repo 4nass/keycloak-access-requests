@@ -10,5 +10,10 @@ public interface EntitlementRepository {
 
     Optional<Entitlement> findById(String realmId, String entitlementId);
 
+    /**
+     * Loads an entitlement while preventing concurrent policy changes until the current transaction completes.
+     */
+    Optional<Entitlement> findByIdForUpdate(String realmId, String entitlementId);
+
     CatalogPage findRequestable(CatalogQuery query);
 }

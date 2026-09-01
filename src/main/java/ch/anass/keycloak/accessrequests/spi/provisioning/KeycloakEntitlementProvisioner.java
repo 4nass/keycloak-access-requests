@@ -43,7 +43,8 @@ public final class KeycloakEntitlementProvisioner implements EntitlementProvisio
                 return ProvisioningResult.failed("The requester no longer exists in the realm.");
             }
             return switch (entitlement.resourceType()) {
-                case REALM_ROLE, CLIENT_ROLE -> grantRole(requester, entitlement.resourceId());
+                case REALM_ROLE -> grantRealmRole(requester, entitlement.resourceId());
+                case CLIENT_ROLE -> grantClientRole(requester, entitlement.resourceId());
                 case GROUP -> joinGroup(requester, entitlement.resourceId());
             };
         } catch (RuntimeException exception) {
@@ -52,11 +53,29 @@ public final class KeycloakEntitlementProvisioner implements EntitlementProvisio
         }
     }
 
-    private ProvisioningResult grantRole(UserModel requester, String roleId) {
+    private ProvisioningResult grantRealmRole(UserModel requester, String roleId) {
         RoleModel role = realm.getRoleById(roleId);
         if (role == null) {
             return ProvisioningResult.failed("The configured Keycloak role no longer exists.");
         }
+        if (role.isClientRole()) {
+            return ProvisioningResult.failed("The configured entitlement is not a realm role.");
+        }
+        return grantRole(requester, role);
+    }
+
+    private ProvisioningResult grantClientRole(UserModel requester, String roleId) {
+        RoleModel role = realm.getRoleById(roleId);
+        if (role == null) {
+            return ProvisioningResult.failed("The configured Keycloak role no longer exists.");
+        }
+        if (!role.isClientRole()) {
+            return ProvisioningResult.failed("The configured entitlement is not a client role.");
+        }
+        return grantRole(requester, role);
+    }
+
+    private ProvisioningResult grantRole(UserModel requester, RoleModel role) {
         if (!requester.hasRole(role)) {
             requester.grantRole(role);
         }

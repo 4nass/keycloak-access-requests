@@ -145,11 +145,10 @@ public final class RequestService {
             String requestId,
             String approverId,
             String decisionComment) {
-        AccessRequest request = findRequest(realmId, requestId);
-        authorizeDecision(realmId, request, approverId);
-        Entitlement entitlement = requireCurrentEntitlement(realmId, request.entitlementId());
-
         return transaction.execute(() -> {
+            AccessRequest request = findRequest(realmId, requestId);
+            Entitlement entitlement = requireCurrentEntitlementForUpdate(realmId, request.entitlementId());
+            authorizeDecision(realmId, request, approverId);
             AccessRequest candidate = request.copy();
             Instant decidedAt = Instant.now(clock);
             candidate.approve(approverId, decisionComment, decidedAt);
@@ -210,6 +209,15 @@ public final class RequestService {
 
     private Entitlement requireCurrentEntitlement(String realmId, String entitlementId) {
         Entitlement entitlement = entitlementRepository.findById(realmId, entitlementId)
+                .orElseThrow(() -> new EntitlementNotFoundException(entitlementId));
+        if (!entitlement.requestable()) {
+            throw new EntitlementNotRequestableException(entitlementId);
+        }
+        return entitlement;
+    }
+
+    private Entitlement requireCurrentEntitlementForUpdate(String realmId, String entitlementId) {
+        Entitlement entitlement = entitlementRepository.findByIdForUpdate(realmId, entitlementId)
                 .orElseThrow(() -> new EntitlementNotFoundException(entitlementId));
         if (!entitlement.requestable()) {
             throw new EntitlementNotRequestableException(entitlementId);

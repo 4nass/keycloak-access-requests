@@ -32,14 +32,15 @@ final class KeycloakEffectiveAccessChecker implements EffectiveAccessChecker {
             return false;
         }
         return switch (entitlement.resourceType()) {
-            case REALM_ROLE, CLIENT_ROLE -> hasRole(entitlement);
+            case REALM_ROLE -> hasRole(entitlement, false);
+            case CLIENT_ROLE -> hasRole(entitlement, true);
             case GROUP -> isMemberOf(entitlement);
         };
     }
 
-    private boolean hasRole(Entitlement entitlement) {
+    private boolean hasRole(Entitlement entitlement, boolean clientRole) {
         RoleModel role = realm.getRoleById(entitlement.resourceId());
-        return role != null && user.hasRole(role);
+        return role != null && role.isClientRole() == clientRole && user.hasRole(role);
     }
 
     private boolean isMemberOf(Entitlement entitlement) {

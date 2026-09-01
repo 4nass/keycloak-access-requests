@@ -21,24 +21,31 @@ class KeycloakEffectiveAccessCheckerTest {
 
     @Test
     void recognizesEffectiveRealmAndClientRoles() {
-        RoleModel role = proxy(RoleModel.class, (proxy, method, arguments) -> null);
+        RoleModel realmRole = role(false);
+        RoleModel clientRole = role(true);
         RealmModel realm = proxy(RealmModel.class, (proxy, method, arguments) -> switch (method.getName()) {
             case "getId" -> "realm-1";
-            case "getRoleById" -> role;
+            case "getRoleById" -> switch ((String) arguments[0]) {
+                case "realm-role" -> realmRole;
+                case "client-role" -> clientRole;
+                default -> null;
+            };
             default -> null;
         });
         UserModel user = proxy(UserModel.class, (proxy, method, arguments) -> switch (method.getName()) {
             case "getId" -> "user-1";
-            case "hasRole" -> arguments[0] == role;
+            case "hasRole" -> arguments[0] == realmRole || arguments[0] == clientRole;
             default -> null;
         });
         KeycloakEffectiveAccessChecker checker = new KeycloakEffectiveAccessChecker(
                 proxy(KeycloakSession.class, (proxy, method, arguments) -> null), realm, user);
 
-        assertTrue(checker.hasAccess("realm-1", "user-1", entitlement(ResourceType.REALM_ROLE, "role-1")));
-        assertTrue(checker.hasAccess("realm-1", "user-1", entitlement(ResourceType.CLIENT_ROLE, "role-1")));
-        assertFalse(checker.hasAccess("another-realm", "user-1", entitlement(ResourceType.REALM_ROLE, "role-1")));
-        assertFalse(checker.hasAccess("realm-1", "another-user", entitlement(ResourceType.CLIENT_ROLE, "role-1")));
+        assertTrue(checker.hasAccess("realm-1", "user-1", entitlement(ResourceType.REALM_ROLE, "realm-role")));
+        assertTrue(checker.hasAccess("realm-1", "user-1", entitlement(ResourceType.CLIENT_ROLE, "client-role")));
+        assertFalse(checker.hasAccess("realm-1", "user-1", entitlement(ResourceType.REALM_ROLE, "client-role")));
+        assertFalse(checker.hasAccess("realm-1", "user-1", entitlement(ResourceType.CLIENT_ROLE, "realm-role")));
+        assertFalse(checker.hasAccess("another-realm", "user-1", entitlement(ResourceType.REALM_ROLE, "realm-role")));
+        assertFalse(checker.hasAccess("realm-1", "another-user", entitlement(ResourceType.CLIENT_ROLE, "client-role")));
     }
 
     @Test
@@ -72,6 +79,11 @@ class KeycloakEffectiveAccessCheckerTest {
                 RiskLevel.LOW,
                 "access-request-approver",
                 Instant.EPOCH).publish(Instant.EPOCH);
+    }
+
+    private static RoleModel role(boolean clientRole) {
+        return proxy(RoleModel.class, (proxy, method, arguments) ->
+                method.getName().equals("isClientRole") ? clientRole : null);
     }
 
     @SuppressWarnings("unchecked")

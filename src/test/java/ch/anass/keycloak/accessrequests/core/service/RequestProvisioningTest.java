@@ -11,6 +11,7 @@ import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidRequestStateException;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
@@ -19,11 +20,11 @@ import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
 import ch.anass.keycloak.accessrequests.core.port.ApprovalAuthorizer;
 import ch.anass.keycloak.accessrequests.core.port.EffectiveAccessChecker;
+import ch.anass.keycloak.accessrequests.core.port.EntitlementProvisioner;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
 import ch.anass.keycloak.accessrequests.core.port.UserStatusReader;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Proxy;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -35,6 +36,7 @@ import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequestProvisioningTest {
 
@@ -109,6 +111,59 @@ class RequestProvisioningTest {
                 fixture.eventTypes());
     }
 
+    @Test
+    void revalidatesTheEntitlementUnderTheProvisioningTransactionLock() {
+        Fixture fixture = fixture(ResourceType.REALM_ROLE, ProvisioningOutcome.SUCCEEDED);
+        Entitlement unpublished = fixture.entitlement().unpublish(CLOCK.instant());
+        boolean[] transactionActive = {false};
+        EntitlementRepository entitlementRepository = new EntitlementRepository() {
+            @Override
+            public Optional<Entitlement> findById(String realmId, String entitlementId) {
+                throw new AssertionError("Approval must not validate the entitlement before its transaction starts.");
+            }
+
+            @Override
+            public Optional<Entitlement> findByIdForUpdate(String realmId, String entitlementId) {
+                assertTrue(transactionActive[0], "The entitlement must be locked in the provisioning transaction.");
+                assertEquals(fixture.entitlement().realmId(), realmId);
+                assertEquals(fixture.entitlement().id(), entitlementId);
+                return Optional.of(unpublished);
+            }
+
+            @Override
+            public CatalogPage findRequestable(CatalogQuery query) {
+                throw new UnsupportedOperationException("Catalog reads are not used by this test double.");
+            }
+        };
+        RequestService service = new RequestService(
+                entitlementRepository,
+                fixture.requests(),
+                (realmId, requesterId, currentEntitlement) -> false,
+                (realmId, userId) -> true,
+                new RequestPolicy(10, 2_000),
+                fixture.events(),
+                (realmId, actorId, entitlementId) -> true,
+                new AccessRequestTransaction() {
+                    @Override
+                    public <T> T execute(Supplier<T> operation) {
+                        transactionActive[0] = true;
+                        try {
+                            return operation.get();
+                        } finally {
+                            transactionActive[0] = false;
+                        }
+                    }
+                },
+                List.of(fixture.provisioner()),
+                CLOCK);
+
+        assertThrows(EntitlementNotRequestableException.class, () -> service.approve(
+                fixture.request().realmId(), fixture.request().id(), "approver-1", "Approved."));
+        assertEquals(DecisionStatus.PENDING, fixture.persistedRequest().decisionStatus());
+        assertEquals(0, fixture.provisioner().grantAttempts());
+        assertEquals(List.of(), fixture.eventTypes());
+    }
+
     private static Fixture fixture(ResourceType resourceType, ProvisioningOutcome outcome) {
         Entitlement entitlement = Entitlement.create(
                         "entitlement-1",
@@ -143,69 +198,22 @@ class RequestProvisioningTest {
             InMemoryAccessRequestRepository requests,
             RecordingEventPublisher events,
             RecordingProvisioner provisioner) {
-        try {
-            Class<?> provisionerType = Class.forName(
-                    "ch.anass.keycloak.accessrequests.core.port.EntitlementProvisioner");
-            Object provisionerAdapter = Proxy.newProxyInstance(
-                    RequestProvisioningTest.class.getClassLoader(),
-                    new Class<?>[]{provisionerType},
-                    (proxy, method, arguments) -> switch (method.getName()) {
-                        case "supports" -> provisioner.supports((ResourceType) arguments[0]);
-                        case "grant" -> provisioner.grant(
-                                (String) arguments[0],
-                                (String) arguments[1],
-                                (Entitlement) arguments[2]);
-                        default -> throw new UnsupportedOperationException(method.getName());
-                    });
-            return RequestService.class
-                    .getConstructor(
-                            EntitlementRepository.class,
-                            AccessRequestRepository.class,
-                            EffectiveAccessChecker.class,
-                            UserStatusReader.class,
-                            RequestPolicy.class,
-                            AccessRequestEventPublisher.class,
-                            ApprovalAuthorizer.class,
-                            AccessRequestTransaction.class,
-                            List.class,
-                            Clock.class)
-                    .newInstance(
-                            new SingleEntitlementRepository(entitlement),
-                            requests,
-                            (EffectiveAccessChecker) (realmId, requesterId, currentEntitlement) -> false,
-                            (UserStatusReader) (realmId, userId) -> true,
-                            new RequestPolicy(10, 2_000),
-                            events,
-                            (ApprovalAuthorizer) (realmId, actorId, entitlementId) -> true,
-                            new AccessRequestTransaction() {
-                                @Override
-                                public <T> T execute(Supplier<T> operation) {
-                                    return operation.get();
-                                }
-                            },
-                            List.of(provisionerAdapter),
-                            CLOCK);
-        } catch (ReflectiveOperationException exception) {
-            throw new AssertionError(
-                    "The core must provision an approved request through entitlement provisioner ports.",
-                    exception);
-        }
-    }
-
-    private static Object provisioningResult(ProvisioningOutcome outcome) {
-        try {
-            Class<?> resultType = Class.forName(
-                    "ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult");
-            return switch (outcome) {
-                case SUCCEEDED -> resultType.getMethod("succeeded").invoke(null);
-                case FAILED -> resultType.getMethod("failed", String.class)
-                        .invoke(null, "The target resource could not be resolved.");
-            };
-        } catch (ReflectiveOperationException exception) {
-            throw new AssertionError(
-                    "The core must expose provisioning results for successful and failed grants.",
-                    exception);
-        }
+        return new RequestService(
+                new SingleEntitlementRepository(entitlement),
+                requests,
+                (EffectiveAccessChecker) (realmId, requesterId, currentEntitlement) -> false,
+                (UserStatusReader) (realmId, userId) -> true,
+                new RequestPolicy(10, 2_000),
+                events,
+                (ApprovalAuthorizer) (realmId, actorId, entitlementId) -> true,
+                new AccessRequestTransaction() {
+                    @Override
+                    public <T> T execute(Supplier<T> operation) {
+                        return operation.get();
+                    }
+                },
+                List.of(provisioner),
+                CLOCK);
     }
 
     private record Fixture(
@@ -230,7 +238,7 @@ class RequestProvisioningTest {
         FAILED
     }
 
-    private static final class RecordingProvisioner {
+    private static final class RecordingProvisioner implements EntitlementProvisioner {
 
         private final ProvisioningOutcome outcome;
         private int grantAttempts;
@@ -242,16 +250,21 @@ class RequestProvisioningTest {
             this.outcome = outcome;
         }
 
-        boolean supports(ResourceType resourceType) {
+        @Override
+        public boolean supports(ResourceType resourceType) {
             return true;
         }
 
-        Object grant(String realmId, String requesterId, Entitlement entitlement) {
+        @Override
+        public ProvisioningResult grant(String realmId, String requesterId, Entitlement entitlement) {
             grantAttempts++;
             this.realmId = realmId;
             this.requesterId = requesterId;
             this.entitlement = entitlement;
-            return provisioningResult(outcome);
+            return switch (outcome) {
+                case SUCCEEDED -> ProvisioningResult.succeeded();
+                case FAILED -> ProvisioningResult.failed("The target resource could not be resolved.");
+            };
         }
 
         int grantAttempts() {
@@ -285,6 +298,11 @@ class RequestProvisioningTest {
                 return Optional.of(entitlement);
             }
             return Optional.empty();
+        }
+
+        @Override
+        public Optional<Entitlement> findByIdForUpdate(String realmId, String entitlementId) {
+            return findById(realmId, entitlementId);
         }
 
         @Override

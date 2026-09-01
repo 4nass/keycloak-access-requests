@@ -5,6 +5,7 @@ import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.persistence.TypedQuery;
 
 import java.util.ArrayList;
@@ -27,6 +28,22 @@ public final class JpaEntitlementRepository implements EntitlementRepository {
         }
         Entitlement entitlement = entity.toDomain();
         return entitlement.realmId().equals(realmId) ? Optional.of(entitlement) : Optional.empty();
+    }
+
+    @Override
+    public Optional<Entitlement> findByIdForUpdate(String realmId, String entitlementId) {
+        return entityManager.createQuery("""
+                        select entity
+                          from EntitlementEntity entity
+                         where entity.id = :entitlementId
+                           and entity.realmId = :realmId
+                        """, EntitlementEntity.class)
+                .setParameter("entitlementId", entitlementId)
+                .setParameter("realmId", realmId)
+                .setLockMode(LockModeType.PESSIMISTIC_WRITE)
+                .getResultStream()
+                .findFirst()
+                .map(EntitlementEntity::toDomain);
     }
 
     @Override

@@ -95,6 +95,11 @@ class CatalogServiceTest {
         }
 
         @Override
+        public Optional<Entitlement> findByIdForUpdate(String realmId, String entitlementId) {
+            return findById(realmId, entitlementId);
+        }
+
+        @Override
         public CatalogPage findRequestable(CatalogQuery query) {
             lastQuery = query;
             return page;

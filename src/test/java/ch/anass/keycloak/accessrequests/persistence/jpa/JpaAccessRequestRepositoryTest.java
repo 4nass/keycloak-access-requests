@@ -396,6 +396,11 @@ class JpaAccessRequestRepositoryTest {
             }
 
             @Override
+            public Optional<Entitlement> findByIdForUpdate(String realmId, String entitlementId) {
+                return findById(realmId, entitlementId);
+            }
+
+            @Override
             public CatalogPage findRequestable(CatalogQuery query) {
                 throw new UnsupportedOperationException("Catalog reads are not used by this test double.");
             }

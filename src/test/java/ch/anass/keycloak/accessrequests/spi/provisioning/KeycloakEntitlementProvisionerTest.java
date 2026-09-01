@@ -1,9 +1,11 @@
 package ch.anass.keycloak.accessrequests.spi.provisioning;
 
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
+import ch.anass.keycloak.accessrequests.core.port.EntitlementProvisioner;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.api.Test;
@@ -15,7 +17,6 @@ import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.UserProvider;
 
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.Collections;
@@ -35,10 +36,10 @@ class KeycloakEntitlementProvisionerTest {
     void grantsEveryV0EntitlementTypeToTheRequester(ResourceType resourceType) {
         KeycloakFixture fixture = KeycloakFixture.withTarget(resourceType);
 
-        Object result = grant(provisioner(fixture), fixture.entitlement());
+        ProvisioningResult result = grant(provisioner(fixture), fixture.entitlement());
 
-        assertTrue(supports(provisioner(fixture), resourceType));
-        assertEquals(ProvisioningStatus.SUCCEEDED, status(result));
+        assertTrue(provisioner(fixture).supports(resourceType));
+        assertEquals(ProvisioningStatus.SUCCEEDED, result.status());
         fixture.assertSingleGrant(resourceType);
     }
 
@@ -46,10 +47,10 @@ class KeycloakEntitlementProvisionerTest {
     @EnumSource(ResourceType.class)
     void treatsAnAlreadyGrantedEntitlementAsASuccessfulNoOp(ResourceType resourceType) {
         KeycloakFixture fixture = KeycloakFixture.withTarget(resourceType);
-        Object provisioner = provisioner(fixture);
+        EntitlementProvisioner provisioner = provisioner(fixture);
 
-        assertEquals(ProvisioningStatus.SUCCEEDED, status(grant(provisioner, fixture.entitlement())));
-        assertEquals(ProvisioningStatus.SUCCEEDED, status(grant(provisioner, fixture.entitlement())));
+        assertEquals(ProvisioningStatus.SUCCEEDED, grant(provisioner, fixture.entitlement()).status());
+        assertEquals(ProvisioningStatus.SUCCEEDED, grant(provisioner, fixture.entitlement()).status());
 
         fixture.assertSingleGrant(resourceType);
     }
@@ -59,9 +60,9 @@ class KeycloakEntitlementProvisionerTest {
     void recordsFailureWhenTheConfiguredKeycloakResourceNoLongerExists(ResourceType resourceType) {
         KeycloakFixture fixture = KeycloakFixture.withoutTarget(resourceType);
 
-        Object result = grant(provisioner(fixture), fixture.entitlement());
+        ProvisioningResult result = grant(provisioner(fixture), fixture.entitlement());
 
-        assertEquals(ProvisioningStatus.FAILED, status(result));
+        assertEquals(ProvisioningStatus.FAILED, result.status());
         fixture.assertNoGrant();
     }
 
@@ -70,74 +71,57 @@ class KeycloakEntitlementProvisionerTest {
         KeycloakFixture fixture = KeycloakFixture.withTarget(ResourceType.REALM_ROLE);
         fixture.removeRequester();
 
-        Object result = grant(provisioner(fixture), fixture.entitlement());
+        ProvisioningResult result = grant(provisioner(fixture), fixture.entitlement());
 
-        assertEquals(ProvisioningStatus.FAILED, status(result));
+        assertEquals(ProvisioningStatus.FAILED, result.status());
         fixture.assertNoGrant();
     }
 
     @Test
     void refusesToProvisionAcrossRealms() {
         KeycloakFixture fixture = KeycloakFixture.withTarget(ResourceType.CLIENT_ROLE);
-        Object provisioner = provisioner(fixture);
+        EntitlementProvisioner provisioner = provisioner(fixture);
 
-        Object result = grant(provisioner, "another-realm", fixture.requesterId(), fixture.entitlement());
+        ProvisioningResult result = grant(provisioner, "another-realm", fixture.requesterId(), fixture.entitlement());
 
-        assertEquals(ProvisioningStatus.FAILED, status(result));
+        assertEquals(ProvisioningStatus.FAILED, result.status());
         fixture.assertNoGrant();
     }
 
-    private static Object provisioner(KeycloakFixture fixture) {
-        try {
-            Class<?> provisionerType = Class.forName(
-                    "ch.anass.keycloak.accessrequests.core.port.EntitlementProvisioner");
-            Class<?> adapterType = Class.forName(
-                    "ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakEntitlementProvisioner");
-            Object provisioner = adapterType
-                    .getDeclaredConstructor(KeycloakSession.class, RealmModel.class)
-                    .newInstance(fixture.session(), fixture.realm());
-            assertTrue(provisionerType.isInstance(provisioner));
-            return provisioner;
-        } catch (ReflectiveOperationException exception) {
-            throw new AssertionError(
-                    "The SPI must provide a Keycloak entitlement provisioner implementing the core port.",
-                    exception);
-        }
+    @Test
+    void refusesAClientRoleConfiguredAsARealmRole() {
+        KeycloakFixture fixture = KeycloakFixture.withTarget(ResourceType.CLIENT_ROLE);
+
+        ProvisioningResult result = grant(provisioner(fixture), fixture.entitlement(ResourceType.REALM_ROLE));
+
+        assertEquals(ProvisioningStatus.FAILED, result.status());
+        fixture.assertNoGrant();
     }
 
-    private static boolean supports(Object provisioner, ResourceType resourceType) {
-        try {
-            return (boolean) provisioner.getClass()
-                    .getMethod("supports", ResourceType.class)
-                    .invoke(provisioner, resourceType);
-        } catch (ReflectiveOperationException exception) {
-            throw new AssertionError("The provisioner must declare the resource types it supports.", exception);
-        }
+    @Test
+    void refusesARealmRoleConfiguredAsAClientRole() {
+        KeycloakFixture fixture = KeycloakFixture.withTarget(ResourceType.REALM_ROLE);
+
+        ProvisioningResult result = grant(provisioner(fixture), fixture.entitlement(ResourceType.CLIENT_ROLE));
+
+        assertEquals(ProvisioningStatus.FAILED, result.status());
+        fixture.assertNoGrant();
     }
 
-    private static Object grant(Object provisioner, Entitlement entitlement) {
+    private static EntitlementProvisioner provisioner(KeycloakFixture fixture) {
+        return new KeycloakEntitlementProvisioner(fixture.session(), fixture.realm());
+    }
+
+    private static ProvisioningResult grant(EntitlementProvisioner provisioner, Entitlement entitlement) {
         return grant(provisioner, entitlement.realmId(), "requester-1", entitlement);
     }
 
-    private static Object grant(Object provisioner, String realmId, String requesterId, Entitlement entitlement) {
-        try {
-            return provisioner.getClass()
-                    .getMethod("grant", String.class, String.class, Entitlement.class)
-                    .invoke(provisioner, realmId, requesterId, entitlement);
-        } catch (InvocationTargetException exception) {
-            throw new AssertionError("Provisioning failures must be returned as a result, not escape the port.",
-                    exception.getCause());
-        } catch (ReflectiveOperationException exception) {
-            throw new AssertionError("The provisioner must grant an entitlement to a requester.", exception);
-        }
-    }
-
-    private static ProvisioningStatus status(Object result) {
-        try {
-            return (ProvisioningStatus) result.getClass().getMethod("status").invoke(result);
-        } catch (ReflectiveOperationException exception) {
-            throw new AssertionError("A provisioning result must expose its final status.", exception);
-        }
+    private static ProvisioningResult grant(
+            EntitlementProvisioner provisioner,
+            String realmId,
+            String requesterId,
+            Entitlement entitlement) {
+        return provisioner.grant(realmId, requesterId, entitlement);
     }
 
     private static final class KeycloakFixture {
@@ -159,7 +143,8 @@ class KeycloakEntitlementProvisionerTest {
             this.resourceType = resourceType;
             if (targetExists) {
                 switch (resourceType) {
-                    case REALM_ROLE, CLIENT_ROLE -> roles.put(RESOURCE_ID, role(RESOURCE_ID));
+                    case REALM_ROLE -> roles.put(RESOURCE_ID, role(RESOURCE_ID, false));
+                    case CLIENT_ROLE -> roles.put(RESOURCE_ID, role(RESOURCE_ID, true));
                     case GROUP -> groups.put(RESOURCE_ID, group(RESOURCE_ID));
                 }
             }
@@ -174,10 +159,14 @@ class KeycloakEntitlementProvisionerTest {
         }
 
         Entitlement entitlement() {
+            return entitlement(resourceType);
+        }
+
+        Entitlement entitlement(ResourceType configuredResourceType) {
             return Entitlement.create(
                             "entitlement-1",
                             REALM_ID,
-                            resourceType,
+                            configuredResourceType,
                             RESOURCE_ID,
                             "Finance Reader",
                             "Access to the Finance Portal.",
@@ -253,9 +242,12 @@ class KeycloakEntitlementProvisionerTest {
             });
         }
 
-        private static RoleModel role(String id) {
-            return proxy(RoleModel.class, (proxy, method, arguments) ->
-                    method.getName().equals("getId") ? id : null);
+        private static RoleModel role(String id, boolean clientRole) {
+            return proxy(RoleModel.class, (proxy, method, arguments) -> switch (method.getName()) {
+                case "getId" -> id;
+                case "isClientRole" -> clientRole;
+                default -> null;
+            });
         }
 
         private static GroupModel group(String id) {
