@@ -79,10 +79,29 @@ class AccessRequestJpaChangelogTest {
                             "UPDATED_TIMESTAMP",
                             "VERSION"),
                     columnsOf(connection, "AR_ENTITLEMENT"));
+            assertEquals(
+                    Set.of(
+                            "ID",
+                            "ENTITLEMENT_ID",
+                            "REALM_ID",
+                            "EVENT_TYPE",
+                            "ACTOR_ID",
+                            "EVENT_TIMESTAMP",
+                            "RESOURCE_TYPE",
+                            "RESOURCE_ID",
+                            "DISPLAY_NAME",
+                            "DESCRIPTION",
+                            "RISK_LEVEL",
+                            "APPROVER_ROLE_ID",
+                            "REQUESTABLE",
+                            "VERSION"),
+                    columnsOf(connection, "AR_ENTITLEMENT_HISTORY"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
                     .contains("IDX_ACCESS_REQUEST_REQUESTER_CREATED"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
                     .contains("IDX_ACCESS_REQUEST_APPROVAL_QUEUE"));
+            assertTrue(indexNamesOf(connection, "AR_ENTITLEMENT_HISTORY")
+                    .contains("IDX_ENTITLEMENT_HISTORY_ENTITLEMENT_TIME"));
         }
     }
 

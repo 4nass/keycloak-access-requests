@@ -142,4 +142,58 @@
             <column name="ID"/>
         </createIndex>
     </changeSet>
+
+    <changeSet id="5" author="4nass">
+        <createTable tableName="AR_ENTITLEMENT_HISTORY">
+            <column name="ID" type="VARCHAR(36)">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="PK_ENTITLEMENT_HISTORY"/>
+            </column>
+            <column name="ENTITLEMENT_ID" type="VARCHAR(36)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="REALM_ID" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="EVENT_TYPE" type="VARCHAR(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="ACTOR_ID" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="EVENT_TIMESTAMP" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="RESOURCE_TYPE" type="VARCHAR(30)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="RESOURCE_ID" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="DISPLAY_NAME" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="DESCRIPTION" type="TEXT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="RISK_LEVEL" type="VARCHAR(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="APPROVER_ROLE_ID" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="REQUESTABLE" type="BOOLEAN">
+                <constraints nullable="false"/>
+            </column>
+            <column name="VERSION" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex indexName="IDX_ENTITLEMENT_HISTORY_ENTITLEMENT_TIME" tableName="AR_ENTITLEMENT_HISTORY">
+            <column name="REALM_ID"/>
+            <column name="ENTITLEMENT_ID"/>
+            <column name="EVENT_TIMESTAMP"/>
+            <column name="ID"/>
+        </createIndex>
+    </changeSet>
 </databaseChangeLog>

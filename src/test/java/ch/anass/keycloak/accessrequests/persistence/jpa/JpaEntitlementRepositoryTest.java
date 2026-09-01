@@ -3,6 +3,9 @@ package ch.anass.keycloak.accessrequests.persistence.jpa;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.EntitlementAuditEvent;
+import ch.anass.keycloak.accessrequests.core.domain.EntitlementPage;
+import ch.anass.keycloak.accessrequests.core.domain.EntitlementQuery;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import jakarta.persistence.EntityManager;
@@ -43,7 +46,10 @@ class JpaEntitlementRepositoryTest {
         entityManager = entityManagerFactory.createEntityManager();
         repository = new JpaEntitlementRepository(entityManager);
         EntityTransactionSupport.execute(entityManager,
-                () -> entityManager.createQuery("delete from EntitlementEntity").executeUpdate());
+                () -> {
+                    entityManager.createQuery("delete from EntitlementAuditEventEntity").executeUpdate();
+                    entityManager.createQuery("delete from EntitlementEntity").executeUpdate();
+                });
     }
 
     @AfterEach
@@ -118,6 +124,44 @@ class JpaEntitlementRepositoryTest {
         assertEquals("finance-access-approver", entitlement.approverRoleId());
         assertTrue(entitlement.requestable());
         assertTrue(repository.findById("realm-2", "entitlement-1").isEmpty());
+    }
+
+    @Test
+    void returnsDraftAndRequestableEntitlementsForAdministrativePagination() {
+        persist(published("entitlement-3", "realm-1", ResourceType.REALM_ROLE, "role-3", "Charlie",
+                "Third entitlement.", RiskLevel.LOW));
+        persist(unpublished("entitlement-2", "realm-1", ResourceType.REALM_ROLE, "role-2", "Bravo",
+                "Second entitlement.", RiskLevel.LOW));
+        persist(published("entitlement-1", "realm-1", ResourceType.REALM_ROLE, "role-1", "Alpha",
+                "First entitlement.", RiskLevel.LOW));
+        persist(unpublished("entitlement-4", "realm-2", ResourceType.REALM_ROLE, "role-4", "Other realm",
+                "Must not cross the realm boundary.", RiskLevel.LOW));
+
+        EntitlementPage page = repository.findAll(new EntitlementQuery("realm-1", 0, 2));
+
+        assertEquals(3, page.total());
+        assertEquals(List.of("Alpha", "Bravo"), page.items().stream().map(Entitlement::displayName).toList());
+        assertTrue(page.items().stream().anyMatch(entitlement -> !entitlement.requestable()));
+    }
+
+    @Test
+    void persistsAnImmutableSnapshotOfTheEntitlementPolicyChange() {
+        Entitlement entitlement = published("entitlement-audit", "realm-1", ResourceType.REALM_ROLE, "role-audit",
+                "Finance Editor", "Edit access to finance data.", RiskLevel.HIGH).withVersion(1);
+
+        EntityTransactionSupport.execute(entityManager, () -> new JpaEntitlementAuditEventPublisher(entityManager)
+                .publish(EntitlementAuditEvent.updated(entitlement, "catalog-manager-1")));
+
+        Object[] event = (Object[]) entityManager.createNativeQuery("""
+                        select EVENT_TYPE, ACTOR_ID, REQUESTABLE, VERSION, DISPLAY_NAME
+                          from AR_ENTITLEMENT_HISTORY
+                         where ENTITLEMENT_ID = 'entitlement-audit'
+                        """).getSingleResult();
+        assertEquals("ENTITLEMENT_UPDATED", event[0]);
+        assertEquals("catalog-manager-1", event[1]);
+        assertTrue((Boolean) event[2]);
+        assertEquals(1L, ((Number) event[3]).longValue());
+        assertEquals("Finance Editor", event[4]);
     }
 
     private void persist(Entitlement entitlement) {

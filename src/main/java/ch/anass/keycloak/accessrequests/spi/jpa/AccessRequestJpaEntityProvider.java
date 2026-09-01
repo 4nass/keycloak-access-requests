@@ -3,6 +3,7 @@ package ch.anass.keycloak.accessrequests.spi.jpa;
 import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestEventEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.EntitlementEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.EntitlementAuditEventEntity;
 import org.keycloak.Config;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProvider;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProviderFactory;
@@ -18,7 +19,8 @@ public final class AccessRequestJpaEntityProvider implements JpaEntityProvider, 
     private static final List<Class<?>> ENTITIES = List.of(
             AccessRequestEntity.class,
             AccessRequestEventEntity.class,
-            EntitlementEntity.class);
+            EntitlementEntity.class,
+            EntitlementAuditEventEntity.class);
 
     @Override
     public JpaEntityProvider create(KeycloakSession session) {
