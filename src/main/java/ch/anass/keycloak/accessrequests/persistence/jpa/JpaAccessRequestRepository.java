@@ -3,8 +3,11 @@ package ch.anass.keycloak.accessrequests.persistence.jpa;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
+import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueEntry;
+import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
+import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.DuplicatePendingRequestException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import jakarta.persistence.EntityManager;
@@ -53,39 +56,37 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
     }
 
     @Override
-    public AccessRequestPage findPendingForApprover(ApprovalQueueQuery query) {
+    public ApprovalQueuePage findPendingForApprover(ApprovalQueueQuery query) {
         if (query.approverRoleIds().isEmpty()) {
-            return new AccessRequestPage(List.of(), query.page(), query.size(), 0);
+            return new ApprovalQueuePage(List.of(), query.page(), query.size(), 0);
         }
         long total = bindApprovalQueueQuery(entityManager.createQuery(
                 "select count(request) " + approvalQueueFromAndWhere(), Long.class), query)
                 .getSingleResult();
         var items = bindApprovalQueueQuery(entityManager.createQuery(
-                        "select request " + approvalQueueFromAndWhere()
+                        "select request, entitlement.riskLevel " + approvalQueueFromAndWhere()
                                 + " order by request.createdTimestamp desc, request.id asc",
-                        AccessRequestEntity.class), query)
+                        Object[].class), query)
                 .setFirstResult(query.offset())
                 .setMaxResults(query.size())
                 .getResultList()
                 .stream()
-                .map(AccessRequestEntity::toDomain)
+                .map(row -> new ApprovalQueueEntry(
+                        ((AccessRequestEntity) row[0]).toDomain(),
+                        (RiskLevel) row[1]))
                 .toList();
-        return new AccessRequestPage(items, query.page(), query.size(), total);
+        return new ApprovalQueuePage(items, query.page(), query.size(), total);
     }
 
     private static String approvalQueueFromAndWhere() {
         return """
-                from AccessRequestEntity request
+                from AccessRequestEntity request, EntitlementEntity entitlement
                  where request.realmId = :realmId
                    and request.decisionStatus = :decisionStatus
                    and request.requesterId <> :approverId
-                   and exists (
-                       select 1
-                         from EntitlementEntity entitlement
-                        where entitlement.id = request.entitlementId
-                          and entitlement.realmId = request.realmId
-                          and entitlement.approverRoleId in :approverRoleIds
-                   )
+                   and entitlement.id = request.entitlementId
+                   and entitlement.realmId = request.realmId
+                   and entitlement.approverRoleId in :approverRoleIds
                 """;
     }
 

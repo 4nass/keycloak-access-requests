@@ -4,6 +4,7 @@ import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
+import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
@@ -250,10 +251,12 @@ class JpaAccessRequestRepositoryTest {
             return null;
         });
 
-        AccessRequestPage page = repository.findPendingForApprover(
+        ApprovalQueuePage page = repository.findPendingForApprover(
                 new ApprovalQueueQuery("realm-queue", "approver-1", Set.of("finance-role"), 1, 1));
 
-        assertEquals(List.of("eligible-middle"), page.items().stream().map(AccessRequest::id).toList());
+        assertEquals(List.of("eligible-middle"), page.items().stream()
+                .map(entry -> entry.request().id()).toList());
+        assertEquals(RiskLevel.LOW, page.items().getFirst().riskLevel());
         assertEquals(3, page.total());
         assertEquals(1, page.page());
         assertEquals(1, page.size());

@@ -1,6 +1,6 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
+import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.RoleMembershipReader;
@@ -24,11 +24,11 @@ public final class ApprovalQueueService {
         this.roleMembershipReader = Objects.requireNonNull(roleMembershipReader);
     }
 
-    public AccessRequestPage findPending(String realmId, String approverId, int page, int size) {
+    public ApprovalQueuePage findPending(String realmId, String approverId, int page, int size) {
         Set<String> approverRoleIds = roleMembershipReader.findEffectiveRoleIds(realmId, approverId);
         ApprovalQueueQuery query = new ApprovalQueueQuery(realmId, approverId, approverRoleIds, page, size);
         if (approverRoleIds.isEmpty()) {
-            return new AccessRequestPage(List.of(), page, size, 0);
+            return new ApprovalQueuePage(List.of(), page, size, 0);
         }
         return accessRequestRepository.findPendingForApprover(query);
     }

@@ -3,9 +3,12 @@ package ch.anass.keycloak.accessrequests.core.service;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
+import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueEntry;
+import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.RoleMembershipReader;
 import org.junit.jupiter.api.Test;
@@ -35,13 +38,15 @@ class ApprovalQueueServiceTest {
         approvalQueue.add(pending("request-own", "realm-1", "approver-1", "finance", 3));
         approvalQueue.add(approved("request-approved", "realm-1", "requester-3", "finance", 4));
         approvalQueue.add(pending("request-other-realm", "realm-2", "requester-4", "finance", 5));
-        approvalQueue.configuresEntitlement("finance", "finance-approver");
+        approvalQueue.configuresEntitlement("finance", "finance-approver", RiskLevel.HIGH);
         approvalQueue.configuresEntitlement("hr", "hr-approver");
         roleMembershipReader.grantsRole("realm-1", "approver-1", "finance-approver");
 
-        AccessRequestPage page = queue("realm-1", "approver-1", 0, 20);
+        ApprovalQueuePage page = queue("realm-1", "approver-1", 0, 20);
 
-        assertEquals(List.of("request-finance"), page.items().stream().map(AccessRequest::id).toList());
+        assertEquals(List.of("request-finance"), page.items().stream()
+                .map(entry -> entry.request().id()).toList());
+        assertEquals(RiskLevel.HIGH, page.items().getFirst().riskLevel());
         assertEquals(1, page.total());
         assertTrue(approvalQueue.wasQueried());
     }
@@ -56,9 +61,10 @@ class ApprovalQueueServiceTest {
         approvalQueue.configuresEntitlement("hr", "hr-approver");
         roleMembershipReader.grantsRole("realm-1", "approver-1", "finance-approver");
 
-        AccessRequestPage page = queue("realm-1", "approver-1", 1, 1);
+        ApprovalQueuePage page = queue("realm-1", "approver-1", 1, 1);
 
-        assertEquals(List.of("eligible-middle"), page.items().stream().map(AccessRequest::id).toList());
+        assertEquals(List.of("eligible-middle"), page.items().stream()
+                .map(entry -> entry.request().id()).toList());
         assertEquals(3, page.total());
         assertEquals(1, page.page());
         assertEquals(1, page.size());
@@ -69,7 +75,7 @@ class ApprovalQueueServiceTest {
         approvalQueue.add(pending("request-finance", "realm-1", "requester-1", "finance", 1));
         approvalQueue.configuresEntitlement("finance", "finance-approver");
 
-        AccessRequestPage page = queue("realm-1", "approver-1", 0, 20);
+        ApprovalQueuePage page = queue("realm-1", "approver-1", 0, 20);
 
         assertTrue(page.items().isEmpty());
         assertEquals(0, page.total());
@@ -82,14 +88,14 @@ class ApprovalQueueServiceTest {
         approvalQueue.configuresEntitlement("finance", "finance-approver");
         roleMembershipReader.grantsRole("realm-2", "approver-1", "finance-approver");
 
-        AccessRequestPage page = queue("realm-1", "approver-1", 0, 20);
+        ApprovalQueuePage page = queue("realm-1", "approver-1", 0, 20);
 
         assertTrue(page.items().isEmpty());
         assertEquals(0, page.total());
         assertFalse(approvalQueue.wasQueried());
     }
 
-    private AccessRequestPage queue(String realmId, String approverId, int page, int size) {
+    private ApprovalQueuePage queue(String realmId, String approverId, int page, int size) {
         return new ApprovalQueueService(approvalQueue, roleMembershipReader)
                 .findPending(realmId, approverId, page, size);
     }
@@ -124,6 +130,7 @@ class ApprovalQueueServiceTest {
 
         private final List<AccessRequest> requests = new ArrayList<>();
         private final Map<String, String> approverRoles = new HashMap<>();
+        private final Map<String, RiskLevel> riskLevels = new HashMap<>();
         private boolean queried;
 
         void add(AccessRequest request) {
@@ -131,7 +138,12 @@ class ApprovalQueueServiceTest {
         }
 
         void configuresEntitlement(String entitlementId, String approverRoleId) {
+            configuresEntitlement(entitlementId, approverRoleId, RiskLevel.LOW);
+        }
+
+        void configuresEntitlement(String entitlementId, String approverRoleId, RiskLevel riskLevel) {
             approverRoles.put(entitlementId, approverRoleId);
+            riskLevels.put(entitlementId, riskLevel);
         }
 
         @Override
@@ -145,7 +157,7 @@ class ApprovalQueueServiceTest {
         }
 
         @Override
-        public AccessRequestPage findPendingForApprover(ApprovalQueueQuery query) {
+        public ApprovalQueuePage findPendingForApprover(ApprovalQueueQuery query) {
             queried = true;
             return findPending(query);
         }
@@ -172,18 +184,19 @@ class ApprovalQueueServiceTest {
             return queried;
         }
 
-        private AccessRequestPage findPending(ApprovalQueueQuery query) {
-            List<AccessRequest> matching = requests.stream()
+        private ApprovalQueuePage findPending(ApprovalQueueQuery query) {
+            List<ApprovalQueueEntry> matching = requests.stream()
                     .filter(request -> request.realmId().equals(query.realmId()))
                     .filter(request -> request.decisionStatus() == DecisionStatus.PENDING)
                     .filter(request -> !request.requesterId().equals(query.approverId()))
                     .filter(request -> query.approverRoleIds().contains(approverRoles.get(request.entitlementId())))
                     .sorted(Comparator.comparing(AccessRequest::createdAt).reversed())
-                    .map(AccessRequest::copy)
+                    .map(request -> new ApprovalQueueEntry(
+                            request.copy(), riskLevels.get(request.entitlementId())))
                     .toList();
             int from = Math.min(query.offset(), matching.size());
             int to = Math.min(from + query.size(), matching.size());
-            return new AccessRequestPage(matching.subList(from, to), query.page(), query.size(), matching.size());
+            return new ApprovalQueuePage(matching.subList(from, to), query.page(), query.size(), matching.size());
         }
     }
 

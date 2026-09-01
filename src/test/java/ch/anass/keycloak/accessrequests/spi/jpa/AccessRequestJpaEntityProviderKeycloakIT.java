@@ -400,13 +400,14 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
         String entitlementId = UUID.randomUUID().toString();
         insertPublishedEntitlement(entitlementId, approverRoleId);
+        String approvalRequestJustification = "I need access to Finance Portal reports for the project.";
 
         HttpResponse<String> approvedRequestResponse = HttpClient.newHttpClient().send(
                 requestSubmission(
                         requestsEndpoint,
                         requesterToken,
                         entitlementId,
-                        "I need access to Finance Portal reports for the project."),
+                        approvalRequestJustification),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(201, approvedRequestResponse.statusCode());
         String approvedRequestId = responseId(approvedRequestResponse.body());
@@ -436,7 +437,12 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(200, approverQueueResponse.statusCode());
         assertTrue(approverQueueResponse.body().contains("\"total\":1"));
         assertTrue(approverQueueResponse.body().contains(approvedRequestId));
-        assertTrue(approverQueueResponse.body().contains("\"decisionStatus\":\"PENDING\""));
+        assertTrue(approverQueueResponse.body().contains("\"requesterId\":\""
+                + subjectOf(requesterToken) + "\""));
+        assertTrue(approverQueueResponse.body().contains("\"entitlementId\":\"" + entitlementId + "\""));
+        assertTrue(approverQueueResponse.body().contains("\"riskLevel\":\"LOW\""));
+        assertTrue(approverQueueResponse.body().contains("\"justification\":\""
+                + approvalRequestJustification + "\""));
 
         HttpResponse<String> invalidQueuePageResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(URI.create(pendingRequestsEndpoint + "?page=-1"))

@@ -10,8 +10,10 @@ import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -36,6 +38,18 @@ class AccessRequestPendingEndpointTest {
         assertEquals(2, pendingHandler.getParameterCount());
         assertQueryParameter(pendingHandler, 0, "page", "0");
         assertQueryParameter(pendingHandler, 1, "size", "20");
+    }
+
+    @Test
+    void returnsTheContextRequiredToApproveEachPendingRequest() {
+        assertTrue(AccessRequestRealmResource.PendingRequestSummaryResponse.class.isRecord());
+        assertArrayEquals(
+                new String[]{
+                        "id", "requesterId", "entitlementId", "resourceType", "resourceName",
+                        "riskLevel", "justification", "createdAt"},
+                Arrays.stream(AccessRequestRealmResource.PendingRequestSummaryResponse.class.getRecordComponents())
+                        .map(RecordComponent::getName)
+                        .toArray(String[]::new));
     }
 
     private static Method handler() {

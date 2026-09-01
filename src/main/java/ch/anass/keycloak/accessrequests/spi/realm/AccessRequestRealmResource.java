@@ -6,6 +6,8 @@ import ch.anass.keycloak.accessrequests.core.domain.CatalogResult;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
+import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueEntry;
+import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidRequestStateException;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
@@ -163,12 +165,12 @@ public final class AccessRequestRealmResource {
             @DefaultValue("20") @QueryParam("size") int size) {
         AuthenticatedRequest authenticatedRequest = authenticate();
         try {
-            AccessRequestPage requestPage = approvalQueueService(authenticatedRequest).findPending(
+            ApprovalQueuePage requestPage = approvalQueueService(authenticatedRequest).findPending(
                     authenticatedRequest.realm().getId(),
                     authenticatedRequest.user().getId(),
                     page,
                     size);
-            return Response.ok(RequestListResponse.from(requestPage)).build();
+            return Response.ok(PendingRequestListResponse.from(requestPage)).build();
         } catch (IllegalArgumentException exception) {
             return error(Response.Status.BAD_REQUEST, "INVALID_REQUEST_QUERY", exception.getMessage(), null);
         }
@@ -441,6 +443,41 @@ public final class AccessRequestRealmResource {
                     request.resourceNameSnapshot(),
                     request.decisionStatus(),
                     request.provisioningStatus(),
+                    request.createdAt().toString());
+        }
+    }
+
+    public record PendingRequestListResponse(List<PendingRequestSummaryResponse> items, int page, int size, long total) {
+
+        private static PendingRequestListResponse from(ApprovalQueuePage page) {
+            return new PendingRequestListResponse(
+                    page.items().stream().map(PendingRequestSummaryResponse::from).toList(),
+                    page.page(),
+                    page.size(),
+                    page.total());
+        }
+    }
+
+    public record PendingRequestSummaryResponse(
+            String id,
+            String requesterId,
+            String entitlementId,
+            ResourceType resourceType,
+            String resourceName,
+            RiskLevel riskLevel,
+            String justification,
+            String createdAt) {
+
+        private static PendingRequestSummaryResponse from(ApprovalQueueEntry entry) {
+            AccessRequest request = entry.request();
+            return new PendingRequestSummaryResponse(
+                    request.id(),
+                    request.requesterId(),
+                    request.entitlementId(),
+                    request.resourceType(),
+                    request.resourceNameSnapshot(),
+                    entry.riskLevel(),
+                    request.justification(),
                     request.createdAt().toString());
         }
     }

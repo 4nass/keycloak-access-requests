@@ -695,7 +695,7 @@ class RequestServiceTest {
         }
 
         @Override
-        public AccessRequestPage findPendingForApprover(
+        public ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage findPendingForApprover(
                 ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery query) {
             throw new UnsupportedOperationException("Approval queue reads are not used by this test double.");
         }
