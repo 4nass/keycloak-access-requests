@@ -9,6 +9,7 @@ import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueEntry;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
+import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidRequestStateException;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
@@ -16,6 +17,7 @@ import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.domain.SelfApprovalException;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedApprovalException;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
+import ch.anass.keycloak.accessrequests.core.port.DuplicateEntitlementException;
 import ch.anass.keycloak.accessrequests.core.service.AccessAlreadyGrantedException;
 import ch.anass.keycloak.accessrequests.core.service.ApprovalQueueService;
 import ch.anass.keycloak.accessrequests.core.service.CatalogService;
@@ -24,6 +26,7 @@ import ch.anass.keycloak.accessrequests.core.service.EntitlementNotFoundExceptio
 import ch.anass.keycloak.accessrequests.core.service.EntitlementNotRequestableException;
 import ch.anass.keycloak.accessrequests.core.service.InvalidJustificationException;
 import ch.anass.keycloak.accessrequests.core.service.ConcurrentRequestModificationException;
+import ch.anass.keycloak.accessrequests.core.service.ConcurrentEntitlementModificationException;
 import ch.anass.keycloak.accessrequests.core.service.RequestAlreadyPendingException;
 import ch.anass.keycloak.accessrequests.core.service.RequestNotFoundException;
 import ch.anass.keycloak.accessrequests.core.service.RequestPolicy;
@@ -46,20 +49,27 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.GroupModel;
+import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.services.managers.AppAuthManager;
 import org.keycloak.services.managers.AuthenticationManager;
+import org.keycloak.services.resources.admin.AdminAuth;
+import org.keycloak.services.resources.admin.AdminRoot;
+import org.keycloak.services.resources.admin.fgap.AdminPermissions;
 
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 public final class AccessRequestRealmResource {
 
@@ -100,6 +110,92 @@ public final class AccessRequestRealmResource {
         return Response.noContent()
                 .header("Allow", "GET, OPTIONS")
                 .build();
+    }
+
+    @GET
+    @Path("admin/catalog")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listCatalogEntitlements() {
+        RealmModel realm = requireRealmManager();
+        return Response.ok(entitlementRepository().findAll(realm.getId()).stream()
+                .map(EntitlementResponse::from)
+                .toList()).build();
+    }
+
+    @POST
+    @Path("admin/catalog")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response createEntitlement(EntitlementSubmission submission) {
+        RealmModel realm = requireRealmManager();
+        EntitlementSubmission validatedSubmission = requireEntitlementSubmission(submission);
+        validateKeycloakReferences(realm, validatedSubmission);
+        Entitlement created = Entitlement.create(
+                UUID.randomUUID().toString(),
+                realm.getId(),
+                validatedSubmission.resourceType(),
+                validatedSubmission.resourceId(),
+                validatedSubmission.displayName(),
+                validatedSubmission.description(),
+                validatedSubmission.riskLevel(),
+                validatedSubmission.approverRoleId(),
+                Instant.now());
+        try {
+            Entitlement persisted = transaction().execute(() -> entitlementRepository().create(created));
+            return Response.status(Response.Status.CREATED).entity(EntitlementResponse.from(persisted)).build();
+        } catch (DuplicateEntitlementException exception) {
+            return error(
+                    Response.Status.CONFLICT,
+                    "ENTITLEMENT_ALREADY_EXISTS",
+                    exception.getMessage(),
+                    null);
+        }
+    }
+
+    @PUT
+    @Path("admin/catalog/{entitlementId}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response updateEntitlement(
+            @PathParam("entitlementId") String entitlementId,
+            EntitlementSubmission submission) {
+        RealmModel realm = requireRealmManager();
+        EntitlementSubmission validatedSubmission = requireEntitlementSubmission(submission);
+        validateKeycloakReferences(realm, validatedSubmission);
+        Entitlement current = findEntitlement(realm, entitlementId);
+        if (current.resourceType() != validatedSubmission.resourceType()
+                || !current.resourceId().equals(validatedSubmission.resourceId())) {
+            return error(
+                    Response.Status.BAD_REQUEST,
+                    "ENTITLEMENT_RESOURCE_IMMUTABLE",
+                    "The resource type and resource ID cannot be changed after an entitlement is created.",
+                    null);
+        }
+        try {
+            Entitlement updated = current.updateDetails(
+                    validatedSubmission.displayName(),
+                    validatedSubmission.description(),
+                    validatedSubmission.riskLevel(),
+                    validatedSubmission.approverRoleId(),
+                    Instant.now());
+            return Response.ok(EntitlementResponse.from(persistEntitlementUpdate(updated, current.version()))).build();
+        } catch (ConcurrentEntitlementModificationException exception) {
+            return error(Response.Status.CONFLICT, "CONCURRENT_ENTITLEMENT_MODIFICATION", exception.getMessage(), null);
+        }
+    }
+
+    @POST
+    @Path("admin/catalog/{entitlementId}/publish")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response publishEntitlement(@PathParam("entitlementId") String entitlementId) {
+        return changePublication(entitlementId, true);
+    }
+
+    @POST
+    @Path("admin/catalog/{entitlementId}/unpublish")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response unpublishEntitlement(@PathParam("entitlementId") String entitlementId) {
+        return changePublication(entitlementId, false);
     }
 
     @POST
@@ -232,6 +328,93 @@ public final class AccessRequestRealmResource {
         return new AuthenticatedRequest(realm, authentication.getUser());
     }
 
+    private RealmModel requireRealmManager() {
+        RealmModel targetRealm = Objects.requireNonNull(session.getContext().getRealm(), "realm must not be null");
+        try {
+            AdminAuth adminAuth = new RealmAdminAuthenticator().authenticate(session);
+            AdminPermissions.evaluator(session, targetRealm, adminAuth).realm().requireManageRealm();
+            return targetRealm;
+        } finally {
+            session.getContext().setRealm(targetRealm);
+        }
+    }
+
+    private JpaEntitlementRepository entitlementRepository() {
+        var entityManager = Objects.requireNonNull(
+                session.getProvider(JpaConnectionProvider.class),
+                "Keycloak JPA connection provider must not be null")
+                .getEntityManager();
+        return new JpaEntitlementRepository(entityManager);
+    }
+
+    private KeycloakAccessRequestTransaction transaction() {
+        return new KeycloakAccessRequestTransaction(session);
+    }
+
+    private static EntitlementSubmission requireEntitlementSubmission(EntitlementSubmission submission) {
+        if (submission == null
+                || submission.resourceType() == null
+                || isBlank(submission.resourceId())
+                || isBlank(submission.displayName())
+                || isBlank(submission.description())
+                || submission.riskLevel() == null
+                || isBlank(submission.approverRoleId())) {
+            throw new BadRequestException(
+                    "resourceType, resourceId, displayName, description, riskLevel, and approverRoleId must be provided");
+        }
+        return submission;
+    }
+
+    private void validateKeycloakReferences(RealmModel realm, EntitlementSubmission submission) {
+        switch (submission.resourceType()) {
+            case REALM_ROLE -> requireRole(realm, submission.resourceId(), false, "resourceId");
+            case CLIENT_ROLE -> requireRole(realm, submission.resourceId(), true, "resourceId");
+            case GROUP -> requireGroup(realm, submission.resourceId());
+        }
+        requireRole(realm, submission.approverRoleId(), false, "approverRoleId");
+    }
+
+    private static RoleModel requireRole(RealmModel realm, String roleId, boolean clientRole, String fieldName) {
+        RoleModel role = realm.getRoleById(roleId);
+        if (role == null || role.isClientRole() != clientRole) {
+            throw new BadRequestException(fieldName + " must reference an existing "
+                    + (clientRole ? "client" : "realm") + " role");
+        }
+        return role;
+    }
+
+    private void requireGroup(RealmModel realm, String groupId) {
+        GroupModel group = session.groups().getGroupById(realm, groupId);
+        if (group == null) {
+            throw new BadRequestException("resourceId must reference an existing group");
+        }
+    }
+
+    private Entitlement findEntitlement(RealmModel realm, String entitlementId) {
+        return entitlementRepository().findById(realm.getId(), entitlementId)
+                .orElseThrow(() -> new NotFoundException("Entitlement not found: " + entitlementId));
+    }
+
+    private Entitlement persistEntitlementUpdate(Entitlement entitlement, long expectedVersion) {
+        return transaction().execute(() -> entitlementRepository()
+                .updateIfVersionMatches(entitlement, expectedVersion)
+                .orElseThrow(() -> new ConcurrentEntitlementModificationException(entitlement.id())));
+    }
+
+    private Response changePublication(String entitlementId, boolean requestable) {
+        RealmModel realm = requireRealmManager();
+        Entitlement current = findEntitlement(realm, entitlementId);
+        Entitlement changed = requestable ? current.publish(Instant.now()) : current.unpublish(Instant.now());
+        if (changed == current) {
+            return Response.ok(EntitlementResponse.from(current)).build();
+        }
+        try {
+            return Response.ok(EntitlementResponse.from(persistEntitlementUpdate(changed, current.version()))).build();
+        } catch (ConcurrentEntitlementModificationException exception) {
+            return error(Response.Status.CONFLICT, "CONCURRENT_ENTITLEMENT_MODIFICATION", exception.getMessage(), null);
+        }
+    }
+
     private CatalogService catalogService(AuthenticatedRequest authenticatedRequest) {
         var entityManager = Objects.requireNonNull(
                 session.getProvider(JpaConnectionProvider.class),
@@ -327,6 +510,10 @@ public final class AccessRequestRealmResource {
         return submission;
     }
 
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
     private static DecisionStatus parseDecisionStatus(String value) {
         return parseEnum(DecisionStatus.class, value, "status");
     }
@@ -397,6 +584,44 @@ public final class AccessRequestRealmResource {
     }
 
     public record RequestSubmission(String entitlementId, String justification) {
+    }
+
+    public record EntitlementSubmission(
+            ResourceType resourceType,
+            String resourceId,
+            String displayName,
+            String description,
+            RiskLevel riskLevel,
+            String approverRoleId) {
+    }
+
+    public record EntitlementResponse(
+            String id,
+            ResourceType resourceType,
+            String resourceId,
+            String displayName,
+            String description,
+            RiskLevel riskLevel,
+            String approverRoleId,
+            boolean requestable,
+            String createdAt,
+            String updatedAt,
+            long version) {
+
+        private static EntitlementResponse from(Entitlement entitlement) {
+            return new EntitlementResponse(
+                    entitlement.id(),
+                    entitlement.resourceType(),
+                    entitlement.resourceId(),
+                    entitlement.displayName(),
+                    entitlement.description(),
+                    entitlement.riskLevel(),
+                    entitlement.approverRoleId(),
+                    entitlement.requestable(),
+                    entitlement.createdAt().toString(),
+                    entitlement.updatedAt().toString(),
+                    entitlement.version());
+        }
     }
 
     public record DecisionSubmission(String comment) {
@@ -485,6 +710,14 @@ public final class AccessRequestRealmResource {
     }
 
     public record ErrorResponse(String code, String message, String requestId) {
+    }
+
+    private static final class RealmAdminAuthenticator extends AdminRoot {
+
+        private AdminAuth authenticate(KeycloakSession session) {
+            this.session = session;
+            return authenticateRealmAdminRequest(session.getContext().getRequestHeaders());
+        }
     }
 
     private record AuthenticatedRequest(RealmModel realm, UserModel user) {

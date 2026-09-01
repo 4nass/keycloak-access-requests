@@ -3,10 +3,13 @@ package ch.anass.keycloak.accessrequests.persistence.jpa;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
+import ch.anass.keycloak.accessrequests.core.port.DuplicateEntitlementException;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceException;
 import jakarta.persistence.TypedQuery;
+import org.hibernate.exception.ConstraintViolationException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -44,6 +47,74 @@ public final class JpaEntitlementRepository implements EntitlementRepository {
                 .getResultStream()
                 .findFirst()
                 .map(EntitlementEntity::toDomain);
+    }
+
+    /**
+     * Returns both published and draft entitlements for realm administration.
+     */
+    public List<Entitlement> findAll(String realmId) {
+        return entityManager.createQuery("""
+                        select entity
+                          from EntitlementEntity entity
+                         where entity.realmId = :realmId
+                         order by entity.displayName asc, entity.id asc
+                        """, EntitlementEntity.class)
+                .setParameter("realmId", realmId)
+                .getResultList()
+                .stream()
+                .map(EntitlementEntity::toDomain)
+                .toList();
+    }
+
+    /**
+     * Persists a new draft entitlement and translates the resource uniqueness constraint into a domain error.
+     */
+    public Entitlement create(Entitlement entitlement) {
+        try {
+            entityManager.persist(EntitlementEntity.from(entitlement));
+            entityManager.flush();
+            return entitlement;
+        } catch (PersistenceException exception) {
+            if (isResourceConstraintViolation(exception)) {
+                throw new DuplicateEntitlementException();
+            }
+            throw exception;
+        }
+    }
+
+    /**
+     * Applies a catalog change only when no concurrent administrator has already changed the entitlement.
+     */
+    public Optional<Entitlement> updateIfVersionMatches(Entitlement entitlement, long expectedVersion) {
+        int updated = entityManager.createQuery("""
+                        update EntitlementEntity entity
+                           set entity.displayName = :displayName,
+                               entity.description = :description,
+                               entity.riskLevel = :riskLevel,
+                               entity.approverRoleId = :approverRoleId,
+                               entity.requestable = :requestable,
+                               entity.updatedTimestamp = :updatedTimestamp,
+                               entity.version = entity.version + 1
+                         where entity.id = :id
+                           and entity.realmId = :realmId
+                           and entity.version = :expectedVersion
+                        """)
+                .setParameter("displayName", entitlement.displayName())
+                .setParameter("description", entitlement.description())
+                .setParameter("riskLevel", entitlement.riskLevel())
+                .setParameter("approverRoleId", entitlement.approverRoleId())
+                .setParameter("requestable", entitlement.requestable())
+                .setParameter("updatedTimestamp", entitlement.updatedAt().toEpochMilli())
+                .setParameter("id", entitlement.id())
+                .setParameter("realmId", entitlement.realmId())
+                .setParameter("expectedVersion", expectedVersion)
+                .executeUpdate();
+        if (updated == 0) {
+            return Optional.empty();
+        }
+        entityManager.flush();
+        entityManager.clear();
+        return findById(entitlement.realmId(), entitlement.id());
     }
 
     @Override
@@ -103,5 +174,18 @@ public final class JpaEntitlementRepository implements EntitlementRepository {
     }
 
     private record QueryDefinition(String fromAndWhere, boolean hasSearch) {
+    }
+
+    private static boolean isResourceConstraintViolation(PersistenceException exception) {
+        Throwable current = exception;
+        while (current != null) {
+            if (current instanceof ConstraintViolationException violation
+                    && ("UK_ENTITLEMENT_RESOURCE".equals(violation.getConstraintName())
+                    || "23505".equals(violation.getSQLException().getSQLState()))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }
