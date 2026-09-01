@@ -3,6 +3,8 @@ package ch.anass.keycloak.accessrequests.persistence.jpa;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.EntitlementPage;
+import ch.anass.keycloak.accessrequests.core.domain.EntitlementQuery;
 import ch.anass.keycloak.accessrequests.core.port.DuplicateEntitlementException;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
 import jakarta.persistence.EntityManager;
@@ -52,18 +54,28 @@ public final class JpaEntitlementRepository implements EntitlementRepository {
     /**
      * Returns both published and draft entitlements for realm administration.
      */
-    public List<Entitlement> findAll(String realmId) {
-        return entityManager.createQuery("""
+    public EntitlementPage findAll(EntitlementQuery query) {
+        long total = entityManager.createQuery("""
+                        select count(entity)
+                          from EntitlementEntity entity
+                         where entity.realmId = :realmId
+                        """, Long.class)
+                .setParameter("realmId", query.realmId())
+                .getSingleResult();
+        List<Entitlement> items = entityManager.createQuery("""
                         select entity
                           from EntitlementEntity entity
                          where entity.realmId = :realmId
                          order by entity.displayName asc, entity.id asc
                         """, EntitlementEntity.class)
-                .setParameter("realmId", realmId)
+                .setParameter("realmId", query.realmId())
+                .setFirstResult(query.offset())
+                .setMaxResults(query.size())
                 .getResultList()
                 .stream()
                 .map(EntitlementEntity::toDomain)
                 .toList();
+        return new EntitlementPage(items, query.page(), query.size(), total);
     }
 
     /**
