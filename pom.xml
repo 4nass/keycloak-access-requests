@@ -154,7 +154,7 @@
                 <directory>src/main/resources</directory>
             </resource>
             <resource>
-                <directory>${project.basedir}/account-ui/dist</directory>
+                <directory>${project.basedir}/access-requests-ui/dist</directory>
                 <targetPath>theme/access-requests/account/resources</targetPath>
                 <filtering>false</filtering>
             </resource>
@@ -217,7 +217,7 @@
                 <artifactId>frontend-maven-plugin</artifactId>
                 <configuration>
                     <installDirectory>${project.build.directory}/frontend</installDirectory>
-                    <workingDirectory>${project.basedir}/account-ui</workingDirectory>
+                    <workingDirectory>${project.basedir}/access-requests-ui</workingDirectory>
                 </configuration>
                 <executions>
                     <execution>

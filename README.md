@@ -43,7 +43,7 @@ The table records tested compatibility. It does not guarantee compatibility with
 
 ```text
 keycloak-access-requests/
-├── account-ui/                         # React source for the Account Console theme
+├── access-requests-ui/                 # React source for the Account Console theme
 │   ├── src/
 │   ├── package.json
 │   └── pnpm-lock.yaml
@@ -123,6 +123,26 @@ To enable it in a realm:
 3. In **Realm settings → Themes**, select `access-requests` as the **Account theme**.
 
 The current theme packages the native Account Console shell. The Access Request pages are added in the following feature.
+
+## Account Console local development
+
+The Account Console uses the same Vite and Keycloak workflow as the official Account Console scaffold. Run the commands in two terminals:
+
+```bash
+cd access-requests-ui
+pnpm install
+pnpm run dev
+```
+
+```bash
+mvn package
+cd access-requests-ui
+pnpm run start-keycloak
+```
+
+`start-keycloak` downloads Keycloak `26.7.3` once to `access-requests-ui/server/`, installs the built provider JAR, and starts it in development mode with `KC_ACCOUNT_VITE_URL=http://localhost:5173`. Open `http://localhost:8080/realms/master/account` and sign in with `admin` / `admin`.
+
+Pass Keycloak development options after `--`, for example `pnpm run start-keycloak -- --http-port=8181`. To start an existing Keycloak installation instead of the managed local server, set `KEYCLOAK_HOME`; its providers directory is intentionally not changed by this script.
 
 ## License
 

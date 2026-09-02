@@ -1,4 +1,5 @@
 target/
-account-ui/node_modules/
-account-ui/coverage/
-account-ui/dist/
+access-requests-ui/node_modules/
+access-requests-ui/coverage/
+access-requests-ui/dist/
+access-requests-ui/server/
