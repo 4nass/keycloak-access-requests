@@ -1,5 +1,8 @@
 import { createInstance } from "i18next";
-import { render, screen, within } from "@testing-library/react";
+import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { I18nextProvider } from "react-i18next";
@@ -12,6 +15,23 @@ import { RequestAccessPage } from "./RequestAccessPage";
 
 const testI18n = createInstance();
 
+const messageBundle = await readFile(
+    resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        "../../../src/main/resources/theme/access-requests/account/messages/messages_en.properties"
+    ),
+    "utf8"
+);
+const messages = Object.fromEntries(
+    messageBundle
+        .split(/\r?\n/)
+        .filter((line) => line && !line.startsWith("#"))
+        .map((line) => {
+            const separator = line.indexOf("=");
+            return [line.slice(0, separator), line.slice(separator + 1)];
+        })
+);
+
 await testI18n.init({
     initImmediate: false,
     interpolation: {
@@ -20,41 +40,7 @@ await testI18n.init({
     lng: "en",
     resources: {
         en: {
-            translation: {
-                accessRequestsAlreadyGranted: "Already granted",
-                accessRequestsApprove: "Approve",
-                accessRequestsApproveEntitlement: "Approve {{entitlement}}",
-                accessRequestsApproved: "Approved",
-                accessRequestsApprovals: "Approvals",
-                accessRequestsCancel: "Cancel",
-                accessRequestsCancelRequest: "Cancel request",
-                accessRequestsCanceled: "Canceled",
-                accessRequestsClose: "Close",
-                accessRequestsConfirmApproval: "Confirm approval",
-                accessRequestsConfirmRejection: "Confirm rejection",
-                accessRequestsDecision: "Decision",
-                accessRequestsDecisionComment: "Decision comment",
-                accessRequestsGranted: "Granted {{date}}",
-                accessRequestsHistory: "History",
-                accessRequestsJustification: "Justification",
-                accessRequestsMyRequests: "My Requests",
-                accessRequestsNav: "Access",
-                accessRequestsPending: "Pending",
-                accessRequestsProvisioning: "Provisioning",
-                accessRequestsReject: "Reject",
-                accessRequestsRejectEntitlement: "Reject {{entitlement}}",
-                accessRequestsRejected: "Rejected",
-                accessRequestsRequestAccess: "Request access",
-                accessRequestsRequestAccessTo: "Request access to {{entitlement}}",
-                accessRequestsRequestDetails: "{{entitlement}} request details",
-                accessRequestsRequestPending: "Request pending",
-                accessRequestsRequestedBy: "{{entitlement}} requested by {{requester}}",
-                accessRequestsResourceType: "Resource type",
-                accessRequestsRisk: "Risk: {{riskLevel}}",
-                accessRequestsRiskLabel: "Risk",
-                accessRequestsSubmitRequest: "Submit request",
-                accessRequestsViewDetails: "View details"
-            }
+            translation: messages
         }
     }
 });
@@ -64,6 +50,59 @@ function renderAccessRequestUi(ui: ReactNode) {
 }
 
 describe("Access Request account console pages", () => {
+    it("ships every access request message used by the feature pages", () => {
+        expect(Object.keys(messages).sort()).toEqual([
+            "accessRequestsAlreadyGranted",
+            "accessRequestsApprove",
+            "accessRequestsApproveEntitlement",
+            "accessRequestsApproved",
+            "accessRequestsApprovals",
+            "accessRequestsCancel",
+            "accessRequestsCancelRequest",
+            "accessRequestsCanceled",
+            "accessRequestsClose",
+            "accessRequestsConfirmApproval",
+            "accessRequestsConfirmRejection",
+            "accessRequestsDecision",
+            "accessRequestsDecisionComment",
+            "accessRequestsGranted",
+            "accessRequestsHistory",
+            "accessRequestsJustification",
+            "accessRequestsMyRequests",
+            "accessRequestsNav",
+            "accessRequestsPending",
+            "accessRequestsProvisioning",
+            "accessRequestsReject",
+            "accessRequestsRejectEntitlement",
+            "accessRequestsRejected",
+            "accessRequestsRequestAccess",
+            "accessRequestsRequestAccessTo",
+            "accessRequestsRequestDetails",
+            "accessRequestsRequestPending",
+            "accessRequestsRequestedBy",
+            "accessRequestsResourceType",
+            "accessRequestsRisk",
+            "accessRequestsRiskLabel",
+            "accessRequestsSubmitRequest",
+            "accessRequestsViewDetails"
+        ].sort());
+    });
+
+    it("falls back to the English theme messages when a locale is not supplied", async () => {
+        const fallbackI18n = createInstance();
+        await fallbackI18n.init({
+            fallbackLng: "en",
+            lng: "fr",
+            resources: {
+                en: {
+                    translation: messages
+                }
+            }
+        });
+
+        expect(fallbackI18n.t("accessRequestsRequestAccess")).toBe("Request access");
+    });
+
     it("shows Request access and My Requests to every requester, but hides Approvals without an approval scope", () => {
         renderAccessRequestUi(<AccessRequestNavigation canApprove={false} />);
 
@@ -139,6 +178,118 @@ describe("Access Request account console pages", () => {
             .getByText("Request pending")).toBeVisible();
     });
 
+    it("keeps the request dialog open, prevents duplicate submission, and refreshes only after a successful request", async () => {
+        const user = userEvent.setup();
+        let resolveSubmission: (() => void) | undefined;
+        const refreshRequests = vi.fn();
+        const requestAccess = vi.fn(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveSubmission = resolve;
+                })
+        );
+
+        renderAccessRequestUi(
+            <RequestAccessPage
+                entries={[
+                    {
+                        id: "finance-reader",
+                        name: "Finance Reader",
+                        description: "Read-only access to Finance Portal",
+                        resourceType: "CLIENT_ROLE",
+                        riskLevel: "LOW",
+                        alreadyGranted: false,
+                        pendingRequest: false
+                    }
+                ]}
+                onRequest={requestAccess}
+                onRefresh={refreshRequests}
+            />
+        );
+
+        const requestButton = screen.getByRole("button", { name: "Request access" });
+        await user.click(requestButton);
+        const dialog = screen.getByRole("dialog", { name: "Request access to Finance Reader" });
+        const submitButton = within(dialog).getByRole("button", { name: "Submit request" });
+        await user.type(within(dialog).getByLabelText("Justification"), "I need finance reports.");
+
+        await user.click(submitButton);
+        await user.click(submitButton);
+
+        expect(requestAccess).toHaveBeenCalledTimes(1);
+        expect(submitButton).toBeDisabled();
+        expect(dialog).toBeVisible();
+
+        resolveSubmission?.();
+
+        await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+        expect(refreshRequests).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the request dialog and its justification when request submission fails", async () => {
+        const user = userEvent.setup();
+        const requestAccess = vi.fn().mockRejectedValue(new Error("Request unavailable"));
+
+        renderAccessRequestUi(
+            <RequestAccessPage
+                entries={[
+                    {
+                        id: "finance-reader",
+                        name: "Finance Reader",
+                        description: "Read-only access to Finance Portal",
+                        resourceType: "CLIENT_ROLE",
+                        riskLevel: "LOW",
+                        alreadyGranted: false,
+                        pendingRequest: false
+                    }
+                ]}
+                onRequest={requestAccess}
+            />
+        );
+
+        await user.click(screen.getByRole("button", { name: "Request access" }));
+        const dialog = screen.getByRole("dialog", { name: "Request access to Finance Reader" });
+        const justification = "I need finance reports.";
+        await user.type(within(dialog).getByLabelText("Justification"), justification);
+        await user.click(within(dialog).getByRole("button", { name: "Submit request" }));
+
+        await waitFor(() => expect(requestAccess).toHaveBeenCalledTimes(1));
+        expect(screen.getByRole("dialog", { name: "Request access to Finance Reader" })).toBeVisible();
+        expect(within(dialog).getByLabelText("Justification")).toHaveValue(justification);
+        expect(screen.getByRole("alert")).toHaveTextContent("Request unavailable");
+    });
+
+    it("moves focus into a request dialog, closes it with Escape, and restores focus to its trigger", async () => {
+        const user = userEvent.setup();
+
+        renderAccessRequestUi(
+            <RequestAccessPage
+                entries={[
+                    {
+                        id: "finance-reader",
+                        name: "Finance Reader",
+                        description: "Read-only access to Finance Portal",
+                        resourceType: "CLIENT_ROLE",
+                        riskLevel: "LOW",
+                        alreadyGranted: false,
+                        pendingRequest: false
+                    }
+                ]}
+                onRequest={vi.fn()}
+            />
+        );
+
+        const requestButton = screen.getByRole("button", { name: "Request access" });
+        await user.click(requestButton);
+        const dialog = screen.getByRole("dialog", { name: "Request access to Finance Reader" });
+
+        expect(within(dialog).getByLabelText("Justification")).toHaveFocus();
+        await user.keyboard("{Escape}");
+
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(requestButton).toHaveFocus();
+    });
+
     it("shows request details and immutable history, and only permits cancellation while pending", async () => {
         const user = userEvent.setup();
         const cancelRequest = vi.fn().mockResolvedValue(undefined);
@@ -200,6 +351,48 @@ describe("Access Request account console pages", () => {
         expect(within(approvedRequest).queryByRole("button", { name: "Cancel request" })).not.toBeInTheDocument();
     });
 
+    it("prevents duplicate cancellation and refreshes requests only after cancellation succeeds", async () => {
+        const user = userEvent.setup();
+        let resolveCancellation: (() => void) | undefined;
+        const cancelRequest = vi.fn(
+            () =>
+                new Promise<void>((resolve) => {
+                    resolveCancellation = resolve;
+                })
+        );
+        const refreshRequests = vi.fn();
+
+        renderAccessRequestUi(
+            <MyRequestsPage
+                requests={[
+                    {
+                        id: "request-pending",
+                        entitlementName: "Finance Reader",
+                        resourceType: "CLIENT_ROLE",
+                        decisionStatus: "PENDING",
+                        provisioningStatus: "NOT_STARTED",
+                        requestedAt: "26 Aug 2026",
+                        justification: "I need to review month-end finance reports.",
+                        history: [{ type: "REQUEST_CREATED", occurredAt: "26 Aug 2026" }]
+                    }
+                ]}
+                onCancel={cancelRequest}
+                onRefresh={refreshRequests}
+            />
+        );
+
+        const cancelButton = screen.getByRole("button", { name: "Cancel request" });
+        await user.click(cancelButton);
+        await user.click(cancelButton);
+
+        expect(cancelRequest).toHaveBeenCalledTimes(1);
+        expect(cancelButton).toBeDisabled();
+
+        resolveCancellation?.();
+
+        await waitFor(() => expect(refreshRequests).toHaveBeenCalledTimes(1));
+    });
+
     it("shows pending approvals and sends explicit approve or reject decisions", async () => {
         const user = userEvent.setup();
         const approve = vi.fn().mockResolvedValue(undefined);
@@ -244,5 +437,82 @@ describe("Access Request account console pages", () => {
             requestId: "request-approval",
             comment: "Please request read-only access instead."
         });
+    });
+
+    it("waits for a decision, prevents duplicate approval, and retains the dialog if it fails", async () => {
+        const user = userEvent.setup();
+        let rejectApproval: ((reason?: Error) => void) | undefined;
+        const approve = vi.fn(
+            () =>
+                new Promise<void>((_resolve, reject) => {
+                    rejectApproval = reject;
+                })
+        );
+
+        renderAccessRequestUi(
+            <ApprovalsPage
+                requests={[
+                    {
+                        id: "request-approval",
+                        requester: "Anass Chahbouni",
+                        entitlementName: "Finance Reader",
+                        resourceType: "CLIENT_ROLE",
+                        riskLevel: "HIGH",
+                        justification: "I need to reconcile finance data before closing.",
+                        requestedAt: "26 Aug 2026"
+                    }
+                ]}
+                onApprove={approve}
+                onReject={vi.fn()}
+            />
+        );
+
+        await user.click(screen.getByRole("button", { name: "Approve" }));
+        const dialog = screen.getByRole("dialog", { name: "Approve Finance Reader" });
+        const confirmButton = within(dialog).getByRole("button", { name: "Confirm approval" });
+        await user.type(within(dialog).getByLabelText("Decision comment"), "Approved.");
+        await user.click(confirmButton);
+        await user.click(confirmButton);
+
+        expect(approve).toHaveBeenCalledTimes(1);
+        expect(confirmButton).toBeDisabled();
+        expect(dialog).toBeVisible();
+
+        rejectApproval?.(new Error("Decision unavailable"));
+
+        await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Decision unavailable"));
+        expect(screen.getByRole("dialog", { name: "Approve Finance Reader" })).toBeVisible();
+    });
+
+    it("moves focus into an approval dialog, closes it with Escape, and restores focus to its trigger", async () => {
+        const user = userEvent.setup();
+
+        renderAccessRequestUi(
+            <ApprovalsPage
+                requests={[
+                    {
+                        id: "request-approval",
+                        requester: "Anass Chahbouni",
+                        entitlementName: "Finance Reader",
+                        resourceType: "CLIENT_ROLE",
+                        riskLevel: "HIGH",
+                        justification: "I need to reconcile finance data before closing.",
+                        requestedAt: "26 Aug 2026"
+                    }
+                ]}
+                onApprove={vi.fn()}
+                onReject={vi.fn()}
+            />
+        );
+
+        const approveButton = screen.getByRole("button", { name: "Approve" });
+        await user.click(approveButton);
+        const dialog = screen.getByRole("dialog", { name: "Approve Finance Reader" });
+
+        expect(within(dialog).getByLabelText("Decision comment")).toHaveFocus();
+        await user.keyboard("{Escape}");
+
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(approveButton).toHaveFocus();
     });
 });

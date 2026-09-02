@@ -4,8 +4,12 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Properties;
+import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -24,10 +28,42 @@ class AccessRequestAccountConsoleThemeTest {
 
         assertNotNull(resource("theme/access-requests/account/index.ftl"));
 
-        String messages = readResource("theme/access-requests/account/messages/messages_en.properties");
-        assertTrue(messages.contains("accessRequestsRequestAccess=Request access"));
-        assertTrue(messages.contains("accessRequestsMyRequests=My Requests"));
-        assertTrue(messages.contains("accessRequestsApprovals=Approvals"));
+        Properties messages = new Properties();
+        messages.load(new StringReader(readResource("theme/access-requests/account/messages/messages_en.properties")));
+        assertEquals(Set.of(
+                "accessRequestsAlreadyGranted",
+                "accessRequestsApprove",
+                "accessRequestsApproveEntitlement",
+                "accessRequestsApproved",
+                "accessRequestsApprovals",
+                "accessRequestsCancel",
+                "accessRequestsCancelRequest",
+                "accessRequestsCanceled",
+                "accessRequestsClose",
+                "accessRequestsConfirmApproval",
+                "accessRequestsConfirmRejection",
+                "accessRequestsDecision",
+                "accessRequestsDecisionComment",
+                "accessRequestsGranted",
+                "accessRequestsHistory",
+                "accessRequestsJustification",
+                "accessRequestsMyRequests",
+                "accessRequestsNav",
+                "accessRequestsPending",
+                "accessRequestsProvisioning",
+                "accessRequestsReject",
+                "accessRequestsRejectEntitlement",
+                "accessRequestsRejected",
+                "accessRequestsRequestAccess",
+                "accessRequestsRequestAccessTo",
+                "accessRequestsRequestDetails",
+                "accessRequestsRequestPending",
+                "accessRequestsRequestedBy",
+                "accessRequestsResourceType",
+                "accessRequestsRisk",
+                "accessRequestsRiskLabel",
+                "accessRequestsSubmitRequest",
+                "accessRequestsViewDetails"), messages.stringPropertyNames());
     }
 
     private static InputStream resource(String name) {

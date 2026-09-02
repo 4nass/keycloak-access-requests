@@ -67,6 +67,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         try (KeycloakContainer firstServer = keycloak()) {
             firstServer.start();
             configureAdminCliTokenBehavior(firstServer);
+            assertAccountThemeMessagesAreServedFromTheDeployedProviderJar(firstServer);
             assertProviderSchemaApplied();
             assertRealmEndpointExposed(firstServer);
             assertEntitlementCatalogAdministration(firstServer);
@@ -79,6 +80,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         try (KeycloakContainer restartedServer = keycloak()) {
             restartedServer.start();
             configureAdminCliTokenBehavior(restartedServer);
+            assertAccountThemeMessagesAreServedFromTheDeployedProviderJar(restartedServer);
             assertProviderSchemaApplied();
             assertRealmEndpointExposed(restartedServer);
             assertEntitlementCatalogAdministration(restartedServer);
@@ -249,6 +251,32 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertTrue(response.headers().firstValue("Allow")
                 .map(allowedMethods -> allowedMethods.contains("GET") && allowedMethods.contains("OPTIONS"))
                 .orElse(false));
+    }
+
+    private void assertAccountThemeMessagesAreServedFromTheDeployedProviderJar(GenericContainer<?> server)
+            throws Exception {
+        String adminToken = accessToken(server, "admin-cli");
+        URI realmEndpoint = URI.create("http://%s:%d/admin/realms/master"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpResponse<Void> themeUpdateResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(realmEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString("{\"accountTheme\":\"access-requests\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(204, themeUpdateResponse.statusCode());
+
+        URI messagesEndpoint = URI.create("http://%s:%d/resources/master/account/en"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpResponse<String> messagesResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(messagesEndpoint).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, messagesResponse.statusCode());
+        assertTrue(messagesResponse.body().contains("\"key\":\"accessRequestsRequestAccess\""));
+        assertTrue(messagesResponse.body().contains("\"key\":\"accessRequestsMyRequests\""));
+        assertTrue(messagesResponse.body().contains("\"key\":\"accessRequestsApprovals\""));
     }
 
     private void assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(
