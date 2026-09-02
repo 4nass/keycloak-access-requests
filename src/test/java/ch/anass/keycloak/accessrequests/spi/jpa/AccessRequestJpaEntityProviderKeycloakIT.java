@@ -36,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AccessRequestJpaEntityProviderKeycloakIT {
 
     private static final String ACCESS_REQUESTS_API_AUDIENCE = "access-requests-api";
+    private static final String ACCESS_REQUEST_MANAGER_ROLE = "manage-access-requests";
     private static final Network NETWORK = Network.newNetwork();
 
     @Container
@@ -57,6 +58,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             firstServer.start();
             assertProviderSchemaApplied();
             assertRealmEndpointExposed(firstServer);
+            assertEntitlementCatalogAdministration(firstServer);
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(firstServer);
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(firstServer);
             assertRequesterCanListAndCancelOnlyOwnRequests(firstServer);
@@ -67,6 +69,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             restartedServer.start();
             assertProviderSchemaApplied();
             assertRealmEndpointExposed(restartedServer);
+            assertEntitlementCatalogAdministration(restartedServer);
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(restartedServer);
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(restartedServer);
             assertRequesterCanListAndCancelOnlyOwnRequests(restartedServer);
@@ -78,7 +81,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         Path providerJar = Path.of("target", "keycloak-access-requests.jar").toAbsolutePath();
         assertTrue(Files.isRegularFile(providerJar), "The provider JAR must be built before integration tests run.");
 
-        return new GenericContainer<>(DockerImageName.parse("quay.io/keycloak/keycloak:26.4.0"))
+        return new GenericContainer<>(DockerImageName.parse("quay.io/keycloak/keycloak:26.7.3"))
                 .withNetwork(NETWORK)
                 .withEnv("KC_DB", "postgres")
                 .withEnv("KC_DB_URL", "jdbc:postgresql://postgres:5432/keycloak")
@@ -101,8 +104,118 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertTrue(tableExists(connection, "ar_access_request"));
             assertTrue(tableExists(connection, "ar_access_request_history"));
             assertTrue(tableExists(connection, "ar_entitlement"));
-            assertEquals(4, providerChangeSetCount(connection));
+            assertTrue(tableExists(connection, "ar_entitlement_history"));
+            assertEquals(5, providerChangeSetCount(connection));
         }
+    }
+
+    private void assertEntitlementCatalogAdministration(GenericContainer<?> server) throws Exception {
+        URI entitlementEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/entitlements"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        String adminToken = accessToken(server, "admin-cli");
+
+        HttpResponse<Void> unauthenticatedResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(entitlementEndpoint).GET().build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(401, unauthenticatedResponse.statusCode());
+
+        String delegatedClientId = "catalog-delegated-" + UUID.randomUUID();
+        createDirectAccessClient(server, adminToken, delegatedClientId);
+        String delegatedUsername = "catalog-delegated-user-" + UUID.randomUUID();
+        String delegatedPassword = "catalog-delegated-password";
+        createEnabledUser(server, adminToken, delegatedUsername, delegatedPassword);
+        String delegatedUserToken = accessToken(server, delegatedClientId, delegatedUsername, delegatedPassword);
+        assignRealmManagementRoles(server, adminToken, subjectOf(delegatedUserToken), "manage-realm", "manage-users");
+        delegatedUserToken = accessToken(server, delegatedClientId, delegatedUsername, delegatedPassword);
+
+        HttpResponse<Void> delegatedManagerResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(entitlementEndpoint)
+                        .header("Authorization", "Bearer " + delegatedUserToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(403, delegatedManagerResponse.statusCode());
+
+        ensureRealmRoleAndAssignToUser(
+                server,
+                adminToken,
+                subjectOf(adminToken),
+                ACCESS_REQUEST_MANAGER_ROLE);
+        String managerToken = accessToken(server, "admin-cli");
+        String targetRoleId = createRealmRole(server, adminToken, "catalog-target-" + UUID.randomUUID());
+        String approverRoleId = createRealmRole(server, adminToken, "catalog-approver-" + UUID.randomUUID());
+        String description = "Read-only access to the catalog-managed finance report.";
+        HttpResponse<String> creationResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(entitlementEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("""
+                                {
+                                  "resourceType":"REALM_ROLE",
+                                  "resourceId":"%s",
+                                  "displayName":"Catalog Finance Reader",
+                                  "description":"%s",
+                                  "riskLevel":"HIGH",
+                                  "approverRoleId":"%s"
+                                }
+                                """.formatted(targetRoleId, description, approverRoleId)))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, creationResponse.statusCode());
+        assertTrue(creationResponse.body().contains("\"requestable\":false"));
+        String entitlementId = responseId(creationResponse.body());
+
+        URI entitlementByIdEndpoint = URI.create(entitlementEndpoint + "/" + entitlementId);
+        HttpResponse<String> updateResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(entitlementByIdEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString("""
+                                {
+                                  "displayName":"Catalog Finance Reader",
+                                  "description":"%s",
+                                  "riskLevel":"HIGH",
+                                  "approverRoleId":"%s",
+                                  "requestable":true,
+                                  "version":0
+                                }
+                                """.formatted(description, approverRoleId)))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, updateResponse.statusCode());
+        assertTrue(updateResponse.body().contains("\"requestable\":true"));
+        assertTrue(updateResponse.body().contains("\"version\":1"));
+
+        HttpResponse<Void> staleUpdateResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(entitlementByIdEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString("""
+                                {
+                                  "displayName":"Catalog Finance Reader",
+                                  "description":"%s",
+                                  "riskLevel":"HIGH",
+                                  "approverRoleId":"%s",
+                                  "requestable":false,
+                                  "version":0
+                                }
+                                """.formatted(description, approverRoleId)))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(409, staleUpdateResponse.statusCode());
+        assertEntitlementAuditEvents(entitlementId, subjectOf(managerToken));
+
+        String otherRealmName = "catalog-other-realm-" + UUID.randomUUID();
+        createRealm(server, adminToken, otherRealmName);
+        URI otherRealmEndpoint = URI.create("http://%s:%d/realms/%s/access-requests/admin/entitlements"
+                .formatted(server.getHost(), server.getMappedPort(8080), otherRealmName));
+        HttpResponse<Void> crossRealmResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(otherRealmEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(403, crossRealmResponse.statusCode());
     }
 
     private void assertRealmEndpointExposed(GenericContainer<?> server) throws Exception {
@@ -914,6 +1027,35 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         }
     }
 
+    private void assertEntitlementAuditEvents(String entitlementId, String actorId) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var statement = connection.prepareStatement("""
+                     select EVENT_TYPE, ACTOR_ID, REQUESTABLE, VERSION, DISPLAY_NAME
+                       from AR_ENTITLEMENT_HISTORY
+                      where ENTITLEMENT_ID = ?
+                      order by VERSION asc
+                     """)) {
+            statement.setString(1, entitlementId);
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next(), "Creating an entitlement must be audited.");
+                assertEquals("ENTITLEMENT_CREATED", result.getString("EVENT_TYPE"));
+                assertEquals(actorId, result.getString("ACTOR_ID"));
+                assertFalse(result.getBoolean("REQUESTABLE"));
+                assertEquals(0, result.getLong("VERSION"));
+                assertEquals("Catalog Finance Reader", result.getString("DISPLAY_NAME"));
+
+                assertTrue(result.next(), "Updating an entitlement must be audited.");
+                assertEquals("ENTITLEMENT_UPDATED", result.getString("EVENT_TYPE"));
+                assertEquals(actorId, result.getString("ACTOR_ID"));
+                assertTrue(result.getBoolean("REQUESTABLE"));
+                assertEquals(1, result.getLong("VERSION"));
+                assertEquals("Catalog Finance Reader", result.getString("DISPLAY_NAME"));
+                assertFalse(result.next(), "Exactly one audit event per catalog mutation is expected.");
+            }
+        }
+    }
+
     private String accessToken(GenericContainer<?> server, String clientId) throws Exception {
         return accessToken(server, clientId, "admin", "admin");
     }
@@ -971,6 +1113,61 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         HttpResponse<Void> response = HttpClient.newHttpClient().send(
                 request, HttpResponse.BodyHandlers.discarding());
         assertEquals(201, response.statusCode());
+    }
+
+    private void createRealm(GenericContainer<?> server, String adminToken, String realmName) throws Exception {
+        URI realmsEndpoint = URI.create("http://%s:%d/admin/realms"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpResponse<Void> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(realmsEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("""
+                                {"realm":"%s","enabled":true}
+                                """.formatted(realmName)))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(201, response.statusCode());
+    }
+
+    private void assignRealmManagementRoles(
+            GenericContainer<?> server,
+            String adminToken,
+            String userId,
+            String... roleNames) throws Exception {
+        String realmManagementClientId = clientInternalId(server, adminToken, "realm-management");
+        StringBuilder mappings = new StringBuilder("[");
+        for (int index = 0; index < roleNames.length; index++) {
+            String roleName = roleNames[index];
+            URI roleEndpoint = URI.create("http://%s:%d/admin/realms/master/clients/%s/roles/%s"
+                    .formatted(server.getHost(), server.getMappedPort(8080), realmManagementClientId, roleName));
+            HttpResponse<String> roleResponse = HttpClient.newHttpClient().send(
+                    HttpRequest.newBuilder(roleEndpoint)
+                            .header("Authorization", "Bearer " + adminToken)
+                            .GET()
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, roleResponse.statusCode());
+            var roleIdMatcher = Pattern.compile("\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(roleResponse.body());
+            assertTrue(roleIdMatcher.find(), "The realm-management role must have an identifier.");
+            if (index > 0) {
+                mappings.append(',');
+            }
+            mappings.append("{\"id\":\"").append(roleIdMatcher.group(1))
+                    .append("\",\"name\":\"").append(roleName).append("\"}");
+        }
+        mappings.append(']');
+
+        URI mappingsEndpoint = URI.create("http://%s:%d/admin/realms/master/users/%s/role-mappings/clients/%s"
+                .formatted(server.getHost(), server.getMappedPort(8080), userId, realmManagementClientId));
+        HttpResponse<Void> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(mappingsEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(mappings.toString()))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(204, response.statusCode());
     }
 
     private ClientRole createClientRole(GenericContainer<?> server, String adminToken, String roleName)
@@ -1188,7 +1385,15 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
     private String createRealmRoleAndAssignToUser(
             GenericContainer<?> server, String adminToken, String userId, String roleName) throws Exception {
-        String roleId = createRealmRole(server, adminToken, roleName);
+        return ensureRealmRoleAndAssignToUser(server, adminToken, userId, roleName);
+    }
+
+    private String ensureRealmRoleAndAssignToUser(
+            GenericContainer<?> server, String adminToken, String userId, String roleName) throws Exception {
+        String roleId = findRealmRoleIdOrNull(server, adminToken, roleName);
+        if (roleId == null) {
+            roleId = createRealmRole(server, adminToken, roleName);
+        }
 
         URI roleMappingsEndpoint = URI.create("http://%s:%d/admin/realms/master/users/%s/role-mappings/realm"
                 .formatted(server.getHost(), server.getMappedPort(8080), userId));
@@ -1203,6 +1408,24 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(204, assignRoleResponse.statusCode());
         return roleId;
+    }
+
+    private String findRealmRoleIdOrNull(GenericContainer<?> server, String adminToken, String roleName) throws Exception {
+        URI roleEndpoint = URI.create("http://%s:%d/admin/realms/master/roles/%s"
+                .formatted(server.getHost(), server.getMappedPort(8080), roleName));
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(roleEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() == 404) {
+            return null;
+        }
+        assertEquals(200, response.statusCode());
+        var roleIdMatcher = Pattern.compile("\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(response.body());
+        assertTrue(roleIdMatcher.find(), "The realm role must have an identifier.");
+        return roleIdMatcher.group(1);
     }
 
     private String createRealmRole(GenericContainer<?> server, String adminToken, String roleName) throws Exception {

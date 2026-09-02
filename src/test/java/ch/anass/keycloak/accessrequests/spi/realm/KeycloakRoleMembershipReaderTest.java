@@ -43,6 +43,7 @@ class KeycloakRoleMembershipReaderTest {
             case "hashCode" -> System.identityHashCode(proxy);
             case "equals" -> proxy == arguments[0];
             case "isComposite" -> false;
+            case "getCompositesStream" -> Stream.empty();
             default -> null;
         });
         RealmModel realm = proxy(RealmModel.class, (proxy, method, arguments) -> switch (method.getName()) {
