@@ -58,18 +58,25 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <keycloak.version>26.7.3</keycloak.version>
+        <quarkus.version>3.33.3.1</quarkus.version>
         <junit.version>6.1.3</junit.version>
         <testcontainers-keycloak.version>4.3.1</testcontainers-keycloak.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <postgresql.version>18</postgresql.version>
         <postgresql.container>mirror.gcr.io/postgres:${postgresql.version}</postgresql.container>
-        <postgresql-jdbc.version>42.7.13</postgresql-jdbc.version>
         <maven.surefire.version>3.5.6</maven.surefire.version>
         <maven.failsafe.version>3.5.6</maven.failsafe.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>io.quarkus.platform</groupId>
+                <artifactId>quarkus-bom</artifactId>
+                <version>${quarkus.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-bom</artifactId>
@@ -84,13 +91,11 @@
         <dependency>
             <groupId>jakarta.persistence</groupId>
             <artifactId>jakarta.persistence-api</artifactId>
-            <version>3.2.0</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.hibernate.orm</groupId>
             <artifactId>hibernate-core</artifactId>
-            <version>6.6.4.Final</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -114,7 +119,6 @@
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <version>2.4.240</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -136,7 +140,6 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <version>${postgresql-jdbc.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

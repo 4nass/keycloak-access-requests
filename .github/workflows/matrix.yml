@@ -26,9 +26,11 @@ jobs:
       matrix:
         include:
           - keycloak: '26.6.4'
+            quarkus: '3.33.2.1'
             testcontainers-keycloak: '4.2.0'
             testcontainers: '2.0.4'
           - keycloak: '26.5.7'
+            quarkus: '3.27.3'
             testcontainers-keycloak: '4.1.1'
             testcontainers: '2.0.3'
 
@@ -47,6 +49,7 @@ jobs:
         run: >-
           mvn --batch-mode --no-transfer-progress clean package -DskipTests
           -Dkeycloak.version=${{ matrix.keycloak }}
+          -Dquarkus.version=${{ matrix.quarkus }}
           -Dtestcontainers-keycloak.version=${{ matrix.testcontainers-keycloak }}
           -Dtestcontainers.version=${{ matrix.testcontainers }}
 
@@ -55,6 +58,7 @@ jobs:
           mvn --batch-mode --no-transfer-progress
           failsafe:integration-test failsafe:verify
           -Dkeycloak.version=${{ matrix.keycloak }}
+          -Dquarkus.version=${{ matrix.quarkus }}
           -Dkeycloak.image=quay.io/keycloak/keycloak:${{ matrix.keycloak }}
           -Dtestcontainers-keycloak.version=${{ matrix.testcontainers-keycloak }}
           -Dtestcontainers.version=${{ matrix.testcontainers }}

@@ -23,13 +23,13 @@ Advanced governance, temporary access, revocation, notifications, and external c
 
 ## Compatibility
 
-The extension is built against Keycloak 26.7.3 and verified with one integration test for each supported Keycloak minor line.
+The extension is built against Keycloak 26.7.3 and verified with one integration test for each supported Keycloak minor line. Each target uses the Quarkus BOM shipped by that exact Keycloak release.
 
-| Keycloak line | Version tested | Testcontainers-Keycloak | Testcontainers | Validation |
-|---|---:|---:|---:|---|
-| 26.7.x | 26.7.3 | 4.3.0 | 2.0.5 | Main CI |
-| 26.6.x | 26.6.4 | 4.2.0 | 2.0.4 | Compatibility matrix |
-| 26.5.x | 26.5.7 | 4.1.1 | 2.0.3 | Compatibility matrix |
+| Keycloak line | Version tested | Quarkus BOM | Testcontainers-Keycloak | Testcontainers | Validation |
+|---|---:|---:|---:|---:|---|
+| 26.7.x | 26.7.3 | 3.33.3.1 | 4.3.1 | 2.0.5 | Main CI |
+| 26.6.x | 26.6.4 | 3.33.2.1 | 4.2.0 | 2.0.4 | Compatibility matrix |
+| 26.5.x | 26.5.7 | 3.27.3 | 4.1.1 | 2.0.3 | Compatibility matrix |
 
 The table records tested compatibility. It does not guarantee compatibility with every future patch release.
 
@@ -62,7 +62,7 @@ The project is a single Maven module. Keycloak-specific packages and resources a
 - Java 21+
 - Maven 3.9+
 - Extension version: `0.1.0-SNAPSHOT`
-- Keycloak 26.7.3 as the development baseline
+- Keycloak 26.7.3 and Quarkus 3.33.3.1 as the development baseline
 - Keycloak 26.5.x, 26.6.x, and 26.7.x are covered by compatibility tests
 - PostgreSQL for integration tests
 
