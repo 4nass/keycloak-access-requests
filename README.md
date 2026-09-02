@@ -63,6 +63,19 @@ The catalog API accepts access tokens with the `access-requests-api` audience. C
 
 To revoke a client, remove the scope from that client. Newly issued tokens will no longer be accepted.
 
+## Catalog administration
+
+Create the realm role `manage-access-requests` and assign it only to the administrators who manage this extension. It is the only role accepted by the administrative catalog API; `manage-realm` and `manage-users` do not grant access to it.
+
+The API is available under the realm resource:
+
+- `GET /admin/entitlements?page=0&size=20` lists drafts and requestable entitlements;
+- `POST /admin/entitlements` creates a draft (`requestable=false`);
+- `GET /admin/entitlements/{id}` returns one entitlement;
+- `PUT /admin/entitlements/{id}` updates its metadata and `requestable` state.
+
+The Keycloak resource selected at creation is immutable. A `PUT` includes the current `version`; a stale version returns `409 Conflict` so an administrator cannot overwrite another administrator's change.
+
 ## Commands
 
 Run these commands from the project root:
