@@ -21,6 +21,12 @@ The scope includes:
 
 Advanced governance, temporary access, revocation, notifications, and external connectors are out of scope.
 
+## Console responsibilities
+
+The Account Console is for end users and approvers. It exposes **Request access**, **My Requests**, and **Approvals**. It never exposes entitlement administration.
+
+The entitlement catalog belongs to the Keycloak Admin Console. Its REST endpoints remain available for automation and for the future Admin Console integration.
+
 ## Compatibility
 
 The extension is built against Keycloak 26.7.3 and verified with one integration test for each supported Keycloak minor line. Each target uses the Quarkus BOM shipped by that exact Keycloak release.

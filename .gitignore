@@ -1,1 +1,4 @@
 target/
+account-ui/node_modules/
+account-ui/coverage/
+account-ui/dist/
