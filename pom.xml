@@ -66,6 +66,9 @@
         <postgresql.container>mirror.gcr.io/postgres:${postgresql.version}</postgresql.container>
         <maven.surefire.version>3.5.6</maven.surefire.version>
         <maven.failsafe.version>3.5.6</maven.failsafe.version>
+        <frontend.maven.plugin.version>2.0.2</frontend.maven.plugin.version>
+        <node.version>v24.18.1</node.version>
+        <pnpm.version>11.18.0</pnpm.version>
     </properties>
 
     <dependencyManagement>
@@ -146,6 +149,16 @@
 
     <build>
         <finalName>keycloak-access-requests</finalName>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${project.basedir}/account-ui/dist</directory>
+                <targetPath>theme/access-requests/account/resources</targetPath>
+                <filtering>false</filtering>
+            </resource>
+        </resources>
         <pluginManagement>
             <plugins>
                 <plugin>
@@ -171,6 +184,11 @@
                         </systemPropertyVariables>
                     </configuration>
                 </plugin>
+                <plugin>
+                    <groupId>com.github.eirslett</groupId>
+                    <artifactId>frontend-maven-plugin</artifactId>
+                    <version>${frontend.maven.plugin.version}</version>
+                </plugin>
             </plugins>
         </pluginManagement>
         <plugins>
@@ -191,6 +209,47 @@
                             <goal>integration-test</goal>
                             <goal>verify</goal>
                         </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>com.github.eirslett</groupId>
+                <artifactId>frontend-maven-plugin</artifactId>
+                <configuration>
+                    <installDirectory>${project.build.directory}/frontend</installDirectory>
+                    <workingDirectory>${project.basedir}/account-ui</workingDirectory>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>install-node-and-pnpm</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>install-node-and-pnpm</goal>
+                        </goals>
+                        <configuration>
+                            <nodeVersion>${node.version}</nodeVersion>
+                            <pnpmVersion>${pnpm.version}</pnpmVersion>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>install-account-console-dependencies</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>pnpm</goal>
+                        </goals>
+                        <configuration>
+                            <arguments>install --frozen-lockfile --ignore-scripts</arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>build-account-console</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>pnpm</goal>
+                        </goals>
+                        <configuration>
+                            <arguments>run build</arguments>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

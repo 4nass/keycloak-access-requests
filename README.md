@@ -16,7 +16,7 @@ The scope includes:
 - synchronous provisioning for realm roles, client roles, and groups;
 - idempotency, realm isolation, and self-approval protection;
 - an immutable business history;
-- Keycloak REST endpoints, declarative administration settings, and optional theme fragments;
+- Keycloak REST endpoints, declarative administration settings, and an Account Console theme;
 - PostgreSQL and Liquibase for persistence.
 
 Advanced governance, temporary access, revocation, notifications, and external connectors are out of scope.
@@ -43,6 +43,10 @@ The table records tested compatibility. It does not guarantee compatibility with
 
 ```text
 keycloak-access-requests/
+├── account-ui/                         # React source for the Account Console theme
+│   ├── src/
+│   ├── package.json
+│   └── pnpm-lock.yaml
 ├── src/
 │   ├── main/
 │   │   ├── java/ch/anass/keycloak/accessrequests/
@@ -50,11 +54,10 @@ keycloak-access-requests/
 │   │   │   ├── persistence/jpa/         # JPA entities and repository adapters
 │   │   │   └── spi/                     # Keycloak integration as it is implemented
 │   │   │       ├── realm/               # Realm resource provider and endpoints
-│   │   │       ├── jpa/                 # Keycloak JPA entity provider
-│   │   │       └── ui/                  # Declarative Admin UI providers
+│   │   │       └── jpa/                 # Keycloak JPA entity provider
 │   │   └── resources/
-│   │       ├── META-INF/services/       # Keycloak provider registrations
-│   │       └── theme/                   # Optional FreeMarker theme fragments
+│   │       ├── META-INF/                # Provider registrations and theme descriptor
+│   │       └── theme/access-requests/   # Account Console FreeMarker bootstrap
 │   └── test/
 │       ├── java/
 │       └── resources/
@@ -67,6 +70,7 @@ The project is a single Maven module. Keycloak-specific packages and resources a
 
 - Java 21+
 - Maven 3.9+
+- Node.js 24.18.1 and pnpm 11.18.0 are provisioned by Maven for reproducible builds
 - Extension version: `0.1.0-SNAPSHOT`
 - Keycloak 26.7.3 and Quarkus 3.33.3.1 as the development baseline
 - Keycloak 26.5.x, 26.6.x, and 26.7.x are covered by compatibility tests
@@ -106,7 +110,19 @@ mvn test
 mvn package
 ```
 
-The build produces `target/keycloak-access-requests.jar`. When the Keycloak SPI implementations are added, this single JAR will be copied to Keycloak's `providers` directory.
+The build produces `target/keycloak-access-requests.jar`. It includes the Keycloak providers and the Account Console theme in one deployable JAR.
+
+## Account Console theme
+
+The Account Console theme is named `access-requests` and extends `keycloak.v3`. Maven builds its React assets and packages them with the FreeMarker `index.ftl` bootstrap.
+
+To enable it in a realm:
+
+1. Copy `target/keycloak-access-requests.jar` to Keycloak's `providers` directory.
+2. Run `kc.sh build` for an optimized Keycloak installation, then restart the server.
+3. In **Realm settings → Themes**, select `access-requests` as the **Account theme**.
+
+The current theme packages the native Account Console shell. The Access Request pages are added in the following feature.
 
 ## License
 

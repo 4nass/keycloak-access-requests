@@ -5,7 +5,9 @@ on:
     branches: [ main ]
     paths:
       - 'src/**'
+      - 'account-ui/**'
       - '*.xml'
+      - 'pom.xml'
   pull_request:
     branches: [ main ]
   workflow_dispatch:

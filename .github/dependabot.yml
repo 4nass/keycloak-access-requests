@@ -38,3 +38,24 @@ updates:
       github-actions:
         patterns:
           - "*"
+
+  - package-ecosystem: npm
+    directory: /account-ui
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 10
+    commit-message:
+      include: scope
+      prefix: chore
+    labels:
+      - dependencies
+    groups:
+      npm-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
