@@ -1,20 +1,19 @@
 package ch.anass.keycloak.accessrequests.spi.jpa;
 
+import dasniko.testcontainers.keycloak.KeycloakContainer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
-import org.testcontainers.utility.MountableFile;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -25,6 +24,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -37,10 +37,14 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
     private static final String ACCESS_REQUESTS_API_AUDIENCE = "access-requests-api";
     private static final String ACCESS_REQUEST_MANAGER_ROLE = "manage-access-requests";
+    private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.3";
+    private static final String KEYCLOAK_VERSION = System.getProperty("keycloak.version", DEFAULT_KEYCLOAK_VERSION);
+    private static final String KEYCLOAK_IMAGE = System.getProperty(
+            "keycloak.image", "quay.io/keycloak/keycloak:" + KEYCLOAK_VERSION);
     private static final Network NETWORK = Network.newNetwork();
 
     @Container
-    private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine")
+    private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine")
             .withDatabaseName("keycloak")
             .withUsername("keycloak")
             .withPassword("keycloak")
@@ -54,8 +58,9 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
     @Test
     void appliesTheProviderChangelogAtKeycloakStartupAndKeepsItAppliedAfterRestart() throws Exception {
-        try (GenericContainer<?> firstServer = keycloak()) {
+        try (KeycloakContainer firstServer = keycloak()) {
             firstServer.start();
+            configureAdminCliTokenBehavior(firstServer);
             assertProviderSchemaApplied();
             assertRealmEndpointExposed(firstServer);
             assertEntitlementCatalogAdministration(firstServer);
@@ -65,8 +70,9 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertEntitlementScopedApproversCanDecideRequests(firstServer);
         }
 
-        try (GenericContainer<?> restartedServer = keycloak()) {
+        try (KeycloakContainer restartedServer = keycloak()) {
             restartedServer.start();
+            configureAdminCliTokenBehavior(restartedServer);
             assertProviderSchemaApplied();
             assertRealmEndpointExposed(restartedServer);
             assertEntitlementCatalogAdministration(restartedServer);
@@ -77,25 +83,30 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         }
     }
 
-    private GenericContainer<?> keycloak() {
+    private KeycloakContainer keycloak() {
         Path providerJar = Path.of("target", "keycloak-access-requests.jar").toAbsolutePath();
         assertTrue(Files.isRegularFile(providerJar), "The provider JAR must be built before integration tests run.");
 
-        return new GenericContainer<>(DockerImageName.parse("quay.io/keycloak/keycloak:26.7.3"))
+        return new KeycloakContainer(KEYCLOAK_IMAGE)
                 .withNetwork(NETWORK)
                 .withEnv("KC_DB", "postgres")
                 .withEnv("KC_DB_URL", "jdbc:postgresql://postgres:5432/keycloak")
                 .withEnv("KC_DB_USERNAME", "keycloak")
                 .withEnv("KC_DB_PASSWORD", "keycloak")
-                .withEnv("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
-                .withEnv("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin")
-                .withCopyFileToContainer(
-                        MountableFile.forHostPath(providerJar),
-                        "/opt/keycloak/providers/keycloak-access-requests.jar")
-                .withCommand("start-dev", "--http-port=8080")
-                .withExposedPorts(8080)
-                .waitingFor(Wait.forHttp("/realms/master").forPort(8080).forStatusCode(200))
+                .withAdminUsername("admin")
+                .withAdminPassword("admin")
+                .withProviderLibsFrom(List.of(providerJar.toFile()))
                 .withStartupTimeout(Duration.ofMinutes(3));
+    }
+
+    private void configureAdminCliTokenBehavior(KeycloakContainer server) throws Exception {
+        try {
+            Method method = KeycloakContainer.class.getMethod(
+                    "disableLightweightAccessTokenForAdminCliClient", String.class);
+            method.invoke(server, "master");
+        } catch (NoSuchMethodException ignored) {
+            // This helper is only needed by the Keycloak 26.7 test container.
+        }
     }
 
     private void assertProviderSchemaApplied() throws SQLException {
@@ -1135,7 +1146,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             String adminToken,
             String userId,
             String... roleNames) throws Exception {
-        String realmManagementClientId = clientInternalId(server, adminToken, "realm-management");
+        String realmManagementClientId = clientInternalId(server, adminToken, "master-realm");
         StringBuilder mappings = new StringBuilder("[");
         for (int index = 0; index < roleNames.length; index++) {
             String roleName = roleNames[index];
@@ -1149,7 +1160,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                     HttpResponse.BodyHandlers.ofString());
             assertEquals(200, roleResponse.statusCode());
             var roleIdMatcher = Pattern.compile("\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(roleResponse.body());
-            assertTrue(roleIdMatcher.find(), "The realm-management role must have an identifier.");
+            assertTrue(roleIdMatcher.find(), "The master realm management role must have an identifier.");
             if (index > 0) {
                 mappings.append(',');
             }

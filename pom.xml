@@ -10,18 +10,73 @@
     <packaging>jar</packaging>
 
     <name>keycloak-access-requests</name>
-    <description>Lightweight access requests extension for Keycloak</description>
+    <description>Access requests extension for Keycloak</description>
+    <url>https://github.com/4nass/keycloak-access-requests</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>4nass</id>
+            <name>Anass Chahbouni</name>
+            <email>contact@anass.ch</email>
+            <url>https://anass.ch</url>
+            <timezone>Europe/Paris</timezone>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/4nass/keycloak-access-requests.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/4nass/keycloak-access-requests.git</developerConnection>
+        <url>https://github.com/4nass/keycloak-access-requests</url>
+        <tag>HEAD</tag>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub Issues</system>
+        <url>https://github.com/4nass/keycloak-access-requests/issues</url>
+    </issueManagement>
+
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/${github.packages.repository}</url>
+        </repository>
+    </distributionManagement>
 
     <properties>
+        <github.packages.repository>4nass/keycloak-access-requests</github.packages.repository>
         <java.version>21</java.version>
         <maven.compiler.release>${java.version}</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <keycloak.version>26.7.3</keycloak.version>
         <junit.version>5.11.4</junit.version>
-        <testcontainers.version>1.20.6</testcontainers.version>
+        <testcontainers-keycloak.version>4.3.0</testcontainers-keycloak.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
         <postgresql.version>42.7.5</postgresql.version>
+        <maven.surefire.version>3.5.6</maven.surefire.version>
+        <maven.failsafe.version>3.5.6</maven.failsafe.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
@@ -61,15 +116,19 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>${testcontainers.version}</version>
+            <groupId>com.github.dasniko</groupId>
+            <artifactId>testcontainers-keycloak</artifactId>
+            <version>${testcontainers-keycloak.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>postgresql</artifactId>
-            <version>${testcontainers.version}</version>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -82,21 +141,44 @@
 
     <build>
         <finalName>keycloak-access-requests</finalName>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.14.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven.surefire.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>${maven.failsafe.version}</version>
+                    <configuration>
+                        <systemPropertyVariables>
+                            <org.jboss.logging.provider>log4j2</org.jboss.logging.provider>
+                            <webdriver.remote.enableTracing>false</webdriver.remote.enableTracing>
+                            <keycloak.version>${keycloak.version}</keycloak.version>
+                        </systemPropertyVariables>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.14.0</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.5.3</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
-                <version>3.5.3</version>
                 <executions>
                     <execution>
                         <goals>

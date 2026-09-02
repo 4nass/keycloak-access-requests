@@ -1,0 +1,66 @@
+name: Keycloak compatibility matrix
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - '*.xml'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: matrix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  keycloak-compatibility:
+    name: Keycloak ${{ matrix.keycloak }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - keycloak: '26.6.4'
+            testcontainers-keycloak: '4.2.0'
+            testcontainers: '2.0.4'
+          - keycloak: '26.5.7'
+            testcontainers-keycloak: '4.1.1'
+            testcontainers: '2.0.3'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Java
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Package provider for Keycloak ${{ matrix.keycloak }}
+        run: >-
+          mvn --batch-mode --no-transfer-progress clean package -DskipTests
+          -Dkeycloak.version=${{ matrix.keycloak }}
+          -Dtestcontainers-keycloak.version=${{ matrix.testcontainers-keycloak }}
+          -Dtestcontainers.version=${{ matrix.testcontainers }}
+
+      - name: Run Keycloak ${{ matrix.keycloak }} integration test
+        run: >-
+          mvn --batch-mode --no-transfer-progress
+          failsafe:integration-test failsafe:verify
+          -Dkeycloak.version=${{ matrix.keycloak }}
+          -Dkeycloak.image=quay.io/keycloak/keycloak:${{ matrix.keycloak }}
+          -Dtestcontainers-keycloak.version=${{ matrix.testcontainers-keycloak }}
+          -Dtestcontainers.version=${{ matrix.testcontainers }}
+
+      - name: Ensure the compatibility test was executed
+        shell: bash
+        run: >-
+          grep -q 'tests="1".*skipped="0"'
+          target/failsafe-reports/TEST-ch.anass.keycloak.accessrequests.spi.jpa.AccessRequestJpaEntityProviderKeycloakIT.xml
