@@ -8,6 +8,7 @@ import org.testcontainers.containers.Network;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -38,13 +39,18 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     private static final String ACCESS_REQUESTS_API_AUDIENCE = "access-requests-api";
     private static final String ACCESS_REQUEST_MANAGER_ROLE = "manage-access-requests";
     private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.3";
+    private static final String DEFAULT_POSTGRESQL_CONTAINER = "mirror.gcr.io/postgres:18";
     private static final String KEYCLOAK_VERSION = System.getProperty("keycloak.version", DEFAULT_KEYCLOAK_VERSION);
     private static final String KEYCLOAK_IMAGE = System.getProperty(
             "keycloak.image", "quay.io/keycloak/keycloak:" + KEYCLOAK_VERSION);
+    private static final String POSTGRESQL_CONTAINER = System.getProperty(
+            "postgresql.container", DEFAULT_POSTGRESQL_CONTAINER);
+    private static final DockerImageName POSTGRESQL_IMAGE = DockerImageName.parse(POSTGRESQL_CONTAINER)
+            .asCompatibleSubstituteFor("postgres");
     private static final Network NETWORK = Network.newNetwork();
 
     @Container
-    private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine")
+    private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(POSTGRESQL_IMAGE)
             .withDatabaseName("keycloak")
             .withUsername("keycloak")
             .withPassword("keycloak")
