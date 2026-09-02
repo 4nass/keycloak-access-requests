@@ -1,5 +1,8 @@
+import { createInstance } from "i18next";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
+import { I18nextProvider } from "react-i18next";
 import { describe, expect, it, vi } from "vitest";
 
 import { AccessRequestNavigation } from "./AccessRequestNavigation";
@@ -7,9 +10,62 @@ import { ApprovalsPage } from "./ApprovalsPage";
 import { MyRequestsPage } from "./MyRequestsPage";
 import { RequestAccessPage } from "./RequestAccessPage";
 
+const testI18n = createInstance();
+
+await testI18n.init({
+    initImmediate: false,
+    interpolation: {
+        escapeValue: false
+    },
+    lng: "en",
+    resources: {
+        en: {
+            translation: {
+                accessRequestsAlreadyGranted: "Already granted",
+                accessRequestsApprove: "Approve",
+                accessRequestsApproveEntitlement: "Approve {{entitlement}}",
+                accessRequestsApproved: "Approved",
+                accessRequestsApprovals: "Approvals",
+                accessRequestsCancel: "Cancel",
+                accessRequestsCancelRequest: "Cancel request",
+                accessRequestsCanceled: "Canceled",
+                accessRequestsClose: "Close",
+                accessRequestsConfirmApproval: "Confirm approval",
+                accessRequestsConfirmRejection: "Confirm rejection",
+                accessRequestsDecision: "Decision",
+                accessRequestsDecisionComment: "Decision comment",
+                accessRequestsGranted: "Granted {{date}}",
+                accessRequestsHistory: "History",
+                accessRequestsJustification: "Justification",
+                accessRequestsMyRequests: "My Requests",
+                accessRequestsNav: "Access",
+                accessRequestsPending: "Pending",
+                accessRequestsProvisioning: "Provisioning",
+                accessRequestsReject: "Reject",
+                accessRequestsRejectEntitlement: "Reject {{entitlement}}",
+                accessRequestsRejected: "Rejected",
+                accessRequestsRequestAccess: "Request access",
+                accessRequestsRequestAccessTo: "Request access to {{entitlement}}",
+                accessRequestsRequestDetails: "{{entitlement}} request details",
+                accessRequestsRequestPending: "Request pending",
+                accessRequestsRequestedBy: "{{entitlement}} requested by {{requester}}",
+                accessRequestsResourceType: "Resource type",
+                accessRequestsRisk: "Risk: {{riskLevel}}",
+                accessRequestsRiskLabel: "Risk",
+                accessRequestsSubmitRequest: "Submit request",
+                accessRequestsViewDetails: "View details"
+            }
+        }
+    }
+});
+
+function renderAccessRequestUi(ui: ReactNode) {
+    return render(<I18nextProvider i18n={testI18n}>{ui}</I18nextProvider>);
+}
+
 describe("Access Request account console pages", () => {
     it("shows Request access and My Requests to every requester, but hides Approvals without an approval scope", () => {
-        render(<AccessRequestNavigation canApprove={false} />);
+        renderAccessRequestUi(<AccessRequestNavigation canApprove={false} />);
 
         const navigation = screen.getByRole("navigation", { name: "Access" });
         expect(within(navigation).getByRole("link", { name: "Request access" })).toBeVisible();
@@ -18,7 +74,7 @@ describe("Access Request account console pages", () => {
     });
 
     it("shows Approvals only to a user with at least one entitlement approval scope", () => {
-        render(<AccessRequestNavigation canApprove />);
+        renderAccessRequestUi(<AccessRequestNavigation canApprove />);
 
         expect(screen.getByRole("link", { name: "Approvals" })).toBeVisible();
     });
@@ -27,7 +83,7 @@ describe("Access Request account console pages", () => {
         const user = userEvent.setup();
         const requestAccess = vi.fn().mockResolvedValue(undefined);
 
-        render(
+        renderAccessRequestUi(
             <RequestAccessPage
                 entries={[
                     {
@@ -87,7 +143,7 @@ describe("Access Request account console pages", () => {
         const user = userEvent.setup();
         const cancelRequest = vi.fn().mockResolvedValue(undefined);
 
-        render(
+        renderAccessRequestUi(
             <MyRequestsPage
                 requests={[
                     {
@@ -149,7 +205,7 @@ describe("Access Request account console pages", () => {
         const approve = vi.fn().mockResolvedValue(undefined);
         const reject = vi.fn().mockResolvedValue(undefined);
 
-        render(
+        renderAccessRequestUi(
             <ApprovalsPage
                 requests={[
                     {

@@ -23,6 +23,11 @@ class AccessRequestAccountConsoleThemeTest {
         assertTrue(properties.contains("parent=keycloak.v3"));
 
         assertNotNull(resource("theme/access-requests/account/index.ftl"));
+
+        String messages = readResource("theme/access-requests/account/messages/messages_en.properties");
+        assertTrue(messages.contains("accessRequestsRequestAccess=Request access"));
+        assertTrue(messages.contains("accessRequestsMyRequests=My Requests"));
+        assertTrue(messages.contains("accessRequestsApprovals=Approvals"));
     }
 
     private static InputStream resource(String name) {

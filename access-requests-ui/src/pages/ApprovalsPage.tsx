@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export type PendingApproval = {
     id: string;
@@ -27,6 +28,7 @@ type PendingDecision = {
 };
 
 export function ApprovalsPage({ requests, onApprove, onReject }: ApprovalsPageProps) {
+    const { t } = useTranslation();
     const [pendingDecision, setPendingDecision] = useState<PendingDecision>();
     const [comment, setComment] = useState("");
 
@@ -55,41 +57,56 @@ export function ApprovalsPage({ requests, onApprove, onReject }: ApprovalsPagePr
 
     return (
         <section aria-labelledby="approvals-title">
-            <h1 id="approvals-title">Approvals</h1>
+            <h1 id="approvals-title">{t("accessRequestsApprovals")}</h1>
             {requests.map((request) => (
-                <article key={request.id} aria-label={`${request.entitlementName} requested by ${request.requester}`}>
+                <article
+                    key={request.id}
+                    aria-label={t("accessRequestsRequestedBy", {
+                        entitlement: request.entitlementName,
+                        requester: request.requester
+                    })}
+                >
                     <h2>{request.entitlementName}</h2>
                     <p>{request.requester}</p>
                     <p>{request.resourceType}</p>
-                    <p>Risk: {request.riskLevel}</p>
+                    <p>{t("accessRequestsRisk", { riskLevel: request.riskLevel })}</p>
                     <p>{request.justification}</p>
                     <p>{request.requestedAt}</p>
                     <button type="button" onClick={() => setPendingDecision({ request, type: "approve" })}>
-                        Approve
+                        {t("accessRequestsApprove")}
                     </button>
                     <button type="button" onClick={() => setPendingDecision({ request, type: "reject" })}>
-                        Reject
+                        {t("accessRequestsReject")}
                     </button>
                 </article>
             ))}
             {pendingDecision && (
                 <div
-                    aria-label={`${pendingDecision.type === "approve" ? "Approve" : "Reject"} ${pendingDecision.request.entitlementName}`}
+                    aria-label={t(
+                        pendingDecision.type === "approve"
+                            ? "accessRequestsApproveEntitlement"
+                            : "accessRequestsRejectEntitlement",
+                        { entitlement: pendingDecision.request.entitlementName }
+                    )}
                     aria-modal="true"
                     role="dialog"
                 >
-                    <h2>{pendingDecision.type === "approve" ? "Approve" : "Reject"}</h2>
-                    <label htmlFor="decision-comment">Decision comment</label>
+                    <h2>{t(pendingDecision.type === "approve" ? "accessRequestsApprove" : "accessRequestsReject")}</h2>
+                    <label htmlFor="decision-comment">{t("accessRequestsDecisionComment")}</label>
                     <textarea
                         id="decision-comment"
                         onChange={(event) => setComment(event.target.value)}
                         value={comment}
                     />
                     <button type="button" onClick={closeDialog}>
-                        Cancel
+                        {t("accessRequestsCancel")}
                     </button>
                     <button type="button" onClick={submit}>
-                        {pendingDecision.type === "approve" ? "Confirm approval" : "Confirm rejection"}
+                        {t(
+                            pendingDecision.type === "approve"
+                                ? "accessRequestsConfirmApproval"
+                                : "accessRequestsConfirmRejection"
+                        )}
                     </button>
                 </div>
             )}

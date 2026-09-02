@@ -1,4 +1,6 @@
 import { useState } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 
 type RequestHistoryEntry = {
     type: string;
@@ -28,42 +30,48 @@ type MyRequestsPageProps = {
     onCancel: (requestId: string) => void | Promise<void>;
 };
 
-function requestStatus(request: AccessRequest) {
+function requestStatus(request: AccessRequest, t: TFunction) {
     if (request.decisionStatus === "PENDING") {
-        return "Pending";
+        return t("accessRequestsPending");
     }
 
     if (request.decisionStatus === "APPROVED" && request.provisioningStatus === "SUCCEEDED") {
-        return `Granted ${request.decision?.decidedAt ?? request.requestedAt}`;
+        return t("accessRequestsGranted", { date: request.decision?.decidedAt ?? request.requestedAt });
     }
 
-    return request.decisionStatus;
+    const statusKeys: Record<string, string> = {
+        APPROVED: "accessRequestsApproved",
+        CANCELED: "accessRequestsCanceled",
+        REJECTED: "accessRequestsRejected"
+    };
+    return t(statusKeys[request.decisionStatus] ?? request.decisionStatus);
 }
 
 export function MyRequestsPage({ requests, onCancel }: MyRequestsPageProps) {
+    const { t } = useTranslation();
     const [selectedRequest, setSelectedRequest] = useState<AccessRequest>();
 
     return (
         <section aria-labelledby="my-requests-title">
-            <h1 id="my-requests-title">My Requests</h1>
+            <h1 id="my-requests-title">{t("accessRequestsMyRequests")}</h1>
             {requests.map((request) => (
                 <article key={request.id} aria-label={request.entitlementName}>
                     <h2>{request.entitlementName}</h2>
                     <p>{request.resourceType}</p>
-                    <p>{requestStatus(request)}</p>
+                    <p>{requestStatus(request, t)}</p>
                     {request.decisionStatus === "PENDING" && (
                         <button type="button" onClick={() => void onCancel(request.id)}>
-                            Cancel request
+                            {t("accessRequestsCancelRequest")}
                         </button>
                     )}
                     <button type="button" onClick={() => setSelectedRequest(request)}>
-                        View details
+                        {t("accessRequestsViewDetails")}
                     </button>
                 </article>
             ))}
             {selectedRequest && (
                 <div
-                    aria-label={`${selectedRequest.entitlementName} request details`}
+                    aria-label={t("accessRequestsRequestDetails", { entitlement: selectedRequest.entitlementName })}
                     aria-modal="true"
                     role="dialog"
                 >
@@ -77,15 +85,15 @@ export function MyRequestsPage({ requests, onCancel }: MyRequestsPageProps) {
                     )}
                     <dl>
                         <div>
-                            <dt>Decision</dt>
+                            <dt>{t("accessRequestsDecision")}</dt>
                             <dd>{selectedRequest.decisionStatus}</dd>
                         </div>
                         <div>
-                            <dt>Provisioning</dt>
+                            <dt>{t("accessRequestsProvisioning")}</dt>
                             <dd>{selectedRequest.provisioningStatus}</dd>
                         </div>
                     </dl>
-                    <h3>History</h3>
+                    <h3>{t("accessRequestsHistory")}</h3>
                     <ol>
                         {selectedRequest.history.map((event) => (
                             <li key={`${event.type}-${event.occurredAt}`}>
@@ -94,7 +102,7 @@ export function MyRequestsPage({ requests, onCancel }: MyRequestsPageProps) {
                         ))}
                     </ol>
                     <button type="button" onClick={() => setSelectedRequest(undefined)}>
-                        Close
+                        {t("accessRequestsClose")}
                     </button>
                 </div>
             )}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 export type RequestableEntitlement = {
     id: string;
@@ -21,6 +22,7 @@ type RequestAccessPageProps = {
 };
 
 export function RequestAccessPage({ entries, onRequest }: RequestAccessPageProps) {
+    const { t } = useTranslation();
     const [selectedEntry, setSelectedEntry] = useState<RequestableEntitlement>();
     const [justification, setJustification] = useState("");
 
@@ -43,46 +45,50 @@ export function RequestAccessPage({ entries, onRequest }: RequestAccessPageProps
 
     return (
         <section aria-labelledby="request-access-title">
-            <h1 id="request-access-title">Request access</h1>
+            <h1 id="request-access-title">{t("accessRequestsRequestAccess")}</h1>
             {entries.map((entry) => (
                 <article key={entry.id} aria-label={entry.name}>
                     <h2>{entry.name}</h2>
                     <p>{entry.description}</p>
                     <dl>
                         <div>
-                            <dt>Resource type</dt>
+                            <dt>{t("accessRequestsResourceType")}</dt>
                             <dd>{entry.resourceType}</dd>
                         </div>
                         <div>
-                            <dt>Risk</dt>
-                            <dd>Risk: {entry.riskLevel}</dd>
+                            <dt>{t("accessRequestsRiskLabel")}</dt>
+                            <dd>{t("accessRequestsRisk", { riskLevel: entry.riskLevel })}</dd>
                         </div>
                     </dl>
                     {entry.alreadyGranted ? (
-                        <p>Already granted</p>
+                        <p>{t("accessRequestsAlreadyGranted")}</p>
                     ) : entry.pendingRequest ? (
-                        <p>Request pending</p>
+                        <p>{t("accessRequestsRequestPending")}</p>
                     ) : (
                         <button type="button" onClick={() => setSelectedEntry(entry)}>
-                            Request access
+                            {t("accessRequestsRequestAccess")}
                         </button>
                     )}
                 </article>
             ))}
             {selectedEntry && (
-                <div aria-label={`Request access to ${selectedEntry.name}`} aria-modal="true" role="dialog">
-                    <h2>Request access to {selectedEntry.name}</h2>
-                    <label htmlFor="justification">Justification</label>
+                <div
+                    aria-label={t("accessRequestsRequestAccessTo", { entitlement: selectedEntry.name })}
+                    aria-modal="true"
+                    role="dialog"
+                >
+                    <h2>{t("accessRequestsRequestAccessTo", { entitlement: selectedEntry.name })}</h2>
+                    <label htmlFor="justification">{t("accessRequestsJustification")}</label>
                     <textarea
                         id="justification"
                         onChange={(event) => setJustification(event.target.value)}
                         value={justification}
                     />
                     <button type="button" onClick={closeDialog}>
-                        Cancel
+                        {t("accessRequestsCancel")}
                     </button>
                     <button type="button" disabled={!justification.trim()} onClick={submit}>
-                        Submit request
+                        {t("accessRequestsSubmitRequest")}
                     </button>
                 </div>
             )}
