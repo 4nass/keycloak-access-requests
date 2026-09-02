@@ -59,9 +59,9 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <keycloak.version>26.7.3</keycloak.version>
         <junit.version>5.11.4</junit.version>
-        <testcontainers-keycloak.version>4.3.0</testcontainers-keycloak.version>
+        <testcontainers-keycloak.version>4.3.1</testcontainers-keycloak.version>
         <testcontainers.version>2.0.5</testcontainers.version>
-        <postgresql.version>42.7.5</postgresql.version>
+        <postgresql.version>42.7.13</postgresql.version>
         <maven.surefire.version>3.5.6</maven.surefire.version>
         <maven.failsafe.version>3.5.6</maven.failsafe.version>
     </properties>
@@ -82,7 +82,7 @@
         <dependency>
             <groupId>jakarta.persistence</groupId>
             <artifactId>jakarta.persistence-api</artifactId>
-            <version>3.1.0</version>
+            <version>3.2.0</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -112,7 +112,7 @@
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <version>2.3.232</version>
+            <version>2.4.240</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -146,7 +146,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.14.0</version>
+                    <version>3.15.0</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
