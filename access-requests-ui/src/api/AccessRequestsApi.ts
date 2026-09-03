@@ -4,6 +4,20 @@ export type AccessRequestsApiError = Error & {
     status: number;
 };
 
+export type AccessRequestsErrorPresentation = {
+    messageKey: AccessRequestsErrorMessageKey;
+    requestId?: string;
+};
+
+type AccessRequestsErrorMessageKey =
+    | "accessRequestsErrorConflict"
+    | "accessRequestsErrorForbidden"
+    | "accessRequestsErrorInvalidRequest"
+    | "accessRequestsErrorNotFound"
+    | "accessRequestsErrorUnauthorized"
+    | "accessRequestsErrorUnavailable"
+    | "accessRequestsErrorUnexpected";
+
 export type Page<T> = {
     items: T[];
     page: number;
@@ -78,7 +92,6 @@ export type AccessRequestsApi = {
 
 type ErrorResponse = {
     code?: string;
-    message?: string;
     requestId?: string;
 };
 
@@ -173,9 +186,69 @@ export function createAccessRequestsApi({ serverBaseUrl, realm, getAccessToken, 
 
 async function apiError(response: Response): Promise<AccessRequestsApiError> {
     const body = await response.json().catch(() => ({} as ErrorResponse)) as ErrorResponse;
-    const error = new Error(body.message ?? response.statusText) as AccessRequestsApiError;
+    const error = new Error("The access request API call failed.") as AccessRequestsApiError;
     error.code = body.code ?? `HTTP_${response.status}`;
     error.requestId = body.requestId;
     error.status = response.status;
     return error;
 }
+
+export function presentAccessRequestsError(error: unknown): AccessRequestsErrorPresentation {
+    if (!isAccessRequestsApiError(error)) {
+        return { messageKey: "accessRequestsErrorUnexpected" };
+    }
+
+    return {
+        messageKey: errorMessageKey(error),
+        requestId: error.requestId
+    };
+}
+
+function isAccessRequestsApiError(error: unknown): error is AccessRequestsApiError {
+    return error instanceof Error
+        && typeof (error as Partial<AccessRequestsApiError>).code === "string"
+        && typeof (error as Partial<AccessRequestsApiError>).status === "number";
+}
+
+function errorMessageKey(error: AccessRequestsApiError): AccessRequestsErrorMessageKey {
+    const codeMessageKey = errorCodeMessageKeys[error.code];
+    if (codeMessageKey) {
+        return codeMessageKey;
+    }
+
+    if (error.status === 400 || error.status === 422) {
+        return "accessRequestsErrorInvalidRequest";
+    }
+    if (error.status === 401) {
+        return "accessRequestsErrorUnauthorized";
+    }
+    if (error.status === 403) {
+        return "accessRequestsErrorForbidden";
+    }
+    if (error.status === 404) {
+        return "accessRequestsErrorNotFound";
+    }
+    if (error.status === 409) {
+        return "accessRequestsErrorConflict";
+    }
+    if (error.status >= 500) {
+        return "accessRequestsErrorUnavailable";
+    }
+    return "accessRequestsErrorUnexpected";
+}
+
+const errorCodeMessageKeys: Record<string, AccessRequestsErrorMessageKey> = {
+    CONCURRENT_ENTITLEMENT_MODIFICATION: "accessRequestsErrorConflict",
+    CONCURRENT_MODIFICATION: "accessRequestsErrorConflict",
+    ENTITLEMENT_ALREADY_EXISTS: "accessRequestsErrorConflict",
+    ENTITLEMENT_NOT_REQUESTABLE: "accessRequestsErrorConflict",
+    INVALID_REQUEST_STATE: "accessRequestsErrorConflict",
+    INVALID_DECISION_SUBMISSION: "accessRequestsErrorInvalidRequest",
+    INVALID_ENTITLEMENT_QUERY: "accessRequestsErrorInvalidRequest",
+    INVALID_REQUEST_QUERY: "accessRequestsErrorInvalidRequest",
+    ENTITLEMENT_NOT_FOUND: "accessRequestsErrorNotFound",
+    REQUEST_NOT_FOUND: "accessRequestsErrorNotFound",
+    NOT_AUTHORIZED_APPROVER: "accessRequestsErrorForbidden",
+    REQUEST_CANCELLATION_FORBIDDEN: "accessRequestsErrorForbidden",
+    SELF_APPROVAL_FORBIDDEN: "accessRequestsErrorForbidden"
+};

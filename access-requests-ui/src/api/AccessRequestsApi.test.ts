@@ -288,6 +288,7 @@ describe("Access Requests realm API client", () => {
 
         await expect((await createApi(fetchMock)).cancel("request-1")).rejects.toMatchObject({
             code,
+            message: "The access request API call failed.",
             requestId: "request-1",
             status
         });
