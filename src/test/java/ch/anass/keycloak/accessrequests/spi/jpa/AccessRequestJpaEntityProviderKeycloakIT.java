@@ -76,7 +76,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertEntitlementCatalogAdministration(firstServer);
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(firstServer);
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(firstServer);
-            assertRequesterCanListAndCancelOnlyOwnRequests(firstServer);
+            assertRequesterCanListViewAndCancelOnlyOwnRequests(firstServer);
             assertEntitlementScopedApproversCanDecideRequests(firstServer);
         }
 
@@ -89,7 +89,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertEntitlementCatalogAdministration(restartedServer);
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(restartedServer);
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(restartedServer);
-            assertRequesterCanListAndCancelOnlyOwnRequests(restartedServer);
+            assertRequesterCanListViewAndCancelOnlyOwnRequests(restartedServer);
             assertEntitlementScopedApproversCanDecideRequests(restartedServer);
         }
     }
@@ -376,7 +376,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(401, revokedClientResponse.statusCode());
     }
 
-    private void assertRequesterCanListAndCancelOnlyOwnRequests(GenericContainer<?> server) throws Exception {
+    private void assertRequesterCanListViewAndCancelOnlyOwnRequests(GenericContainer<?> server) throws Exception {
         URI accessRequestsEndpoint = URI.create("http://%s:%d/realms/master/access-requests"
                 .formatted(server.getHost(), server.getMappedPort(8080)));
         URI requestsEndpoint = URI.create(accessRequestsEndpoint + "/requests");
@@ -512,6 +512,15 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertFalse(otherRequesterListResponse.body().contains(firstRequestId));
         assertFalse(otherRequesterListResponse.body().contains(secondRequestId));
 
+        HttpResponse<String> otherRequesterDetailResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(myRequestsEndpoint + "/" + firstRequestId))
+                        .header("Authorization", "Bearer " + otherRequesterToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(404, otherRequesterDetailResponse.statusCode());
+        assertError(otherRequesterDetailResponse.body(), "REQUEST_NOT_FOUND", firstRequestId);
+
         HttpResponse<String> unauthorizedCancellationResponse = HttpClient.newHttpClient().send(
                 requestCancellation(accessRequestsEndpoint, otherRequesterToken, firstRequestId),
                 HttpResponse.BodyHandlers.ofString());
@@ -537,6 +546,23 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 requestCancellation(accessRequestsEndpoint, requesterToken, firstRequestId),
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(204, canceledResponse.statusCode());
+
+        HttpResponse<String> requesterDetailResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(myRequestsEndpoint + "/" + firstRequestId))
+                        .header("Authorization", "Bearer " + requesterToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, requesterDetailResponse.statusCode());
+        assertTrue(requesterDetailResponse.body().contains("\"id\":\"" + firstRequestId + "\""));
+        assertTrue(requesterDetailResponse.body().contains("\"entitlementId\":\"" + firstEntitlementId + "\""));
+        assertTrue(requesterDetailResponse.body().contains(
+                "\"justification\":\"I need access to the first Finance Portal report.\""));
+        assertTrue(requesterDetailResponse.body().contains("\"decisionStatus\":\"CANCELED\""));
+        int createdEvent = requesterDetailResponse.body().indexOf("\"type\":\"REQUEST_CREATED\"");
+        int canceledEvent = requesterDetailResponse.body().indexOf("\"type\":\"REQUEST_CANCELED\"");
+        assertTrue(createdEvent >= 0 && createdEvent < canceledEvent,
+                "The requester detail must return the immutable history in chronological order.");
 
         HttpResponse<String> canceledRequestsResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(URI.create(myRequestsEndpoint + "?status=CANCELED"))
