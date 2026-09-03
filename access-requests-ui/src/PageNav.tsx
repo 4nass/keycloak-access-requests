@@ -1,8 +1,10 @@
 import { Nav, NavItem, NavList, PageSidebar, PageSidebarBody } from "@patternfly/react-core";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useMatch } from "react-router-dom";
 
 import { AccessRequestNavigation } from "./pages/AccessRequestNavigation";
+import { useAccessRequestsApi } from "./api/useAccessRequestsApi";
 
 const navigationItems = [
     { path: "personal-info", label: "personalInfo" },
@@ -16,6 +18,26 @@ const navigationItems = [
 
 export function PageNav() {
     const { t } = useTranslation();
+    const api = useAccessRequestsApi();
+    const [canApprove, setCanApprove] = useState(false);
+
+    useEffect(() => {
+        let active = true;
+        void api.capabilities()
+            .then((capabilities) => {
+                if (active) {
+                    setCanApprove(capabilities.canApprove);
+                }
+            })
+            .catch(() => {
+                if (active) {
+                    setCanApprove(false);
+                }
+            });
+        return () => {
+            active = false;
+        };
+    }, [api]);
 
     return (
         <PageSidebar>
@@ -27,7 +49,7 @@ export function PageNav() {
                         ))}
                     </NavList>
                 </Nav>
-                <AccessRequestNavigation canApprove={false} />
+                <AccessRequestNavigation canApprove={canApprove} />
             </PageSidebarBody>
         </PageSidebar>
     );

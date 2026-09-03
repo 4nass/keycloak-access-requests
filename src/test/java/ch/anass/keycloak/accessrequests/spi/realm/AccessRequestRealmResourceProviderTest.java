@@ -115,6 +115,18 @@ class AccessRequestRealmResourceProviderTest {
     }
 
     @Test
+    void exposesAJsonGetHandlerForTheAuthenticatedApproverCapability() {
+        var capabilitiesHandler = Arrays.stream(AccessRequestRealmResource.class.getDeclaredMethods())
+                .filter(method -> method.getName().equals("capabilities"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("The Account Console must be able to read approval capability."));
+
+        assertTrue(capabilitiesHandler.isAnnotationPresent(GET.class));
+        assertEquals("capabilities", capabilitiesHandler.getAnnotation(Path.class).value());
+        assertEquals(MediaType.APPLICATION_JSON, capabilitiesHandler.getAnnotation(Produces.class).value()[0]);
+    }
+
+    @Test
     void exposesAJsonPostHandlerForRequesterCancellation() {
         var cancelHandler = Arrays.stream(AccessRequestRealmResource.class.getDeclaredMethods())
                 .filter(method -> method.getName().equals("cancelRequest"))

@@ -280,6 +280,15 @@ public final class AccessRequestRealmResource {
         }
     }
 
+    @GET
+    @Path("capabilities")
+    @Produces(MediaType.APPLICATION_JSON)
+    public CapabilitiesResponse capabilities() {
+        AuthenticatedRequest authenticatedRequest = authenticate();
+        return new CapabilitiesResponse(approvalQueueService(authenticatedRequest).canApprove(
+                authenticatedRequest.realm().getId(), authenticatedRequest.user().getId()));
+    }
+
     @POST
     @Path("{requestId}/cancel")
     @Produces(MediaType.APPLICATION_JSON)
@@ -482,6 +491,7 @@ public final class AccessRequestRealmResource {
                 .getEntityManager();
         return new ApprovalQueueService(
                 new JpaAccessRequestRepository(entityManager),
+                new JpaEntitlementRepository(entityManager),
                 new KeycloakRoleMembershipReader(
                         authenticatedRequest.realm(), authenticatedRequest.user()));
     }
@@ -729,6 +739,9 @@ public final class AccessRequestRealmResource {
                     page.size(),
                     page.total());
         }
+    }
+
+    public record CapabilitiesResponse(boolean canApprove) {
     }
 
     public record PendingRequestSummaryResponse(

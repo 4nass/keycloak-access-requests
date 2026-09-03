@@ -3,6 +3,7 @@ package ch.anass.keycloak.accessrequests.core.service;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
+import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
 import ch.anass.keycloak.accessrequests.core.port.RoleMembershipReader;
 
 import java.util.List;
@@ -15,13 +16,25 @@ import java.util.Set;
 public final class ApprovalQueueService {
 
     private final AccessRequestRepository accessRequestRepository;
+    private final EntitlementRepository entitlementRepository;
     private final RoleMembershipReader roleMembershipReader;
 
     public ApprovalQueueService(
             AccessRequestRepository accessRequestRepository,
+            EntitlementRepository entitlementRepository,
             RoleMembershipReader roleMembershipReader) {
         this.accessRequestRepository = Objects.requireNonNull(accessRequestRepository);
+        this.entitlementRepository = Objects.requireNonNull(entitlementRepository);
         this.roleMembershipReader = Objects.requireNonNull(roleMembershipReader);
+    }
+
+    /**
+     * Determines navigation eligibility without revealing pending requests.
+     */
+    public boolean canApprove(String realmId, String approverId) {
+        Set<String> approverRoleIds = roleMembershipReader.findEffectiveRoleIds(realmId, approverId);
+        return !approverRoleIds.isEmpty()
+                && entitlementRepository.hasRequestableEntitlementForApproverRoles(realmId, approverRoleIds);
     }
 
     public ApprovalQueuePage findPending(String realmId, String approverId, int page, int size) {

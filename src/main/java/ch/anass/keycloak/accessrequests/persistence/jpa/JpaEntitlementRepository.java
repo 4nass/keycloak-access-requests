@@ -16,6 +16,7 @@ import org.hibernate.exception.ConstraintViolationException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 public final class JpaEntitlementRepository implements EntitlementRepository {
 
@@ -141,6 +142,23 @@ public final class JpaEntitlementRepository implements EntitlementRepository {
                 .map(EntitlementEntity::toDomain)
                 .toList();
         return new CatalogPage(items, query.page(), query.size(), total);
+    }
+
+    @Override
+    public boolean hasRequestableEntitlementForApproverRoles(String realmId, Set<String> approverRoleIds) {
+        if (approverRoleIds.isEmpty()) {
+            return false;
+        }
+        return entityManager.createQuery("""
+                        select count(entity)
+                          from EntitlementEntity entity
+                         where entity.realmId = :realmId
+                           and entity.requestable = true
+                           and entity.approverRoleId in :approverRoleIds
+                        """, Long.class)
+                .setParameter("realmId", realmId)
+                .setParameter("approverRoleIds", approverRoleIds)
+                .getSingleResult() > 0;
     }
 
     private TypedQuery<Long> createCountQuery(QueryDefinition definition, CatalogQuery query) {

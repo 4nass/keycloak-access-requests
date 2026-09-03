@@ -19,8 +19,10 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JpaEntitlementRepositoryTest {
@@ -142,6 +144,24 @@ class JpaEntitlementRepositoryTest {
         assertEquals(3, page.total());
         assertEquals(List.of("Alpha", "Bravo"), page.items().stream().map(Entitlement::displayName).toList());
         assertTrue(page.items().stream().anyMatch(entitlement -> !entitlement.requestable()));
+    }
+
+    @Test
+    void identifiesOnlyRequestableApproverRolesWithinTheCurrentRealm() {
+        persist(Entitlement.create(
+                "entitlement-finance", "realm-1", ResourceType.REALM_ROLE, "role-finance", "Finance Reader",
+                "Read-only access to finance data.", RiskLevel.LOW, "finance-approver", CREATED_AT).publish(CREATED_AT));
+        persist(Entitlement.create(
+                "entitlement-draft", "realm-1", ResourceType.REALM_ROLE, "role-draft", "Finance Draft",
+                "Draft finance access.", RiskLevel.LOW, "draft-approver", CREATED_AT));
+        persist(Entitlement.create(
+                "entitlement-other-realm", "realm-2", ResourceType.REALM_ROLE, "role-other", "Other Realm",
+                "Must not cross the realm boundary.", RiskLevel.LOW, "other-realm-approver", CREATED_AT).publish(CREATED_AT));
+
+        assertTrue(repository.hasRequestableEntitlementForApproverRoles("realm-1", Set.of("finance-approver")));
+        assertFalse(repository.hasRequestableEntitlementForApproverRoles("realm-1", Set.of("draft-approver")));
+        assertFalse(repository.hasRequestableEntitlementForApproverRoles("realm-1", Set.of("other-realm-approver")));
+        assertFalse(repository.hasRequestableEntitlementForApproverRoles("realm-1", Set.of()));
     }
 
     @Test

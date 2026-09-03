@@ -6,10 +6,14 @@ import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueEntry;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery;
+import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
+import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
+import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
+import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
 import ch.anass.keycloak.accessrequests.core.port.RoleMembershipReader;
 import org.junit.jupiter.api.Test;
 
@@ -29,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ApprovalQueueServiceTest {
 
     private final InMemoryApprovalQueue approvalQueue = new InMemoryApprovalQueue();
+    private final InMemoryEntitlementApprovalScopes entitlementApprovalScopes = new InMemoryEntitlementApprovalScopes();
     private final InMemoryRoleMembershipReader roleMembershipReader = new InMemoryRoleMembershipReader();
 
     @Test
@@ -95,9 +100,29 @@ class ApprovalQueueServiceTest {
         assertFalse(approvalQueue.wasQueried());
     }
 
+    @Test
+    void identifiesAnApproverWithoutRevealingOrRequiringPendingRequests() {
+        entitlementApprovalScopes.configuresRequestableEntitlement("realm-1", "finance-approver");
+        roleMembershipReader.grantsRole("realm-1", "approver-1", "finance-approver");
+
+        assertTrue(approvalQueueService().canApprove("realm-1", "approver-1"));
+    }
+
+    @Test
+    void doesNotIdentifyAUserAsApproverForAnUnrelatedRole() {
+        entitlementApprovalScopes.configuresRequestableEntitlement("realm-1", "finance-approver");
+        roleMembershipReader.grantsRole("realm-1", "approver-1", "unrelated-role");
+
+        assertFalse(approvalQueueService().canApprove("realm-1", "approver-1"));
+    }
+
     private ApprovalQueuePage queue(String realmId, String approverId, int page, int size) {
-        return new ApprovalQueueService(approvalQueue, roleMembershipReader)
+        return approvalQueueService()
                 .findPending(realmId, approverId, page, size);
+    }
+
+    private ApprovalQueueService approvalQueueService() {
+        return new ApprovalQueueService(approvalQueue, entitlementApprovalScopes, roleMembershipReader);
     }
 
     private static AccessRequest pending(
@@ -227,6 +252,40 @@ class ApprovalQueueServiceTest {
 
         private static String membershipKey(String realmId, String approverId) {
             return realmId + ":" + approverId;
+        }
+    }
+
+    private static final class InMemoryEntitlementApprovalScopes implements EntitlementRepository {
+
+        private final Map<String, Set<String>> requestableApproverRoleIds = new HashMap<>();
+
+        void configuresRequestableEntitlement(String realmId, String approverRoleId) {
+            requestableApproverRoleIds.merge(realmId, Set.of(approverRoleId), (current, added) -> {
+                var merged = new java.util.HashSet<>(current);
+                merged.addAll(added);
+                return Set.copyOf(merged);
+            });
+        }
+
+        @Override
+        public Optional<Entitlement> findById(String realmId, String entitlementId) {
+            throw new UnsupportedOperationException("Entitlement reads are not used by this test double.");
+        }
+
+        @Override
+        public Optional<Entitlement> findByIdForUpdate(String realmId, String entitlementId) {
+            throw new UnsupportedOperationException("Entitlement reads are not used by this test double.");
+        }
+
+        @Override
+        public CatalogPage findRequestable(CatalogQuery query) {
+            throw new UnsupportedOperationException("Catalog reads are not used by this test double.");
+        }
+
+        @Override
+        public boolean hasRequestableEntitlementForApproverRoles(String realmId, Set<String> approverRoleIds) {
+            return requestableApproverRoleIds.getOrDefault(realmId, Set.of()).stream()
+                    .anyMatch(approverRoleIds::contains);
         }
     }
 }
