@@ -153,13 +153,13 @@
         "realm": "${realm.name}",
         "clientId": "${clientId}",
         "resourceUrl": "${resourceUrl}",
-        "logo": "${properties.logo!\"\"}",
-        "logoUrl": "${properties.logoUrl!\"\"}",
+        "logo": "${properties.logo!""}",
+        "logoUrl": "${properties.logoUrl!""}",
         "darkMode": ${darkMode?c},
         "baseUrl": "${baseUrl}",
         "locale": "${locale}",
-        "referrerName": "${referrerName!\"\"}",
-        "referrerUrl": "${referrer_uri!\"\"}",
+        "referrerName": "${referrerName!""}",
+        "referrerUrl": "${referrer_uri!""}",
         "features": {
           "isRegistrationEmailAsUsername": ${realm.registrationEmailAsUsername?c},
           "isEditUserNameAllowed": ${realm.editUsernameAllowed?c},
@@ -174,7 +174,7 @@
           "isViewGroupsEnabled": ${isViewGroupsEnabled?c},
           "isOid4VciEnabled": ${isOid4VciEnabled?c}
         },
-        "scope": "${scope!\"\"}"
+        "scope": "${scope!""}"
       }
     </script>
   </body>

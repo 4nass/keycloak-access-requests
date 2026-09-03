@@ -29,15 +29,13 @@ The entitlement catalog belongs to the Keycloak Admin Console. Its REST endpoint
 
 ## Compatibility
 
-The extension is built against Keycloak 26.7.3 and verified with one integration test for each supported Keycloak minor line. Each target uses the Quarkus BOM shipped by that exact Keycloak release.
+The extension is a single-target provider. Each extension release is versioned to its Keycloak baseline and supports that Keycloak minor line only. A new Keycloak minor line requires a dedicated extension release and build; one provider JAR is never built for multiple Keycloak minor lines.
 
-| Keycloak line | Version tested | Quarkus BOM | Testcontainers-Keycloak | Testcontainers | Validation |
-|---|---:|---:|---:|---:|---|
-| 26.7.x | 26.7.3 | 3.33.3.1 | 4.3.1 | 2.0.5 | Main CI |
-| 26.6.x | 26.6.4 | 3.33.2.1 | 4.2.0 | 2.0.4 | Compatibility matrix |
-| 26.5.x | 26.5.7 | 3.27.3 | 4.1.1 | 2.0.3 | Compatibility matrix |
+| Extension version | Keycloak minor line | Minimum tested version | Quarkus BOM | Validation |
+|---|---:|---:|---:|---|
+| 26.7.3-SNAPSHOT | 26.7.x | 26.7.3 | 3.33.3.1 | Main CI |
 
-The table records tested compatibility. It does not guarantee compatibility with every future patch release.
+The current line starts at Keycloak 26.7.3. Later 26.7 patch releases must be revalidated before being declared supported. Keycloak 26.5.x and 26.6.x are not supported.
 
 ## Structure
 
@@ -71,9 +69,9 @@ The project is a single Maven module. Keycloak-specific packages and resources a
 - Java 21+
 - Maven 3.9+
 - Node.js 24.18.1 and pnpm 11.18.0 are provisioned by Maven for reproducible builds
-- Extension version: `0.1.0-SNAPSHOT`
+- Extension version: `26.7.3-SNAPSHOT`
 - Keycloak 26.7.3 and Quarkus 3.33.3.1 as the development baseline
-- Keycloak 26.5.x, 26.6.x, and 26.7.x are covered by compatibility tests
+- Keycloak 26.7.x is the only supported Keycloak minor line
 - PostgreSQL for integration tests
 
 ## Client access
@@ -143,6 +141,20 @@ pnpm run start-keycloak
 `start-keycloak` downloads Keycloak `26.7.3` once to `access-requests-ui/server/`, installs the built provider JAR, and starts it in development mode with `KC_ACCOUNT_VITE_URL=http://localhost:5173`. Open `http://localhost:8080/realms/master/account` and sign in with `admin` / `admin`.
 
 Pass Keycloak development options after `--`, for example `pnpm run start-keycloak -- --http-port=8181`. To start an existing Keycloak installation instead of the managed local server, set `KEYCLOAK_HOME`; its providers directory is intentionally not changed by this script.
+
+`pnpm run start-keycloak:packaged` starts the same local server without Vite. It serves the Account Console theme and its assets from the provider JAR, which is the mode exercised by the CI browser tests.
+
+## Account Console browser tests
+
+The UI follows Keycloak's Playwright setup and runs the same scenarios in Chromium and Firefox. With Vite and `start-keycloak` running in separate terminals, install the browsers once and run:
+
+```bash
+cd access-requests-ui
+pnpm exec playwright install chromium firefox
+pnpm run test:e2e
+```
+
+The default target is `http://localhost:8080/realms/master/account/` with the local `admin` / `admin` bootstrap account. Set `KEYCLOAK_ACCOUNT_CONSOLE_URL`, `KEYCLOAK_TEST_USERNAME`, and `KEYCLOAK_TEST_PASSWORD` to target another development environment.
 
 ## License
 

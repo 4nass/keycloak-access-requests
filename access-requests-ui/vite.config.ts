@@ -1,4 +1,4 @@
-import react from "@vitejs/plugin-react";
+import react from "@vitejs/plugin-react-swc";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
@@ -10,6 +10,10 @@ export default defineConfig({
     base: "",
     build: {
         manifest: true,
+        sourcemap: true,
+        target: "esnext",
+        modulePreload: false,
+        cssMinify: "lightningcss",
         rollupOptions: {
             input: "src/main.tsx",
             external: ["react", "react/jsx-runtime", "react-dom"]
@@ -17,6 +21,7 @@ export default defineConfig({
     },
     test: {
         environment: "jsdom",
+        include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
         setupFiles: "./src/test/setup.ts"
     }
 });
