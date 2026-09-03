@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AccessibleDialog } from "./AccessibleDialog";
+import { AccessRequestPagination, type AccessRequestPaginationState } from "./AccessRequestPagination";
 
 export type RequestableEntitlement = {
     id: string;
@@ -21,6 +22,7 @@ type AccessRequestSubmission = {
 type RequestAccessPageProps = {
     entries: RequestableEntitlement[];
     onRequest: (submission: AccessRequestSubmission) => void | Promise<void>;
+    pagination?: AccessRequestPaginationState;
     onRefresh?: () => void | Promise<void>;
 };
 
@@ -28,7 +30,7 @@ function errorMessage(error: unknown) {
     return error instanceof Error ? error.message : String(error);
 }
 
-export function RequestAccessPage({ entries, onRequest, onRefresh }: RequestAccessPageProps) {
+export function RequestAccessPage({ entries, onRequest, onRefresh, pagination }: RequestAccessPageProps) {
     const { t } = useTranslation();
     const [selectedEntry, setSelectedEntry] = useState<RequestableEntitlement>();
     const [justification, setJustification] = useState("");
@@ -102,6 +104,7 @@ export function RequestAccessPage({ entries, onRequest, onRefresh }: RequestAcce
                     )}
                 </article>
             ))}
+            <AccessRequestPagination pagination={pagination} />
             {selectedEntry && (
                 <AccessibleDialog
                     ariaLabel={t("accessRequestsRequestAccessTo", { entitlement: selectedEntry.name })}

@@ -12,6 +12,7 @@ import {
 } from "../api/AccessRequestsApi";
 import { useAccessRequestsApi } from "../api/useAccessRequestsApi";
 import { ApprovalsPage, type PendingApproval } from "./ApprovalsPage";
+import type { AccessRequestPaginationState } from "./AccessRequestPagination";
 import { MyRequestsPage, type AccessRequest } from "./MyRequestsPage";
 import { RequestAccessPage, type RequestableEntitlement } from "./RequestAccessPage";
 
@@ -23,8 +24,8 @@ type LoadState<T> = {
 
 export function RequestAccessRoutePage() {
     const api = useAccessRequestsApi();
-    const loadCatalog = useCallback(() => api.catalog(), [api]);
-    const { error, loading, reload, value } = useLoader(loadCatalog);
+    const loadCatalog = useCallback((page: number) => api.catalog({ page }), [api]);
+    const { error, loading, reload, setPage, value } = usePagedLoader(loadCatalog);
 
     if (error) {
         return <LoadError error={error} onRetry={reload} />;
@@ -40,14 +41,15 @@ export function RequestAccessRoutePage() {
             onRequest={async (submission) => {
                 await api.submitRequest(submission);
             }}
+            pagination={pagination(value, setPage)}
         />
     );
 }
 
 export function MyRequestsRoutePage() {
     const api = useAccessRequestsApi();
-    const loadRequests = useCallback(() => api.mine(), [api]);
-    const { error, loading, reload, value } = useLoader(loadRequests);
+    const loadRequests = useCallback((page: number) => api.mine({ page }), [api]);
+    const { error, loading, reload, setPage, value } = usePagedLoader(loadRequests);
 
     if (error) {
         return <LoadError error={error} onRetry={reload} />;
@@ -61,6 +63,7 @@ export function MyRequestsRoutePage() {
             onCancel={api.cancel}
             onRefresh={reload}
             onRequestDetails={async (requestId) => requestDetails(await api.requestDetails(requestId))}
+            pagination={pagination(value, setPage)}
             requests={requestEntries(value)}
         />
     );
@@ -68,8 +71,8 @@ export function MyRequestsRoutePage() {
 
 export function ApprovalsRoutePage() {
     const api = useAccessRequestsApi();
-    const loadPendingRequests = useCallback(() => api.pending(), [api]);
-    const { error, loading, reload, value } = useLoader(loadPendingRequests);
+    const loadPendingRequests = useCallback((page: number) => api.pending({ page }), [api]);
+    const { error, loading, reload, setPage, value } = usePagedLoader(loadPendingRequests);
 
     if (error) {
         return <LoadError error={error} onRetry={reload} />;
@@ -78,7 +81,21 @@ export function ApprovalsRoutePage() {
         return <LoadingState />;
     }
 
-    return <ApprovalsPage onApprove={approve(api)} onRefresh={reload} onReject={reject(api)} requests={pendingEntries(value)} />;
+    return (
+        <ApprovalsPage
+            onApprove={approve(api)}
+            onRefresh={reload}
+            onReject={reject(api)}
+            pagination={pagination(value, setPage)}
+            requests={pendingEntries(value)}
+        />
+    );
+}
+
+function usePagedLoader<T>(load: (page: number) => Promise<Page<T>>) {
+    const [page, setPage] = useState(0);
+    const loadCurrentPage = useCallback(() => load(page), [load, page]);
+    return { ...useLoader(loadCurrentPage), setPage };
 }
 
 function useLoader<T>(load: () => Promise<T>) {
@@ -98,6 +115,15 @@ function useLoader<T>(load: () => Promise<T>) {
     }, [reload]);
 
     return { ...state, reload };
+}
+
+function pagination<T>(page: Page<T>, setPage: (page: number) => void): AccessRequestPaginationState {
+    return {
+        onPageChange: setPage,
+        page: page.page,
+        size: page.size,
+        total: page.total
+    };
 }
 
 function LoadingState() {

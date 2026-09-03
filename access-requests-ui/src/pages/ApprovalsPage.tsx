@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AccessibleDialog } from "./AccessibleDialog";
+import { AccessRequestPagination, type AccessRequestPaginationState } from "./AccessRequestPagination";
 
 export type PendingApproval = {
     id: string;
@@ -21,6 +22,7 @@ type ApprovalDecision = {
 type ApprovalsPageProps = {
     requests: PendingApproval[];
     onApprove: (decision: ApprovalDecision) => void | Promise<void>;
+    pagination?: AccessRequestPaginationState;
     onReject: (decision: ApprovalDecision) => void | Promise<void>;
     onRefresh?: () => void | Promise<void>;
 };
@@ -34,7 +36,7 @@ function errorMessage(error: unknown) {
     return error instanceof Error ? error.message : String(error);
 }
 
-export function ApprovalsPage({ requests, onApprove, onReject, onRefresh }: ApprovalsPageProps) {
+export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagination }: ApprovalsPageProps) {
     const { t } = useTranslation();
     const [pendingDecision, setPendingDecision] = useState<PendingDecision>();
     const [comment, setComment] = useState("");
@@ -111,6 +113,7 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh }: Appr
                     </button>
                 </article>
             ))}
+            <AccessRequestPagination pagination={pagination} />
             {pendingDecision && (
                 <AccessibleDialog
                     ariaLabel={t(

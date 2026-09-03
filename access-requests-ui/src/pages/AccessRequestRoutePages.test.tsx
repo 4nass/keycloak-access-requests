@@ -59,7 +59,11 @@ await i18n.init({
                 accessRequestsLoadError: "Unable to load access requests.",
                 accessRequestsLoading: "Loading access requests",
                 accessRequestsMyRequests: "My Requests",
+                accessRequestsNextPage: "Next page",
+                accessRequestsPage: "Page {{page}} of {{pages}}",
+                accessRequestsPagination: "Access request pagination",
                 accessRequestsPending: "Pending",
+                accessRequestsPreviousPage: "Previous page",
                 accessRequestsRequestAccess: "Request access",
                 accessRequestsRequestAccessTo: "Request access to {{entitlement}}",
                 accessRequestsRequestDetails: "{{entitlement}} request details",
@@ -80,8 +84,13 @@ function renderRoutePage(page: ReactNode) {
     return render(<I18nextProvider i18n={i18n}>{page}</I18nextProvider>);
 }
 
-function page<T>(items: T[]) {
-    return { items, page: 0, size: 20, total: items.length };
+function page<T>(items: T[], options: Partial<{ page: number; size: number; total: number }> = {}) {
+    return {
+        items,
+        page: options.page ?? 0,
+        size: options.size ?? 20,
+        total: options.total ?? items.length
+    };
 }
 
 describe("Access Request Account Console route pages", () => {
@@ -157,6 +166,71 @@ describe("Access Request Account Console route pages", () => {
 
         await waitFor(() => expect(mocks.api.cancel).toHaveBeenCalledWith("request-1"));
         await waitFor(() => expect(mocks.api.mine).toHaveBeenCalledTimes(2));
+    });
+
+    it("loads each catalog page instead of truncating requestable entitlements", async () => {
+        const user = userEvent.setup();
+        mocks.api.catalog
+            .mockResolvedValueOnce(page([
+                {
+                    alreadyGranted: false,
+                    description: "First catalog page",
+                    displayName: "Finance Reader",
+                    id: "finance-reader",
+                    pendingRequest: false,
+                    resourceType: "CLIENT_ROLE",
+                    riskLevel: "LOW"
+                }
+            ], { total: 21 }))
+            .mockResolvedValueOnce(page([
+                {
+                    alreadyGranted: false,
+                    description: "Second catalog page",
+                    displayName: "HR Reader",
+                    id: "hr-reader",
+                    pendingRequest: false,
+                    resourceType: "REALM_ROLE",
+                    riskLevel: "LOW"
+                }
+            ], { page: 1, total: 21 }));
+
+        renderRoutePage(<RequestAccessRoutePage />);
+
+        await screen.findByRole("article", { name: "Finance Reader" });
+        const pager = screen.getByRole("navigation", { name: "Access request pagination" });
+        expect(within(pager).getByText("Page 1 of 2")).toBeVisible();
+        await user.click(within(pager).getByRole("button", { name: "Next page" }));
+
+        await waitFor(() => expect(mocks.api.catalog).toHaveBeenLastCalledWith({ page: 1 }));
+        await screen.findByRole("article", { name: "HR Reader" });
+        expect(within(screen.getByRole("navigation", { name: "Access request pagination" }))
+            .getByRole("button", { name: "Previous page" })).toBeEnabled();
+    });
+
+    it("loads each requester and approval queue page", async () => {
+        const user = userEvent.setup();
+        mocks.api.mine
+            .mockResolvedValueOnce(page([requestSummary("request-1", "Finance Reader")], { total: 21 }))
+            .mockResolvedValueOnce(page([requestSummary("request-2", "HR Reader")], { page: 1, total: 21 }));
+
+        const requesterView = renderRoutePage(<MyRequestsRoutePage />);
+        await screen.findByRole("article", { name: "Finance Reader" });
+        await user.click(within(screen.getByRole("navigation", { name: "Access request pagination" }))
+            .getByRole("button", { name: "Next page" }));
+        await waitFor(() => expect(mocks.api.mine).toHaveBeenLastCalledWith({ page: 1 }));
+        await screen.findByRole("article", { name: "HR Reader" });
+        requesterView.unmount();
+
+        mocks.api.pending
+            .mockResolvedValueOnce(page([pendingRequest("request-3", "Finance Reader")], { total: 21 }))
+            .mockResolvedValueOnce(page([pendingRequest("request-4", "HR Reader")], { page: 1, total: 21 }));
+
+        renderRoutePage(<ApprovalsRoutePage />);
+        await screen.findByRole("article", { name: "Finance Reader requested by anass" });
+        await user.click(within(screen.getByRole("navigation", { name: "Access request pagination" }))
+            .getByRole("button", { name: "Next page" }));
+        await waitFor(() => expect(mocks.api.pending).toHaveBeenLastCalledWith({ page: 1 }));
+        await screen.findByRole("article", { name: "HR Reader requested by anass" });
     });
 
     it("loads the selected request's full detail before displaying its history", async () => {
@@ -246,3 +320,28 @@ describe("Access Request Account Console route pages", () => {
         await waitFor(() => expect(mocks.api.catalog).toHaveBeenCalledTimes(2));
     });
 });
+
+function requestSummary(id: string, resourceName: string) {
+    return {
+        createdAt: "2026-09-03T10:00:00Z",
+        decisionStatus: "PENDING",
+        entitlementId: "finance-reader",
+        id,
+        provisioningStatus: "NOT_STARTED",
+        resourceName,
+        resourceType: "CLIENT_ROLE"
+    };
+}
+
+function pendingRequest(id: string, resourceName: string) {
+    return {
+        createdAt: "2026-09-03T10:00:00Z",
+        entitlementId: "finance-reader",
+        id,
+        justification: "I need month-end reports.",
+        requesterId: "anass",
+        resourceName,
+        resourceType: "CLIENT_ROLE",
+        riskLevel: "LOW"
+    };
+}

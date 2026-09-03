@@ -3,6 +3,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
 import { AccessibleDialog } from "./AccessibleDialog";
+import { AccessRequestPagination, type AccessRequestPaginationState } from "./AccessRequestPagination";
 
 type RequestHistoryEntry = {
     type: string;
@@ -33,6 +34,7 @@ type MyRequestsPageProps = {
     requests: AccessRequest[];
     onCancel: (requestId: string) => void | Promise<void>;
     onRequestDetails?: (requestId: string) => Promise<AccessRequestDetails>;
+    pagination?: AccessRequestPaginationState;
     onRefresh?: () => void | Promise<void>;
 };
 
@@ -57,7 +59,7 @@ function errorMessage(error: unknown) {
     return error instanceof Error ? error.message : String(error);
 }
 
-export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh }: MyRequestsPageProps) {
+export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh, pagination }: MyRequestsPageProps) {
     const { t } = useTranslation();
     const [selectedRequest, setSelectedRequest] = useState<AccessRequest>();
     const [cancellingRequestId, setCancellingRequestId] = useState<string>();
@@ -125,6 +127,7 @@ export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh
                     </button>
                 </article>
             ))}
+            <AccessRequestPagination pagination={pagination} />
             {selectedRequest && (
                 <AccessibleDialog
                     ariaLabel={t("accessRequestsRequestDetails", { entitlement: selectedRequest.entitlementName })}
