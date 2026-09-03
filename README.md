@@ -122,7 +122,7 @@ To enable it in a realm:
 2. Run `kc.sh build` for an optimized Keycloak installation, then restart the server.
 3. In **Realm settings → Themes**, select `access-requests` as the **Account theme**.
 
-The current theme packages the native Account Console shell. The Access Request pages are added in the following feature.
+The theme packages the native Account Console shell and the **Request access**, **My Requests**, and **Approvals** pages. The UI is covered by component, route, and API-client tests.
 
 ## Account Console local development
 
