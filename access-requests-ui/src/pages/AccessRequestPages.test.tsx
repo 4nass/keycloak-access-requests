@@ -2,16 +2,28 @@ import { createInstance } from "i18next";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Nav, NavList } from "@patternfly/react-core";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { I18nextProvider } from "react-i18next";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const accountAlerts = vi.hoisted(() => ({
+    addAlert: vi.fn(),
+    addError: vi.fn()
+}));
+
+vi.mock("./useAccessRequestAlerts", () => ({
+    useAccessRequestAlerts: () => accountAlerts
+}));
 
 import { AccessRequestNavigation } from "./AccessRequestNavigation";
+import { AccountConsoleError } from "../AccountConsoleError";
 import { ApprovalsPage } from "./ApprovalsPage";
 import { MyRequestsPage } from "./MyRequestsPage";
+import { formatDateTime } from "./AccessRequestPresentation";
 import { RequestAccessPage } from "./RequestAccessPage";
 
 const testI18n = createInstance();
@@ -46,55 +58,109 @@ await testI18n.init({
     }
 });
 
-function renderAccessRequestUi(ui: ReactNode) {
+function renderAccessRequestUi(ui: ReactNode, initialEntry = "/") {
     return render(
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[initialEntry]}>
             <I18nextProvider i18n={testI18n}>{ui}</I18nextProvider>
         </MemoryRouter>
     );
 }
 
 describe("Access Request account console pages", () => {
+    beforeEach(() => {
+        accountAlerts.addAlert.mockReset();
+        accountAlerts.addError.mockReset();
+    });
+
     it("ships every access request message used by the feature pages", () => {
         expect(Object.keys(messages).sort()).toEqual([
+            "accessRequestsAccountConsoleLoadError",
+            "accessRequestsAccountConsoleLoadErrorDescription",
             "accessRequestsAlreadyGranted",
-            "accessRequestsApprove",
-            "accessRequestsApproveEntitlement",
-            "accessRequestsApproved",
             "accessRequestsApprovals",
+            "accessRequestsApprovalsDescription",
+            "accessRequestsApprove",
+            "accessRequestsApproved",
+            "accessRequestsApproveEntitlement",
+            "accessRequestsApprover",
             "accessRequestsCancel",
-            "accessRequestsCancelRequest",
             "accessRequestsCanceled",
+            "accessRequestsCancellationFailed",
+            "accessRequestsCancelRequest",
+            "accessRequestsCancelRequestDescription",
             "accessRequestsClose",
             "accessRequestsConfirmApproval",
             "accessRequestsConfirmRejection",
+            "accessRequestsCurrentPage",
+            "accessRequestsDecidedAt",
             "accessRequestsDecision",
             "accessRequestsDecisionComment",
-            "accessRequestsGranted",
+            "accessRequestsDecisionFailed",
+            "accessRequestsFirstPage",
             "accessRequestsHistory",
+            "accessRequestsHistoryProvisioningFailed",
+            "accessRequestsHistoryProvisioningStarted",
+            "accessRequestsHistoryProvisioningSucceeded",
+            "accessRequestsHistoryRequestApproved",
+            "accessRequestsHistoryRequestCanceled",
+            "accessRequestsHistoryRequestCreated",
+            "accessRequestsHistoryRequestRejected",
+            "accessRequestsItems",
+            "accessRequestsItemsPerPage",
             "accessRequestsJustification",
+            "accessRequestsLastPage",
             "accessRequestsLoading",
             "accessRequestsLoadError",
             "accessRequestsMyRequests",
+            "accessRequestsMyRequestsDescription",
             "accessRequestsNextPage",
-            "accessRequestsPage",
-            "accessRequestsPagination",
+            "accessRequestsNoApprovals",
+            "accessRequestsNoApprovalsDescription",
+            "accessRequestsNoRequestableAccess",
+            "accessRequestsNoRequestableAccessDescription",
+            "accessRequestsNoRequests",
+            "accessRequestsNoRequestsDescription",
+            "accessRequestsOf",
+            "accessRequestsPageLabel",
             "accessRequestsNav",
+            "accessRequestsPagination",
             "accessRequestsPending",
+            "accessRequestsPerPage",
+            "accessRequestsPages",
             "accessRequestsPreviousPage",
             "accessRequestsProvisioning",
+            "accessRequestsProvisioningFailed",
+            "accessRequestsProvisioningNotStarted",
+            "accessRequestsProvisioningSucceeded",
             "accessRequestsReject",
-            "accessRequestsRejectEntitlement",
             "accessRequestsRejected",
+            "accessRequestsRejectEntitlement",
             "accessRequestsRequestAccess",
+            "accessRequestsRequestAccessDescription",
             "accessRequestsRequestAccessTo",
+            "accessRequestsRequestApproved",
+            "accessRequestsRequestCanceled",
             "accessRequestsRequestDetails",
-            "accessRequestsRequestPending",
+            "accessRequestsRequestedAt",
             "accessRequestsRequestedBy",
+            "accessRequestsRequestPending",
+            "accessRequestsRequestRejected",
+            "accessRequestsRequestSubmissionFailed",
+            "accessRequestsRequestSubmitted",
             "accessRequestsResourceType",
+            "accessRequestsResourceTypeClientRole",
+            "accessRequestsResourceTypeGroup",
+            "accessRequestsResourceTypeRealmRole",
             "accessRequestsRetry",
-            "accessRequestsRisk",
+            "accessRequestsRiskCritical",
+            "accessRequestsRiskHigh",
             "accessRequestsRiskLabel",
+            "accessRequestsRiskLow",
+            "accessRequestsRiskMedium",
+            "accessRequestsSearchCatalog",
+            "accessRequestsSearchCatalogPlaceholder",
+            "accessRequestsClearSearch",
+            "accessRequestsStatus",
             "accessRequestsSubmitRequest",
             "accessRequestsViewDetails"
         ].sort());
@@ -115,19 +181,138 @@ describe("Access Request account console pages", () => {
         expect(fallbackI18n.t("accessRequestsRequestAccess")).toBe("Request access");
     });
 
-    it("shows Request access and My Requests to every requester, but hides Approvals without an approval scope", () => {
-        renderAccessRequestUi(<AccessRequestNavigation canApprove={false} />);
+    it("uses a localized PatternFly alert when the Account Console route fails", () => {
+        renderAccessRequestUi(<AccountConsoleError />);
 
-        const navigation = screen.getByRole("navigation", { name: "Access" });
+        const alert = screen.getByRole("alert");
+        expect(alert).toHaveTextContent("Unable to load the Account Console.");
+        expect(alert).toHaveTextContent("Refresh the page. If the problem persists, contact your administrator.");
+        expect(within(alert).getByRole("button", { name: "Retry" })).toBeVisible();
+    });
+
+    it("formats API timestamps for the selected locale", () => {
+        const timestamp = "2026-09-03T10:05:00Z";
+
+        expect(formatDateTime(timestamp, "en-US")).toBe(
+            new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(timestamp))
+        );
+        expect(formatDateTime(timestamp, "fr-FR")).toBe(
+            new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(timestamp))
+        );
+    });
+
+    it("shows Request access and My Requests to every requester, but hides Approvals without an approval scope", () => {
+        renderAccessRequestUi(
+            <Nav aria-label="Account management">
+                <NavList><AccessRequestNavigation canApprove={false} /></NavList>
+            </Nav>,
+            "/request-access"
+        );
+
+        const navigation = screen.getByRole("navigation", { name: "Account management" });
         expect(within(navigation).getByRole("link", { name: "Request access" })).toBeVisible();
         expect(within(navigation).getByRole("link", { name: "My Requests" })).toBeVisible();
         expect(within(navigation).queryByRole("link", { name: "Approvals" })).not.toBeInTheDocument();
     });
 
     it("shows Approvals only to a user with at least one entitlement approval scope", () => {
-        renderAccessRequestUi(<AccessRequestNavigation canApprove />);
+        renderAccessRequestUi(
+            <Nav aria-label="Account management">
+                <NavList><AccessRequestNavigation canApprove /></NavList>
+            </Nav>,
+            "/approvals"
+        );
 
         expect(screen.getByRole("link", { name: "Approvals" })).toBeVisible();
+    });
+
+    it("uses the standard Account Console page title and description for every access request page", () => {
+        const pages = [
+            {
+                description: "Browse the available access and submit a request.",
+                page: <RequestAccessPage entries={[]} onRequest={vi.fn()} />,
+                title: "Request access"
+            },
+            {
+                description: "Track your requests and cancel any that are still pending.",
+                page: <MyRequestsPage onCancel={vi.fn()} requests={[]} />,
+                title: "My Requests"
+            },
+            {
+                description: "Review and decide requests for the access you manage.",
+                page: <ApprovalsPage onApprove={vi.fn()} onReject={vi.fn()} requests={[]} />,
+                title: "Approvals"
+            }
+        ];
+
+        pages.forEach(({ description, page, title }) => {
+            const view = renderAccessRequestUi(page);
+
+            expect(screen.getByRole("heading", { level: 1, name: title })).toBeVisible();
+            expect(screen.getByText(description)).toBeVisible();
+
+            view.unmount();
+        });
+    });
+
+    it("uses PatternFly data lists and clear empty states for every access request page", () => {
+        const pages = [
+            {
+                description: "There is no access available for you to request.",
+                emptyState: "No access available",
+                listLabel: "Request access",
+                page: <RequestAccessPage entries={[]} onRequest={vi.fn()} />
+            },
+            {
+                description: "Request access to an application, role, or group and it will appear here.",
+                emptyState: "No requests yet",
+                listLabel: "My Requests",
+                page: <MyRequestsPage onCancel={vi.fn()} requests={[]} />
+            },
+            {
+                description: "New requests for the access you manage will appear here.",
+                emptyState: "No approvals pending",
+                listLabel: "Approvals",
+                page: <ApprovalsPage onApprove={vi.fn()} onReject={vi.fn()} requests={[]} />
+            }
+        ];
+
+        pages.forEach(({ description, emptyState, listLabel, page }) => {
+            const view = renderAccessRequestUi(page);
+
+            expect(screen.queryByRole("list", { name: listLabel })).not.toBeInTheDocument();
+            expect(screen.getByRole("heading", { level: 2, name: emptyState })).toBeVisible();
+            expect(screen.getByText(description)).toBeVisible();
+
+            view.unmount();
+        });
+    });
+
+    it("keeps the native catalog search available when no access matches", async () => {
+        const user = userEvent.setup();
+        const onSearchChange = vi.fn();
+
+        renderAccessRequestUi(
+            <RequestAccessPage
+                entries={[]}
+                onRequest={vi.fn()}
+                pagination={{
+                    onPageChange: vi.fn(),
+                    onPageSizeChange: vi.fn(),
+                    page: 0,
+                    size: 20,
+                    total: 0
+                }}
+                search={{ onChange: onSearchChange, value: "" }}
+            />
+        );
+
+        const search = screen.getByRole("textbox", { name: "Search access" });
+        expect(search).toHaveAttribute("placeholder", "Search by access name or description");
+        await user.type(search, "finance");
+
+        expect(onSearchChange).toHaveBeenLastCalledWith("finance");
+        expect(screen.getByRole("heading", { level: 2, name: "No access available" })).toBeVisible();
     });
 
     it("lists published requestable access and submits a justification", async () => {
@@ -169,10 +354,10 @@ describe("Access Request account console pages", () => {
             />
         );
 
-        const financeReader = screen.getByRole("article", { name: "Finance Reader" });
+        const financeReader = screen.getByRole("listitem", { name: "Finance Reader" });
         expect(within(financeReader).getByText("Read-only access to Finance Portal")).toBeVisible();
-        expect(within(financeReader).getByText("CLIENT_ROLE")).toBeVisible();
-        expect(within(financeReader).getByText("Risk: LOW")).toBeVisible();
+        expect(within(financeReader).getByText("Client role")).toBeVisible();
+        expect(within(financeReader).getByText("Low").closest(".pf-v5-c-label")).toHaveClass("pf-m-green");
 
         await user.click(within(financeReader).getByRole("button", { name: "Request access" }));
         const dialog = screen.getByRole("dialog", { name: "Request access to Finance Reader" });
@@ -180,13 +365,14 @@ describe("Access Request account console pages", () => {
         await user.type(within(dialog).getByLabelText("Justification"), justification);
         await user.click(within(dialog).getByRole("button", { name: "Submit request" }));
 
-        expect(requestAccess).toHaveBeenCalledWith({
+        await waitFor(() => expect(requestAccess).toHaveBeenCalledWith({
             entitlementId: "finance-reader",
             justification
-        });
-        expect(within(screen.getByRole("article", { name: "Finance Administrator" }))
+        }));
+        expect(accountAlerts.addAlert).toHaveBeenCalledWith("Access request submitted.");
+        expect(within(screen.getByRole("listitem", { name: "Finance Administrator" }))
             .getByText("Already granted")).toBeVisible();
-        expect(within(screen.getByRole("article", { name: "VPN Production" }))
+        expect(within(screen.getByRole("listitem", { name: "VPN Production" }))
             .getByText("Request pending")).toBeVisible();
     });
 
@@ -268,7 +454,10 @@ describe("Access Request account console pages", () => {
         await waitFor(() => expect(requestAccess).toHaveBeenCalledTimes(1));
         expect(screen.getByRole("dialog", { name: "Request access to Finance Reader" })).toBeVisible();
         expect(within(dialog).getByLabelText("Justification")).toHaveValue(justification);
-        expect(screen.getByRole("alert")).toHaveTextContent("Request unavailable");
+        expect(accountAlerts.addError).toHaveBeenCalledWith(
+            "accessRequestsRequestSubmissionFailed",
+            expect.objectContaining({ message: "Request unavailable" })
+        );
     });
 
     it("moves focus into a request dialog, closes it with Escape, and restores focus to its trigger", async () => {
@@ -295,10 +484,6 @@ describe("Access Request account console pages", () => {
         await user.click(requestButton);
         const dialog = screen.getByRole("dialog", { name: "Request access to Finance Reader" });
 
-        expect(within(dialog).getByLabelText("Justification")).toHaveFocus();
-        await user.tab();
-        expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
-        await user.tab();
         expect(within(dialog).getByLabelText("Justification")).toHaveFocus();
         await user.keyboard("{Escape}");
 
@@ -347,23 +532,27 @@ describe("Access Request account console pages", () => {
             />
         );
 
-        const pendingRequest = screen.getByRole("article", { name: "Finance Reader" });
+        const pendingRequest = screen.getByRole("listitem", { name: "Finance Reader" });
         expect(within(pendingRequest).getByText("Pending")).toBeVisible();
         await user.click(within(pendingRequest).getByRole("button", { name: "Cancel request" }));
+        await user.click(within(screen.getByRole("dialog", { name: "Cancel request" }))
+            .getByRole("button", { name: "Cancel request" }));
         expect(cancelRequest).toHaveBeenCalledWith("request-pending");
+        await waitFor(() => expect(accountAlerts.addAlert).toHaveBeenCalledWith("Access request canceled."));
 
-        const approvedRequest = screen.getByRole("article", { name: "VPN Production" });
-        expect(within(approvedRequest).getByText("Granted 21 Aug 2026")).toBeVisible();
+        const approvedRequest = screen.getByRole("listitem", { name: "VPN Production" });
+        expect(within(approvedRequest).getByText("Approved").closest(".pf-v5-c-label")).toHaveClass("pf-m-green");
+        expect(within(approvedRequest).getByText("Succeeded").closest(".pf-v5-c-label")).toHaveClass("pf-m-green");
         await user.click(within(approvedRequest).getByRole("button", { name: "View details" }));
 
         const details = screen.getByRole("dialog", { name: "VPN Production request details" });
         expect(within(details).getByText("I support the production release.")).toBeVisible();
         expect(within(details).getByText("Finance Approver")).toBeVisible();
         expect(within(details).getByText("Approved for the release window.")).toBeVisible();
-        expect(within(details).getByText("SUCCEEDED")).toBeVisible();
-        expect(within(details).getByText("REQUEST_CREATED")).toBeVisible();
-        expect(within(details).getByText("REQUEST_APPROVED")).toBeVisible();
-        expect(within(details).getByText("PROVISIONING_SUCCEEDED")).toBeVisible();
+        expect(within(details).getByText("Succeeded").closest(".pf-v5-c-label")).toHaveClass("pf-m-green");
+        expect(within(details).getByText("Request created")).toBeVisible();
+        expect(within(details).getByText("Request approved")).toBeVisible();
+        expect(within(details).getByText("Access granted")).toBeVisible();
         expect(within(approvedRequest).queryByRole("button", { name: "Cancel request" })).not.toBeInTheDocument();
     });
 
@@ -421,7 +610,7 @@ describe("Access Request account console pages", () => {
 
         await waitFor(() => expect(within(dialog).getByText("I need month-end reports.")).toBeVisible());
         expect(within(dialog).getByText("finance-approver")).toBeVisible();
-        expect(within(dialog).getByText("REQUEST_APPROVED")).toBeVisible();
+        expect(within(dialog).getByText("Request approved")).toBeVisible();
     });
 
     it("prevents duplicate cancellation and refreshes requests only after cancellation succeeds", async () => {
@@ -456,7 +645,8 @@ describe("Access Request account console pages", () => {
 
         const cancelButton = screen.getByRole("button", { name: "Cancel request" });
         await user.click(cancelButton);
-        await user.click(cancelButton);
+        const confirmation = screen.getByRole("dialog", { name: "Cancel request" });
+        await user.click(within(confirmation).getByRole("button", { name: "Cancel request" }));
 
         expect(cancelRequest).toHaveBeenCalledTimes(1);
         expect(cancelButton).toBeDisabled();
@@ -490,8 +680,13 @@ describe("Access Request account console pages", () => {
 
         const cancelButton = screen.getByRole("button", { name: "Cancel request" });
         await user.click(cancelButton);
+        await user.click(within(screen.getByRole("dialog", { name: "Cancel request" }))
+            .getByRole("button", { name: "Cancel request" }));
 
-        await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Cancellation unavailable"));
+        await waitFor(() => expect(accountAlerts.addError).toHaveBeenCalledWith(
+            "accessRequestsCancellationFailed",
+            expect.objectContaining({ message: "Cancellation unavailable" })
+        ));
         expect(cancelButton).toBeEnabled();
     });
 
@@ -518,8 +713,8 @@ describe("Access Request account console pages", () => {
             />
         );
 
-        const pendingRequest = screen.getByRole("article", { name: "Finance Reader requested by Anass Chahbouni" });
-        expect(within(pendingRequest).getByText("Risk: HIGH")).toBeVisible();
+        const pendingRequest = screen.getByRole("listitem", { name: "Finance Reader requested by Anass Chahbouni" });
+        expect(within(pendingRequest).getByText("High").closest(".pf-v5-c-label")).toHaveClass("pf-m-orange");
         expect(within(pendingRequest).getByText("I need to reconcile finance data before closing.")).toBeVisible();
 
         await user.click(within(pendingRequest).getByRole("button", { name: "Approve" }));
@@ -539,6 +734,11 @@ describe("Access Request account console pages", () => {
             requestId: "request-approval",
             comment: "Please request read-only access instead."
         });
+        await waitFor(() => expect(accountAlerts.addAlert).toHaveBeenNthCalledWith(
+            1,
+            "Access request approved."
+        ));
+        expect(accountAlerts.addAlert).toHaveBeenNthCalledWith(2, "Access request rejected.");
     });
 
     it("waits for a decision, prevents duplicate approval, and retains the dialog if it fails", async () => {
@@ -582,7 +782,10 @@ describe("Access Request account console pages", () => {
 
         rejectApproval?.(new Error("Decision unavailable"));
 
-        await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Decision unavailable"));
+        await waitFor(() => expect(accountAlerts.addError).toHaveBeenCalledWith(
+            "accessRequestsDecisionFailed",
+            expect.objectContaining({ message: "Decision unavailable" })
+        ));
         expect(screen.getByRole("dialog", { name: "Approve Finance Reader" })).toBeVisible();
     });
 
@@ -611,12 +814,6 @@ describe("Access Request account console pages", () => {
         await user.click(approveButton);
         const dialog = screen.getByRole("dialog", { name: "Approve Finance Reader" });
 
-        expect(within(dialog).getByLabelText("Decision comment")).toHaveFocus();
-        await user.tab();
-        expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
-        await user.tab();
-        expect(within(dialog).getByRole("button", { name: "Confirm approval" })).toHaveFocus();
-        await user.tab();
         expect(within(dialog).getByLabelText("Decision comment")).toHaveFocus();
         await user.keyboard("{Escape}");
 

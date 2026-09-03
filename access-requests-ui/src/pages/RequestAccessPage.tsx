@@ -1,8 +1,30 @@
-import { useRef, useState } from "react";
+import { Page } from "@keycloak/keycloak-account-ui";
+import {
+    ActionGroup,
+    Button,
+    DataList,
+    DataListAction,
+    DataListCell,
+    DataListItem,
+    DataListItemCells,
+    DataListItemRow,
+    DescriptionList,
+    DescriptionListDescription,
+    DescriptionListGroup,
+    DescriptionListTerm,
+    Form,
+    FormGroup,
+    Modal,
+    SearchInput,
+    TextArea
+} from "@patternfly/react-core";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { AccessibleDialog } from "./AccessibleDialog";
+import { AccessRequestEmptyState } from "./AccessRequestEmptyState";
 import { AccessRequestPagination, type AccessRequestPaginationState } from "./AccessRequestPagination";
+import { RiskLevelLabel, resourceTypeLabel } from "./AccessRequestPresentation";
+import { useAccessRequestAlerts } from "./useAccessRequestAlerts";
 
 export type RequestableEntitlement = {
     id: string;
@@ -24,24 +46,28 @@ type RequestAccessPageProps = {
     onRequest: (submission: AccessRequestSubmission) => void | Promise<void>;
     pagination?: AccessRequestPaginationState;
     onRefresh?: () => void | Promise<void>;
+    search?: {
+        value: string;
+        onChange: (value: string) => void;
+    };
 };
 
-function errorMessage(error: unknown) {
-    return error instanceof Error ? error.message : String(error);
-}
-
-export function RequestAccessPage({ entries, onRequest, onRefresh, pagination }: RequestAccessPageProps) {
+export function RequestAccessPage({ entries, onRequest, onRefresh, pagination, search }: RequestAccessPageProps) {
     const { t } = useTranslation();
+    const { addAlert, addError } = useAccessRequestAlerts();
     const [selectedEntry, setSelectedEntry] = useState<RequestableEntitlement>();
     const [justification, setJustification] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [submissionError, setSubmissionError] = useState<string>();
-    const justificationRef = useRef<HTMLTextAreaElement>(null);
 
     const closeDialog = () => {
         setSelectedEntry(undefined);
         setJustification("");
-        setSubmissionError(undefined);
+    };
+
+    const dismissDialog = () => {
+        if (!isSubmitting) {
+            closeDialog();
+        }
     };
 
     const submit = async () => {
@@ -50,7 +76,6 @@ export function RequestAccessPage({ entries, onRequest, onRefresh, pagination }:
         }
 
         setIsSubmitting(true);
-        setSubmissionError(undefined);
 
         try {
             await onRequest({
@@ -58,68 +83,135 @@ export function RequestAccessPage({ entries, onRequest, onRefresh, pagination }:
                 justification: justification.trim()
             });
         } catch (error) {
-            setSubmissionError(errorMessage(error));
+            addError("accessRequestsRequestSubmissionFailed", error);
             setIsSubmitting(false);
             return;
         }
 
+        addAlert(t("accessRequestsRequestSubmitted"));
         closeDialog();
-        await onRefresh?.();
-        setIsSubmitting(false);
+        try {
+            await onRefresh?.();
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
-        <section aria-labelledby="request-access-title">
-            <h1 id="request-access-title">{t("accessRequestsRequestAccess")}</h1>
-            {entries.map((entry) => (
-                <article key={entry.id} aria-label={entry.name}>
-                    <h2>{entry.name}</h2>
-                    <p>{entry.description}</p>
-                    <dl>
-                        <div>
-                            <dt>{t("accessRequestsResourceType")}</dt>
-                            <dd>{entry.resourceType}</dd>
-                        </div>
-                        <div>
-                            <dt>{t("accessRequestsRiskLabel")}</dt>
-                            <dd>{t("accessRequestsRisk", { riskLevel: entry.riskLevel })}</dd>
-                        </div>
-                    </dl>
-                    {entry.alreadyGranted ? (
-                        <p>{t("accessRequestsAlreadyGranted")}</p>
-                    ) : entry.pendingRequest ? (
-                        <p>{t("accessRequestsRequestPending")}</p>
-                    ) : (
-                        <button type="button" onClick={() => setSelectedEntry(entry)}>
-                            {t("accessRequestsRequestAccess")}
-                        </button>
+        <Page
+            description={t("accessRequestsRequestAccessDescription")}
+            title={t("accessRequestsRequestAccess")}
+        >
+            <>
+                <AccessRequestPagination pagination={pagination}>
+                    {search && (
+                        <SearchInput
+                            aria-label={t("accessRequestsSearchCatalog")}
+                            onChange={(_, value) => search.onChange(value)}
+                            onClear={() => search.onChange("")}
+                            onSearch={(_, value) => search.onChange(value)}
+                            placeholder={t("accessRequestsSearchCatalogPlaceholder")}
+                            resetButtonLabel={t("accessRequestsClearSearch")}
+                            searchInputId="access-request-catalog-search"
+                            submitSearchButtonLabel={t("accessRequestsSearchCatalog")}
+                            value={search.value}
+                        />
                     )}
-                </article>
-            ))}
-            <AccessRequestPagination pagination={pagination} />
-            {selectedEntry && (
-                <AccessibleDialog
-                    ariaLabel={t("accessRequestsRequestAccessTo", { entitlement: selectedEntry.name })}
-                    initialFocusRef={justificationRef}
-                    onClose={closeDialog}
-                >
-                    <h2>{t("accessRequestsRequestAccessTo", { entitlement: selectedEntry.name })}</h2>
-                    <label htmlFor="justification">{t("accessRequestsJustification")}</label>
-                    <textarea
-                        id="justification"
-                        onChange={(event) => setJustification(event.target.value)}
-                        ref={justificationRef}
-                        value={justification}
+                </AccessRequestPagination>
+                {entries.length === 0 ? (
+                    <AccessRequestEmptyState
+                        description={t("accessRequestsNoRequestableAccessDescription")}
+                        title={t("accessRequestsNoRequestableAccess")}
                     />
-                    {submissionError && <p role="alert">{submissionError}</p>}
-                    <button type="button" disabled={isSubmitting} onClick={closeDialog}>
-                        {t("accessRequestsCancel")}
-                    </button>
-                    <button type="button" disabled={isSubmitting || !justification.trim()} onClick={() => void submit()}>
-                        {t("accessRequestsSubmitRequest")}
-                    </button>
-                </AccessibleDialog>
+                ) : (
+                    <DataList aria-label={t("accessRequestsRequestAccess")}>
+                        {entries.map((entry) => {
+                            const titleId = `requestable-entitlement-${entry.id}-title`;
+                            return (
+                                <DataListItem aria-labelledby={titleId} id={`requestable-entitlement-${entry.id}`} key={entry.id}>
+                                    <DataListItemRow>
+                                        <DataListItemCells
+                                            dataListCells={[
+                                                <DataListCell key="details" width={3}>
+                                                    <strong id={titleId}>{entry.name}</strong>
+                                                    <p>{entry.description}</p>
+                                                </DataListCell>,
+                                                <DataListCell key="attributes" width={2}>
+                                                    <DescriptionList isCompact>
+                                                        <DescriptionListGroup>
+                                                            <DescriptionListTerm>{t("accessRequestsResourceType")}</DescriptionListTerm>
+                                                            <DescriptionListDescription>
+                                                                {resourceTypeLabel(entry.resourceType, t)}
+                                                            </DescriptionListDescription>
+                                                        </DescriptionListGroup>
+                                                        <DescriptionListGroup>
+                                                            <DescriptionListTerm>{t("accessRequestsRiskLabel")}</DescriptionListTerm>
+                                                            <DescriptionListDescription>
+                                                                <RiskLevelLabel riskLevel={entry.riskLevel} t={t} />
+                                                            </DescriptionListDescription>
+                                                        </DescriptionListGroup>
+                                                    </DescriptionList>
+                                                </DataListCell>
+                                            ]}
+                                        />
+                                        <DataListAction
+                                            aria-label={t("accessRequestsRequestAccessTo", { entitlement: entry.name })}
+                                            aria-labelledby={titleId}
+                                            id={`requestable-entitlement-${entry.id}-action`}
+                                        >
+                                            {entry.alreadyGranted ? (
+                                                <p>{t("accessRequestsAlreadyGranted")}</p>
+                                            ) : entry.pendingRequest ? (
+                                                <p>{t("accessRequestsRequestPending")}</p>
+                                            ) : (
+                                                <Button type="button" variant="primary" onClick={() => setSelectedEntry(entry)}>
+                                                    {t("accessRequestsRequestAccess")}
+                                                </Button>
+                                            )}
+                                        </DataListAction>
+                                    </DataListItemRow>
+                                </DataListItem>
+                            );
+                        })}
+                    </DataList>
+                )}
+            {selectedEntry && (
+                <Modal
+                    elementToFocus="#access-request-justification"
+                    isOpen
+                    onClose={dismissDialog}
+                    showClose={!isSubmitting}
+                    title={t("accessRequestsRequestAccessTo", { entitlement: selectedEntry.name })}
+                    variant="small"
+                >
+                    <Form
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            void submit();
+                        }}
+                    >
+                        <FormGroup fieldId="access-request-justification" isRequired label={t("accessRequestsJustification")}>
+                            <TextArea
+                                aria-label={t("accessRequestsJustification")}
+                                id="access-request-justification"
+                                isDisabled={isSubmitting}
+                                isRequired
+                                onChange={(_, value) => setJustification(value)}
+                                value={justification}
+                            />
+                        </FormGroup>
+                        <ActionGroup>
+                            <Button isDisabled={isSubmitting || !justification.trim()} type="submit" variant="primary">
+                                {t("accessRequestsSubmitRequest")}
+                            </Button>
+                            <Button isDisabled={isSubmitting} type="button" variant="link" onClick={dismissDialog}>
+                                {t("accessRequestsCancel")}
+                            </Button>
+                        </ActionGroup>
+                    </Form>
+                </Modal>
             )}
-        </section>
+            </>
+        </Page>
     );
 }
