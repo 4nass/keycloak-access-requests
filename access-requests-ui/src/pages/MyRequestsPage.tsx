@@ -28,6 +28,7 @@ export type AccessRequest = {
 type MyRequestsPageProps = {
     requests: AccessRequest[];
     onCancel: (requestId: string) => void | Promise<void>;
+    onRefresh?: () => void | Promise<void>;
 };
 
 function requestStatus(request: AccessRequest, t: TFunction) {
@@ -47,20 +48,49 @@ function requestStatus(request: AccessRequest, t: TFunction) {
     return t(statusKeys[request.decisionStatus] ?? request.decisionStatus);
 }
 
-export function MyRequestsPage({ requests, onCancel }: MyRequestsPageProps) {
+function errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+}
+
+export function MyRequestsPage({ requests, onCancel, onRefresh }: MyRequestsPageProps) {
     const { t } = useTranslation();
     const [selectedRequest, setSelectedRequest] = useState<AccessRequest>();
+    const [cancellingRequestId, setCancellingRequestId] = useState<string>();
+    const [cancellationError, setCancellationError] = useState<string>();
+
+    const cancel = async (requestId: string) => {
+        if (cancellingRequestId) {
+            return;
+        }
+
+        setCancellingRequestId(requestId);
+        setCancellationError(undefined);
+
+        try {
+            await onCancel(requestId);
+            await onRefresh?.();
+        } catch (error) {
+            setCancellationError(errorMessage(error));
+        } finally {
+            setCancellingRequestId(undefined);
+        }
+    };
 
     return (
         <section aria-labelledby="my-requests-title">
             <h1 id="my-requests-title">{t("accessRequestsMyRequests")}</h1>
+            {cancellationError && <p role="alert">{cancellationError}</p>}
             {requests.map((request) => (
                 <article key={request.id} aria-label={request.entitlementName}>
                     <h2>{request.entitlementName}</h2>
                     <p>{request.resourceType}</p>
                     <p>{requestStatus(request, t)}</p>
                     {request.decisionStatus === "PENDING" && (
-                        <button type="button" onClick={() => void onCancel(request.id)}>
+                        <button
+                            type="button"
+                            disabled={cancellingRequestId === request.id}
+                            onClick={() => void cancel(request.id)}
+                        >
                             {t("accessRequestsCancelRequest")}
                         </button>
                     )}

@@ -20,6 +20,7 @@ type ApprovalsPageProps = {
     requests: PendingApproval[];
     onApprove: (decision: ApprovalDecision) => void | Promise<void>;
     onReject: (decision: ApprovalDecision) => void | Promise<void>;
+    onRefresh?: () => void | Promise<void>;
 };
 
 type PendingDecision = {
@@ -27,18 +28,25 @@ type PendingDecision = {
     type: "approve" | "reject";
 };
 
-export function ApprovalsPage({ requests, onApprove, onReject }: ApprovalsPageProps) {
+function errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+}
+
+export function ApprovalsPage({ requests, onApprove, onReject, onRefresh }: ApprovalsPageProps) {
     const { t } = useTranslation();
     const [pendingDecision, setPendingDecision] = useState<PendingDecision>();
     const [comment, setComment] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [decisionError, setDecisionError] = useState<string>();
 
     const closeDialog = () => {
         setPendingDecision(undefined);
         setComment("");
+        setDecisionError(undefined);
     };
 
-    const submit = () => {
-        if (!pendingDecision) {
+    const submit = async () => {
+        if (!pendingDecision || isSubmitting) {
             return;
         }
 
@@ -47,12 +55,22 @@ export function ApprovalsPage({ requests, onApprove, onReject }: ApprovalsPagePr
             comment: comment.trim()
         };
 
-        if (pendingDecision.type === "approve") {
-            void onApprove(decision);
-        } else {
-            void onReject(decision);
+        setIsSubmitting(true);
+        setDecisionError(undefined);
+
+        try {
+            if (pendingDecision.type === "approve") {
+                await onApprove(decision);
+            } else {
+                await onReject(decision);
+            }
+            closeDialog();
+            await onRefresh?.();
+        } catch (error) {
+            setDecisionError(errorMessage(error));
+        } finally {
+            setIsSubmitting(false);
         }
-        closeDialog();
     };
 
     return (
@@ -98,10 +116,11 @@ export function ApprovalsPage({ requests, onApprove, onReject }: ApprovalsPagePr
                         onChange={(event) => setComment(event.target.value)}
                         value={comment}
                     />
-                    <button type="button" onClick={closeDialog}>
+                    {decisionError && <p role="alert">{decisionError}</p>}
+                    <button type="button" disabled={isSubmitting} onClick={closeDialog}>
                         {t("accessRequestsCancel")}
                     </button>
-                    <button type="button" onClick={submit}>
+                    <button type="button" disabled={isSubmitting} onClick={() => void submit()}>
                         {t(
                             pendingDecision.type === "approve"
                                 ? "accessRequestsConfirmApproval"

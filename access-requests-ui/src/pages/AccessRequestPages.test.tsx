@@ -6,6 +6,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { I18nextProvider } from "react-i18next";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { AccessRequestNavigation } from "./AccessRequestNavigation";
@@ -46,7 +47,11 @@ await testI18n.init({
 });
 
 function renderAccessRequestUi(ui: ReactNode) {
-    return render(<I18nextProvider i18n={testI18n}>{ui}</I18nextProvider>);
+    return render(
+        <MemoryRouter>
+            <I18nextProvider i18n={testI18n}>{ui}</I18nextProvider>
+        </MemoryRouter>
+    );
 }
 
 describe("Access Request account console pages", () => {
@@ -391,6 +396,35 @@ describe("Access Request account console pages", () => {
         resolveCancellation?.();
 
         await waitFor(() => expect(refreshRequests).toHaveBeenCalledTimes(1));
+    });
+
+    it("keeps a failed cancellation visible and lets the requester retry", async () => {
+        const user = userEvent.setup();
+        const cancelRequest = vi.fn().mockRejectedValue(new Error("Cancellation unavailable"));
+
+        renderAccessRequestUi(
+            <MyRequestsPage
+                requests={[
+                    {
+                        id: "request-pending",
+                        entitlementName: "Finance Reader",
+                        resourceType: "CLIENT_ROLE",
+                        decisionStatus: "PENDING",
+                        provisioningStatus: "NOT_STARTED",
+                        requestedAt: "26 Aug 2026",
+                        justification: "I need to review month-end finance reports.",
+                        history: [{ type: "REQUEST_CREATED", occurredAt: "26 Aug 2026" }]
+                    }
+                ]}
+                onCancel={cancelRequest}
+            />
+        );
+
+        const cancelButton = screen.getByRole("button", { name: "Cancel request" });
+        await user.click(cancelButton);
+
+        await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Cancellation unavailable"));
+        expect(cancelButton).toBeEnabled();
     });
 
     it("shows pending approvals and sends explicit approve or reject decisions", async () => {

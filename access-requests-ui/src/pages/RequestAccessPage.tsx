@@ -19,28 +19,46 @@ type AccessRequestSubmission = {
 type RequestAccessPageProps = {
     entries: RequestableEntitlement[];
     onRequest: (submission: AccessRequestSubmission) => void | Promise<void>;
+    onRefresh?: () => void | Promise<void>;
 };
 
-export function RequestAccessPage({ entries, onRequest }: RequestAccessPageProps) {
+function errorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+}
+
+export function RequestAccessPage({ entries, onRequest, onRefresh }: RequestAccessPageProps) {
     const { t } = useTranslation();
     const [selectedEntry, setSelectedEntry] = useState<RequestableEntitlement>();
     const [justification, setJustification] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submissionError, setSubmissionError] = useState<string>();
 
     const closeDialog = () => {
         setSelectedEntry(undefined);
         setJustification("");
+        setSubmissionError(undefined);
     };
 
-    const submit = () => {
-        if (!selectedEntry || !justification.trim()) {
+    const submit = async () => {
+        if (!selectedEntry || !justification.trim() || isSubmitting) {
             return;
         }
 
-        void onRequest({
-            entitlementId: selectedEntry.id,
-            justification: justification.trim()
-        });
-        closeDialog();
+        setIsSubmitting(true);
+        setSubmissionError(undefined);
+
+        try {
+            await onRequest({
+                entitlementId: selectedEntry.id,
+                justification: justification.trim()
+            });
+            closeDialog();
+            await onRefresh?.();
+        } catch (error) {
+            setSubmissionError(errorMessage(error));
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -84,10 +102,11 @@ export function RequestAccessPage({ entries, onRequest }: RequestAccessPageProps
                         onChange={(event) => setJustification(event.target.value)}
                         value={justification}
                     />
-                    <button type="button" onClick={closeDialog}>
+                    {submissionError && <p role="alert">{submissionError}</p>}
+                    <button type="button" disabled={isSubmitting} onClick={closeDialog}>
                         {t("accessRequestsCancel")}
                     </button>
-                    <button type="button" disabled={!justification.trim()} onClick={submit}>
+                    <button type="button" disabled={isSubmitting || !justification.trim()} onClick={() => void submit()}>
                         {t("accessRequestsSubmitRequest")}
                     </button>
                 </div>
