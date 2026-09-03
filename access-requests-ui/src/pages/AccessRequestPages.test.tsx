@@ -289,6 +289,10 @@ describe("Access Request account console pages", () => {
         const dialog = screen.getByRole("dialog", { name: "Request access to Finance Reader" });
 
         expect(within(dialog).getByLabelText("Justification")).toHaveFocus();
+        await user.tab();
+        expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+        await user.tab();
+        expect(within(dialog).getByLabelText("Justification")).toHaveFocus();
         await user.keyboard("{Escape}");
 
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -543,6 +547,12 @@ describe("Access Request account console pages", () => {
         await user.click(approveButton);
         const dialog = screen.getByRole("dialog", { name: "Approve Finance Reader" });
 
+        expect(within(dialog).getByLabelText("Decision comment")).toHaveFocus();
+        await user.tab();
+        expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+        await user.tab();
+        expect(within(dialog).getByRole("button", { name: "Confirm approval" })).toHaveFocus();
+        await user.tab();
         expect(within(dialog).getByLabelText("Decision comment")).toHaveFocus();
         await user.keyboard("{Escape}");
 

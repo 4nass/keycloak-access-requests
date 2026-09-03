@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+
+import { AccessibleDialog } from "./AccessibleDialog";
 
 export type PendingApproval = {
     id: string;
@@ -38,6 +40,7 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh }: Appr
     const [comment, setComment] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [decisionError, setDecisionError] = useState<string>();
+    const decisionCommentRef = useRef<HTMLTextAreaElement>(null);
 
     const closeDialog = () => {
         setPendingDecision(undefined);
@@ -99,21 +102,22 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh }: Appr
                 </article>
             ))}
             {pendingDecision && (
-                <div
-                    aria-label={t(
+                <AccessibleDialog
+                    ariaLabel={t(
                         pendingDecision.type === "approve"
                             ? "accessRequestsApproveEntitlement"
                             : "accessRequestsRejectEntitlement",
                         { entitlement: pendingDecision.request.entitlementName }
                     )}
-                    aria-modal="true"
-                    role="dialog"
+                    initialFocusRef={decisionCommentRef}
+                    onClose={closeDialog}
                 >
                     <h2>{t(pendingDecision.type === "approve" ? "accessRequestsApprove" : "accessRequestsReject")}</h2>
                     <label htmlFor="decision-comment">{t("accessRequestsDecisionComment")}</label>
                     <textarea
                         id="decision-comment"
                         onChange={(event) => setComment(event.target.value)}
+                        ref={decisionCommentRef}
                         value={comment}
                     />
                     {decisionError && <p role="alert">{decisionError}</p>}
@@ -127,7 +131,7 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh }: Appr
                                 : "accessRequestsConfirmRejection"
                         )}
                     </button>
-                </div>
+                </AccessibleDialog>
             )}
         </section>
     );

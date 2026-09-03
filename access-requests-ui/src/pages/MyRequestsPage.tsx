@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
+
+import { AccessibleDialog } from "./AccessibleDialog";
 
 type RequestHistoryEntry = {
     type: string;
@@ -57,6 +59,7 @@ export function MyRequestsPage({ requests, onCancel, onRefresh }: MyRequestsPage
     const [selectedRequest, setSelectedRequest] = useState<AccessRequest>();
     const [cancellingRequestId, setCancellingRequestId] = useState<string>();
     const [cancellationError, setCancellationError] = useState<string>();
+    const closeButtonRef = useRef<HTMLButtonElement>(null);
 
     const cancel = async (requestId: string) => {
         if (cancellingRequestId) {
@@ -100,10 +103,10 @@ export function MyRequestsPage({ requests, onCancel, onRefresh }: MyRequestsPage
                 </article>
             ))}
             {selectedRequest && (
-                <div
-                    aria-label={t("accessRequestsRequestDetails", { entitlement: selectedRequest.entitlementName })}
-                    aria-modal="true"
-                    role="dialog"
+                <AccessibleDialog
+                    ariaLabel={t("accessRequestsRequestDetails", { entitlement: selectedRequest.entitlementName })}
+                    initialFocusRef={closeButtonRef}
+                    onClose={() => setSelectedRequest(undefined)}
                 >
                     <h2>{selectedRequest.entitlementName}</h2>
                     <p>{selectedRequest.justification}</p>
@@ -131,10 +134,10 @@ export function MyRequestsPage({ requests, onCancel, onRefresh }: MyRequestsPage
                             </li>
                         ))}
                     </ol>
-                    <button type="button" onClick={() => setSelectedRequest(undefined)}>
+                    <button ref={closeButtonRef} type="button" onClick={() => setSelectedRequest(undefined)}>
                         {t("accessRequestsClose")}
                     </button>
-                </div>
+                </AccessibleDialog>
             )}
         </section>
     );

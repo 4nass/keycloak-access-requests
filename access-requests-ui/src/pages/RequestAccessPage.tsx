@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+
+import { AccessibleDialog } from "./AccessibleDialog";
 
 export type RequestableEntitlement = {
     id: string;
@@ -32,6 +34,7 @@ export function RequestAccessPage({ entries, onRequest, onRefresh }: RequestAcce
     const [justification, setJustification] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submissionError, setSubmissionError] = useState<string>();
+    const justificationRef = useRef<HTMLTextAreaElement>(null);
 
     const closeDialog = () => {
         setSelectedEntry(undefined);
@@ -90,16 +93,17 @@ export function RequestAccessPage({ entries, onRequest, onRefresh }: RequestAcce
                 </article>
             ))}
             {selectedEntry && (
-                <div
-                    aria-label={t("accessRequestsRequestAccessTo", { entitlement: selectedEntry.name })}
-                    aria-modal="true"
-                    role="dialog"
+                <AccessibleDialog
+                    ariaLabel={t("accessRequestsRequestAccessTo", { entitlement: selectedEntry.name })}
+                    initialFocusRef={justificationRef}
+                    onClose={closeDialog}
                 >
                     <h2>{t("accessRequestsRequestAccessTo", { entitlement: selectedEntry.name })}</h2>
                     <label htmlFor="justification">{t("accessRequestsJustification")}</label>
                     <textarea
                         id="justification"
                         onChange={(event) => setJustification(event.target.value)}
+                        ref={justificationRef}
                         value={justification}
                     />
                     {submissionError && <p role="alert">{submissionError}</p>}
@@ -109,7 +113,7 @@ export function RequestAccessPage({ entries, onRequest, onRefresh }: RequestAcce
                     <button type="button" disabled={isSubmitting || !justification.trim()} onClick={() => void submit()}>
                         {t("accessRequestsSubmitRequest")}
                     </button>
-                </div>
+                </AccessibleDialog>
             )}
         </section>
     );
