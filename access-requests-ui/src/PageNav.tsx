@@ -2,6 +2,8 @@ import { Nav, NavItem, NavList, PageSidebar, PageSidebarBody } from "@patternfly
 import { useTranslation } from "react-i18next";
 import { Link, useMatch } from "react-router-dom";
 
+import { AccessRequestNavigation } from "./pages/AccessRequestNavigation";
+
 const navigationItems = [
     { path: "personal-info", label: "personalInfo" },
     { path: "account-security/device-activity", label: "deviceActivity" },
@@ -25,6 +27,7 @@ export function PageNav() {
                         ))}
                     </NavList>
                 </Nav>
+                <AccessRequestNavigation canApprove={false} />
             </PageSidebarBody>
         </PageSidebar>
     );

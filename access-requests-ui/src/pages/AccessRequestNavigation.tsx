@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 
 type AccessRequestNavigationProps = {
     canApprove: boolean;
@@ -11,14 +12,14 @@ export function AccessRequestNavigation({ canApprove }: AccessRequestNavigationP
         <nav aria-label={t("accessRequestsNav")}>
             <ul>
                 <li>
-                    <a href="request-access">{t("accessRequestsRequestAccess")}</a>
+                    <Link to="request-access">{t("accessRequestsRequestAccess")}</Link>
                 </li>
                 <li>
-                    <a href="my-requests">{t("accessRequestsMyRequests")}</a>
+                    <Link to="my-requests">{t("accessRequestsMyRequests")}</Link>
                 </li>
                 {canApprove && (
                     <li>
-                        <a href="approvals">{t("accessRequestsApprovals")}</a>
+                        <Link to="approvals">{t("accessRequestsApprovals")}</Link>
                     </li>
                 )}
             </ul>
