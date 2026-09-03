@@ -6,6 +6,8 @@ import { I18nextProvider } from "react-i18next";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+    addAlert: vi.fn(),
+    addError: vi.fn(),
     api: {
         approve: vi.fn(),
         cancel: vi.fn(),
@@ -24,12 +26,24 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@keycloak/keycloak-account-ui", () => ({
+    Page: ({ children, description, title }: { children: ReactNode; description: string; title: string }) => <>
+        <h1>{title}</h1>
+        <p>{description}</p>
+        {children}
+    </>,
     useEnvironment: () => ({
         environment: {
             realm: "finance",
             serverBaseUrl: "https://keycloak.example"
         },
         keycloak: mocks.keycloak
+    })
+}));
+
+vi.mock("./useAccessRequestAlerts", () => ({
+    useAccessRequestAlerts: () => ({
+        addAlert: mocks.addAlert,
+        addError: mocks.addError
     })
 }));
 
@@ -51,28 +65,79 @@ await i18n.init({
                 accessRequestsApprove: "Approve",
                 accessRequestsApproveEntitlement: "Approve {{entitlement}}",
                 accessRequestsApprovals: "Approvals",
+                accessRequestsApprovalsDescription: "Review and decide requests for the access you manage.",
+                accessRequestsApprover: "Approver",
                 accessRequestsCancel: "Cancel",
                 accessRequestsCancelRequest: "Cancel request",
+                accessRequestsCancelRequestDescription: "A canceled request cannot be restored.",
+                accessRequestsCancellationFailed: "Unable to cancel the access request: {{error}}",
                 accessRequestsConfirmApproval: "Confirm approval",
+                accessRequestsCurrentPage: "Current page",
+                accessRequestsDecidedAt: "Decided at",
+                accessRequestsDecision: "Decision",
                 accessRequestsDecisionComment: "Decision comment",
+                accessRequestsDecisionFailed: "Unable to record the decision: {{error}}",
+                accessRequestsFirstPage: "First page",
+                accessRequestsHistory: "History",
+                accessRequestsHistoryProvisioningFailed: "Provisioning failed",
+                accessRequestsHistoryProvisioningStarted: "Provisioning started",
+                accessRequestsHistoryProvisioningSucceeded: "Access granted",
+                accessRequestsHistoryRequestApproved: "Request approved",
+                accessRequestsHistoryRequestCanceled: "Request canceled",
+                accessRequestsHistoryRequestCreated: "Request created",
+                accessRequestsHistoryRequestRejected: "Request rejected",
+                accessRequestsItems: "items",
+                accessRequestsItemsPerPage: "Items per page",
                 accessRequestsJustification: "Justification",
+                accessRequestsLastPage: "Last page",
                 accessRequestsLoadError: "Unable to load access requests.",
                 accessRequestsLoading: "Loading access requests",
                 accessRequestsMyRequests: "My Requests",
+                accessRequestsMyRequestsDescription: "Track your requests and cancel any that are still pending.",
                 accessRequestsNextPage: "Next page",
-                accessRequestsPage: "Page {{page}} of {{pages}}",
+                accessRequestsNoApprovals: "No approvals pending",
+                accessRequestsNoApprovalsDescription: "New requests for the access you manage will appear here.",
+                accessRequestsNoRequestableAccess: "No access available",
+                accessRequestsNoRequestableAccessDescription: "There is no access available for you to request.",
+                accessRequestsNoRequests: "No requests yet",
+                accessRequestsNoRequestsDescription: "Request access to an application, role, or group and it will appear here.",
+                accessRequestsOf: "of",
+                accessRequestsPageLabel: "Page",
                 accessRequestsPagination: "Access request pagination",
                 accessRequestsPending: "Pending",
+                accessRequestsPerPage: "per page",
+                accessRequestsPages: "Pages",
                 accessRequestsPreviousPage: "Previous page",
+                accessRequestsProvisioning: "Provisioning",
+                accessRequestsProvisioningFailed: "Failed",
+                accessRequestsProvisioningNotStarted: "Not started",
+                accessRequestsProvisioningSucceeded: "Succeeded",
                 accessRequestsRequestAccess: "Request access",
+                accessRequestsRequestAccessDescription: "Browse the available access and submit a request.",
                 accessRequestsRequestAccessTo: "Request access to {{entitlement}}",
+                accessRequestsRequestApproved: "Access request approved.",
+                accessRequestsRequestCanceled: "Access request canceled.",
                 accessRequestsRequestDetails: "{{entitlement}} request details",
                 accessRequestsRequestPending: "Request pending",
+                accessRequestsRequestRejected: "Access request rejected.",
+                accessRequestsRequestSubmissionFailed: "Unable to submit the access request: {{error}}",
+                accessRequestsRequestSubmitted: "Access request submitted.",
                 accessRequestsRequestedBy: "{{entitlement}} requested by {{requester}}",
+                accessRequestsRequestedAt: "Requested at",
                 accessRequestsResourceType: "Resource type",
+                accessRequestsResourceTypeClientRole: "Client role",
+                accessRequestsResourceTypeGroup: "Group",
+                accessRequestsResourceTypeRealmRole: "Realm role",
                 accessRequestsRetry: "Retry",
-                accessRequestsRisk: "Risk: {{riskLevel}}",
+                accessRequestsRiskCritical: "Critical",
+                accessRequestsRiskHigh: "High",
                 accessRequestsRiskLabel: "Risk",
+                accessRequestsRiskLow: "Low",
+                accessRequestsRiskMedium: "Medium",
+                accessRequestsSearchCatalog: "Search access",
+                accessRequestsSearchCatalogPlaceholder: "Search by access name or description",
+                accessRequestsClearSearch: "Clear search",
+                accessRequestsStatus: "Status",
                 accessRequestsSubmitRequest: "Submit request",
                 accessRequestsViewDetails: "View details"
             }
@@ -95,6 +160,8 @@ function page<T>(items: T[], options: Partial<{ page: number; size: number; tota
 
 describe("Access Request Account Console route pages", () => {
     beforeEach(() => {
+        mocks.addAlert.mockReset();
+        mocks.addError.mockReset();
         Object.values(mocks.api).forEach((method) => method.mockReset());
         mocks.api.approve.mockResolvedValue(undefined);
         mocks.api.cancel.mockResolvedValue(undefined);
@@ -124,7 +191,7 @@ describe("Access Request Account Console route pages", () => {
 
         renderRoutePage(<RequestAccessRoutePage />);
 
-        const card = await screen.findByRole("article", { name: "Finance Reader" });
+        const card = await screen.findByRole("listitem", { name: "Finance Reader" });
         await user.click(within(card).getByRole("button", { name: "Request access" }));
         const dialog = screen.getByRole("dialog", { name: "Request access to Finance Reader" });
         await user.type(within(dialog).getByLabelText("Justification"), "I need month-end reports.");
@@ -135,6 +202,7 @@ describe("Access Request Account Console route pages", () => {
             justification: "I need month-end reports."
         }));
         await waitFor(() => expect(mocks.api.catalog).toHaveBeenCalledTimes(2));
+        expect(mocks.addAlert).toHaveBeenCalledWith("Access request submitted.");
 
         expect(mocks.createAccessRequestsApi).toHaveBeenCalledWith(expect.objectContaining({
             realm: "finance",
@@ -161,11 +229,14 @@ describe("Access Request Account Console route pages", () => {
 
         renderRoutePage(<MyRequestsRoutePage />);
 
-        const card = await screen.findByRole("article", { name: "Finance Reader" });
+        const card = await screen.findByRole("listitem", { name: "Finance Reader" });
         await user.click(within(card).getByRole("button", { name: "Cancel request" }));
+        await user.click(within(screen.getByRole("dialog", { name: "Cancel request" }))
+            .getByRole("button", { name: "Cancel request" }));
 
         await waitFor(() => expect(mocks.api.cancel).toHaveBeenCalledWith("request-1"));
         await waitFor(() => expect(mocks.api.mine).toHaveBeenCalledTimes(2));
+        expect(mocks.addAlert).toHaveBeenCalledWith("Access request canceled.");
     });
 
     it("keeps requester data visible and reports a refresh failure after cancellation", async () => {
@@ -177,13 +248,15 @@ describe("Access Request Account Console route pages", () => {
 
         renderRoutePage(<MyRequestsRoutePage />);
 
-        const card = await screen.findByRole("article", { name: "Finance Reader" });
+        const card = await screen.findByRole("listitem", { name: "Finance Reader" });
         await user.click(within(card).getByRole("button", { name: "Cancel request" }));
+        await user.click(within(screen.getByRole("dialog", { name: "Cancel request" }))
+            .getByRole("button", { name: "Cancel request" }));
 
         const alert = await screen.findByRole("alert");
         expect(alert).toHaveTextContent("Unable to load access requests.");
         expect(alert).toHaveTextContent("My requests refresh unavailable");
-        expect(screen.getByRole("article", { name: "Finance Reader" })).toBeVisible();
+        expect(screen.getByRole("listitem", { name: "Finance Reader" })).toBeVisible();
         await user.click(within(alert).getByRole("button", { name: "Retry" }));
         await waitFor(() => expect(mocks.api.mine).toHaveBeenCalledTimes(3));
     });
@@ -208,7 +281,7 @@ describe("Access Request Account Console route pages", () => {
 
         renderRoutePage(<RequestAccessRoutePage />);
 
-        const card = await screen.findByRole("article", { name: "Finance Reader" });
+        const card = await screen.findByRole("listitem", { name: "Finance Reader" });
         await user.click(within(card).getByRole("button", { name: "Request access" }));
         const dialog = screen.getByRole("dialog", { name: "Request access to Finance Reader" });
         await user.type(within(dialog).getByLabelText("Justification"), "I need month-end reports.");
@@ -217,7 +290,7 @@ describe("Access Request Account Console route pages", () => {
         const alert = await screen.findByRole("alert");
         expect(alert).toHaveTextContent("Catalog refresh unavailable");
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-        expect(screen.getByRole("article", { name: "Finance Reader" })).toBeVisible();
+        expect(screen.getByRole("listitem", { name: "Finance Reader" })).toBeVisible();
     });
 
     it("loads each catalog page instead of truncating requestable entitlements", async () => {
@@ -248,15 +321,143 @@ describe("Access Request Account Console route pages", () => {
 
         renderRoutePage(<RequestAccessRoutePage />);
 
-        await screen.findByRole("article", { name: "Finance Reader" });
+        await screen.findByRole("listitem", { name: "Finance Reader" });
         const pager = screen.getByRole("navigation", { name: "Access request pagination" });
-        expect(within(pager).getByText("Page 1 of 2")).toBeVisible();
+        expect(within(pager).getByLabelText("Current page")).toHaveValue(1);
         await user.click(within(pager).getByRole("button", { name: "Next page" }));
 
-        await waitFor(() => expect(mocks.api.catalog).toHaveBeenLastCalledWith({ page: 1 }));
-        await screen.findByRole("article", { name: "HR Reader" });
+        await waitFor(() => expect(mocks.api.catalog).toHaveBeenLastCalledWith({ page: 1, size: 20 }));
+        await screen.findByRole("listitem", { name: "HR Reader" });
         expect(within(screen.getByRole("navigation", { name: "Access request pagination" }))
             .getByRole("button", { name: "Previous page" })).toBeEnabled();
+    });
+
+    it("searches the catalog with the native toolbar, resets the page, and clears the filter", async () => {
+        const user = userEvent.setup();
+        mocks.api.catalog
+            .mockResolvedValueOnce(page([
+                {
+                    alreadyGranted: false,
+                    description: "First catalog page",
+                    displayName: "Finance Reader",
+                    id: "finance-reader",
+                    pendingRequest: false,
+                    resourceType: "CLIENT_ROLE",
+                    riskLevel: "LOW"
+                }
+            ], { total: 21 }))
+            .mockResolvedValueOnce(page([
+                {
+                    alreadyGranted: false,
+                    description: "Second catalog page",
+                    displayName: "HR Reader",
+                    id: "hr-reader",
+                    pendingRequest: false,
+                    resourceType: "REALM_ROLE",
+                    riskLevel: "LOW"
+                }
+            ], { page: 1, total: 21 }))
+            .mockResolvedValueOnce(page([
+                {
+                    alreadyGranted: false,
+                    description: "Filtered catalog page",
+                    displayName: "Finance Reader",
+                    id: "finance-reader",
+                    pendingRequest: false,
+                    resourceType: "CLIENT_ROLE",
+                    riskLevel: "LOW"
+                }
+            ], { total: 1 }))
+            .mockResolvedValueOnce(page([], { total: 0 }));
+
+        renderRoutePage(<RequestAccessRoutePage />);
+
+        await screen.findByRole("listitem", { name: "Finance Reader" });
+        await user.click(within(screen.getByRole("navigation", { name: "Access request pagination" }))
+            .getByRole("button", { name: "Next page" }));
+        await screen.findByRole("listitem", { name: "HR Reader" });
+
+        const search = screen.getByRole("textbox", { name: "Search access" });
+        await user.type(search, "finance");
+        await waitFor(() => expect(mocks.api.catalog).toHaveBeenLastCalledWith({
+            page: 0,
+            search: "finance",
+            size: 20
+        }));
+        await screen.findByRole("listitem", { name: "Finance Reader" });
+
+        await user.clear(search);
+        await waitFor(() => expect(mocks.api.catalog).toHaveBeenLastCalledWith({
+            page: 0,
+            search: undefined,
+            size: 20
+        }));
+        expect(screen.getByRole("textbox", { name: "Search access" })).toBeVisible();
+        expect(screen.getByRole("heading", { level: 2, name: "No access available" })).toBeVisible();
+    });
+
+    it("keeps the newest catalog search result when an earlier search finishes later", async () => {
+        const user = userEvent.setup();
+        let resolveFinanceSearch: ((value: ReturnType<typeof page>) => void) | undefined;
+        let resolveHrSearch: ((value: ReturnType<typeof page>) => void) | undefined;
+        mocks.api.catalog
+            .mockResolvedValueOnce(page([
+                {
+                    alreadyGranted: false,
+                    description: "Initial catalog page",
+                    displayName: "Finance Reader",
+                    id: "finance-reader",
+                    pendingRequest: false,
+                    resourceType: "CLIENT_ROLE",
+                    riskLevel: "LOW"
+                }
+            ]))
+            .mockImplementation(({ search }: { search?: string }) => new Promise<ReturnType<typeof page>>((resolve) => {
+                if (search === "finance") {
+                    resolveFinanceSearch = resolve;
+                }
+                if (search === "hr") {
+                    resolveHrSearch = resolve;
+                }
+            }));
+
+        renderRoutePage(<RequestAccessRoutePage />);
+
+        await screen.findByRole("listitem", { name: "Finance Reader" });
+        const search = screen.getByRole("textbox", { name: "Search access" });
+        await user.type(search, "finance");
+        await waitFor(() => expect(resolveFinanceSearch).toBeDefined());
+
+        await user.clear(search);
+        await user.type(search, "hr");
+        await waitFor(() => expect(resolveHrSearch).toBeDefined());
+        resolveHrSearch?.(page([
+            {
+                alreadyGranted: false,
+                description: "Human resources catalog page",
+                displayName: "HR Reader",
+                id: "hr-reader",
+                pendingRequest: false,
+                resourceType: "REALM_ROLE",
+                riskLevel: "LOW"
+            }
+        ]));
+        await screen.findByRole("listitem", { name: "HR Reader" });
+
+        resolveFinanceSearch?.(page([
+            {
+                alreadyGranted: false,
+                description: "Stale finance catalog page",
+                displayName: "Finance Reader",
+                id: "finance-reader",
+                pendingRequest: false,
+                resourceType: "CLIENT_ROLE",
+                riskLevel: "LOW"
+            }
+        ]));
+
+        await waitFor(() => expect(screen.getByRole("listitem", { name: "HR Reader" })).toBeVisible());
+        expect(screen.queryByRole("listitem", { name: "Finance Reader" })).not.toBeInTheDocument();
     });
 
     it("loads each requester and approval queue page", async () => {
@@ -266,11 +467,11 @@ describe("Access Request Account Console route pages", () => {
             .mockResolvedValueOnce(page([requestSummary("request-2", "HR Reader")], { page: 1, total: 21 }));
 
         const requesterView = renderRoutePage(<MyRequestsRoutePage />);
-        await screen.findByRole("article", { name: "Finance Reader" });
+        await screen.findByRole("listitem", { name: "Finance Reader" });
         await user.click(within(screen.getByRole("navigation", { name: "Access request pagination" }))
             .getByRole("button", { name: "Next page" }));
-        await waitFor(() => expect(mocks.api.mine).toHaveBeenLastCalledWith({ page: 1 }));
-        await screen.findByRole("article", { name: "HR Reader" });
+        await waitFor(() => expect(mocks.api.mine).toHaveBeenLastCalledWith({ page: 1, size: 20 }));
+        await screen.findByRole("listitem", { name: "HR Reader" });
         requesterView.unmount();
 
         mocks.api.pending
@@ -278,11 +479,37 @@ describe("Access Request Account Console route pages", () => {
             .mockResolvedValueOnce(page([pendingRequest("request-4", "HR Reader")], { page: 1, total: 21 }));
 
         renderRoutePage(<ApprovalsRoutePage />);
-        await screen.findByRole("article", { name: "Finance Reader requested by anass" });
+        await screen.findByRole("listitem", { name: "Finance Reader requested by anass" });
         await user.click(within(screen.getByRole("navigation", { name: "Access request pagination" }))
             .getByRole("button", { name: "Next page" }));
-        await waitFor(() => expect(mocks.api.pending).toHaveBeenLastCalledWith({ page: 1 }));
-        await screen.findByRole("article", { name: "HR Reader requested by anass" });
+        await waitFor(() => expect(mocks.api.pending).toHaveBeenLastCalledWith({ page: 1, size: 20 }));
+        await screen.findByRole("listitem", { name: "HR Reader requested by anass" });
+    });
+
+    it("changes the catalog page size through the native pagination control", async () => {
+        const user = userEvent.setup();
+        const catalog = {
+            alreadyGranted: false,
+            description: "Read finance reports",
+            displayName: "Finance Reader",
+            id: "finance-reader",
+            pendingRequest: false,
+            resourceType: "CLIENT_ROLE",
+            riskLevel: "LOW"
+        };
+        mocks.api.catalog
+            .mockResolvedValueOnce(page([catalog], { total: 21 }))
+            .mockResolvedValueOnce(page([catalog], { size: 10, total: 21 }));
+
+        renderRoutePage(<RequestAccessRoutePage />);
+
+        await screen.findByRole("listitem", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "Items per page" }));
+        await user.click(screen.getByText("10 per page"));
+
+        await waitFor(() => expect(mocks.api.catalog).toHaveBeenLastCalledWith({ page: 0, size: 10 }));
+        expect(within(screen.getByRole("navigation", { name: "Access request pagination" }))
+            .getByLabelText("Current page")).toHaveValue(1);
     });
 
     it("loads the selected request's full detail before displaying its history", async () => {
@@ -320,7 +547,7 @@ describe("Access Request Account Console route pages", () => {
 
         renderRoutePage(<MyRequestsRoutePage />);
 
-        const card = await screen.findByRole("article", { name: "Finance Reader" });
+        const card = await screen.findByRole("listitem", { name: "Finance Reader" });
         await user.click(within(card).getByRole("button", { name: "View details" }));
 
         const dialog = await screen.findByRole("dialog", { name: "Finance Reader request details" });
@@ -328,8 +555,8 @@ describe("Access Request Account Console route pages", () => {
         expect(within(dialog).getByText("I need month-end reports.")).toBeVisible();
         expect(within(dialog).getByText("finance-approver")).toBeVisible();
         expect(within(dialog).getByText("Approved for month-end.")).toBeVisible();
-        expect(within(dialog).getByText("REQUEST_CREATED")).toBeVisible();
-        expect(within(dialog).getByText("REQUEST_APPROVED")).toBeVisible();
+        expect(within(dialog).getByText("Request created")).toBeVisible();
+        expect(within(dialog).getByText("Request approved")).toBeVisible();
     });
 
     it("loads pending approvals and approves a request", async () => {
@@ -349,7 +576,7 @@ describe("Access Request Account Console route pages", () => {
 
         renderRoutePage(<ApprovalsRoutePage />);
 
-        const card = await screen.findByRole("article", { name: "Finance Reader requested by anass" });
+        const card = await screen.findByRole("listitem", { name: "Finance Reader requested by anass" });
         await user.click(within(card).getByRole("button", { name: "Approve" }));
         const dialog = screen.getByRole("dialog", { name: "Approve Finance Reader" });
         await user.type(within(dialog).getByLabelText("Decision comment"), "Approved.");
@@ -357,6 +584,7 @@ describe("Access Request Account Console route pages", () => {
 
         await waitFor(() => expect(mocks.api.approve).toHaveBeenCalledWith("request-1", { comment: "Approved." }));
         await waitFor(() => expect(mocks.api.pending).toHaveBeenCalledTimes(2));
+        expect(mocks.addAlert).toHaveBeenCalledWith("Access request approved.");
     });
 
     it("keeps approval data visible and reports a refresh failure after a decision", async () => {
@@ -369,7 +597,7 @@ describe("Access Request Account Console route pages", () => {
 
         renderRoutePage(<ApprovalsRoutePage />);
 
-        const card = await screen.findByRole("article", { name: "Finance Reader requested by anass" });
+        const card = await screen.findByRole("listitem", { name: "Finance Reader requested by anass" });
         await user.click(within(card).getByRole("button", { name: "Approve" }));
         const dialog = screen.getByRole("dialog", { name: "Approve Finance Reader" });
         await user.click(within(dialog).getByRole("button", { name: "Confirm approval" }));
@@ -377,7 +605,7 @@ describe("Access Request Account Console route pages", () => {
         const alert = await screen.findByRole("alert");
         expect(alert).toHaveTextContent("Approval queue refresh unavailable");
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-        expect(screen.getByRole("article", { name: "Finance Reader requested by anass" })).toBeVisible();
+        expect(screen.getByRole("listitem", { name: "Finance Reader requested by anass" })).toBeVisible();
     });
 
     it("shows a retryable page-level error when loading fails", async () => {
