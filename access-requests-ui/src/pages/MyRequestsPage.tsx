@@ -78,12 +78,14 @@ export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh
 
         try {
             await onCancel(requestId);
-            await onRefresh?.();
         } catch (error) {
             setCancellationError(errorMessage(error));
-        } finally {
             setCancellingRequestId(undefined);
+            return;
         }
+
+        await onRefresh?.();
+        setCancellingRequestId(undefined);
     };
 
     const openDetails = async (request: AccessRequest) => {

@@ -19,13 +19,14 @@ import { RequestAccessPage, type RequestableEntitlement } from "./RequestAccessP
 type LoadState<T> = {
     error?: unknown;
     loading: boolean;
+    refreshError?: unknown;
     value?: T;
 };
 
 export function RequestAccessRoutePage() {
     const api = useAccessRequestsApi();
     const loadCatalog = useCallback((page: number) => api.catalog({ page }), [api]);
-    const { error, loading, reload, setPage, value } = usePagedLoader(loadCatalog);
+    const { error, loading, refreshError, reload, setPage, value } = usePagedLoader(loadCatalog);
 
     if (error) {
         return <LoadError error={error} onRetry={reload} />;
@@ -34,7 +35,8 @@ export function RequestAccessRoutePage() {
         return <LoadingState />;
     }
 
-    return (
+    return <>
+        {refreshError && <RefreshError error={refreshError} onRetry={reload} />}
         <RequestAccessPage
             entries={catalogEntries(value)}
             onRefresh={reload}
@@ -43,13 +45,13 @@ export function RequestAccessRoutePage() {
             }}
             pagination={pagination(value, setPage)}
         />
-    );
+    </>;
 }
 
 export function MyRequestsRoutePage() {
     const api = useAccessRequestsApi();
     const loadRequests = useCallback((page: number) => api.mine({ page }), [api]);
-    const { error, loading, reload, setPage, value } = usePagedLoader(loadRequests);
+    const { error, loading, refreshError, reload, setPage, value } = usePagedLoader(loadRequests);
 
     if (error) {
         return <LoadError error={error} onRetry={reload} />;
@@ -58,7 +60,8 @@ export function MyRequestsRoutePage() {
         return <LoadingState />;
     }
 
-    return (
+    return <>
+        {refreshError && <RefreshError error={refreshError} onRetry={reload} />}
         <MyRequestsPage
             onCancel={api.cancel}
             onRefresh={reload}
@@ -66,13 +69,13 @@ export function MyRequestsRoutePage() {
             pagination={pagination(value, setPage)}
             requests={requestEntries(value)}
         />
-    );
+    </>;
 }
 
 export function ApprovalsRoutePage() {
     const api = useAccessRequestsApi();
     const loadPendingRequests = useCallback((page: number) => api.pending({ page }), [api]);
-    const { error, loading, reload, setPage, value } = usePagedLoader(loadPendingRequests);
+    const { error, loading, refreshError, reload, setPage, value } = usePagedLoader(loadPendingRequests);
 
     if (error) {
         return <LoadError error={error} onRetry={reload} />;
@@ -81,7 +84,8 @@ export function ApprovalsRoutePage() {
         return <LoadingState />;
     }
 
-    return (
+    return <>
+        {refreshError && <RefreshError error={refreshError} onRetry={reload} />}
         <ApprovalsPage
             onApprove={approve(api)}
             onRefresh={reload}
@@ -89,7 +93,7 @@ export function ApprovalsRoutePage() {
             pagination={pagination(value, setPage)}
             requests={pendingEntries(value)}
         />
-    );
+    </>;
 }
 
 function usePagedLoader<T>(load: (page: number) => Promise<Page<T>>) {
@@ -101,12 +105,16 @@ function usePagedLoader<T>(load: (page: number) => Promise<Page<T>>) {
 function useLoader<T>(load: () => Promise<T>) {
     const [state, setState] = useState<LoadState<T>>({ loading: true });
     const reload = useCallback(async () => {
-        setState((current) => ({ ...current, error: undefined, loading: true }));
+        setState((current) => current.value
+            ? { ...current, refreshError: undefined }
+            : { error: undefined, loading: true });
         try {
             const value = await load();
             setState({ loading: false, value });
         } catch (error) {
-            setState({ error, loading: false });
+            setState((current) => current.value
+                ? { ...current, refreshError: error }
+                : { error, loading: false });
         }
     }, [load]);
 
@@ -142,6 +150,10 @@ function LoadError({ error, onRetry }: { error: unknown; onRetry: () => Promise<
             <button type="button" onClick={() => void onRetry()}>{t("accessRequestsRetry")}</button>
         </section>
     );
+}
+
+function RefreshError({ error, onRetry }: { error: unknown; onRetry: () => Promise<void> }) {
+    return <LoadError error={error} onRetry={onRetry} />;
 }
 
 function catalogEntries(page: Page<CatalogItem>): RequestableEntitlement[] {

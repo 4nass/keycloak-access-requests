@@ -168,6 +168,58 @@ describe("Access Request Account Console route pages", () => {
         await waitFor(() => expect(mocks.api.mine).toHaveBeenCalledTimes(2));
     });
 
+    it("keeps requester data visible and reports a refresh failure after cancellation", async () => {
+        const user = userEvent.setup();
+        mocks.api.mine
+            .mockResolvedValueOnce(page([requestSummary("request-1", "Finance Reader")]))
+            .mockRejectedValueOnce(new Error("My requests refresh unavailable"))
+            .mockResolvedValue(page([requestSummary("request-1", "Finance Reader")]));
+
+        renderRoutePage(<MyRequestsRoutePage />);
+
+        const card = await screen.findByRole("article", { name: "Finance Reader" });
+        await user.click(within(card).getByRole("button", { name: "Cancel request" }));
+
+        const alert = await screen.findByRole("alert");
+        expect(alert).toHaveTextContent("Unable to load access requests.");
+        expect(alert).toHaveTextContent("My requests refresh unavailable");
+        expect(screen.getByRole("article", { name: "Finance Reader" })).toBeVisible();
+        await user.click(within(alert).getByRole("button", { name: "Retry" }));
+        await waitFor(() => expect(mocks.api.mine).toHaveBeenCalledTimes(3));
+    });
+
+    it("keeps catalog data visible and reports a refresh failure after submission", async () => {
+        const user = userEvent.setup();
+        const catalog = page([
+            {
+                alreadyGranted: false,
+                description: "Read finance reports",
+                displayName: "Finance Reader",
+                id: "finance-reader",
+                pendingRequest: false,
+                resourceType: "CLIENT_ROLE",
+                riskLevel: "LOW"
+            }
+        ]);
+        mocks.api.catalog
+            .mockResolvedValueOnce(catalog)
+            .mockRejectedValueOnce(new Error("Catalog refresh unavailable"))
+            .mockResolvedValue(catalog);
+
+        renderRoutePage(<RequestAccessRoutePage />);
+
+        const card = await screen.findByRole("article", { name: "Finance Reader" });
+        await user.click(within(card).getByRole("button", { name: "Request access" }));
+        const dialog = screen.getByRole("dialog", { name: "Request access to Finance Reader" });
+        await user.type(within(dialog).getByLabelText("Justification"), "I need month-end reports.");
+        await user.click(within(dialog).getByRole("button", { name: "Submit request" }));
+
+        const alert = await screen.findByRole("alert");
+        expect(alert).toHaveTextContent("Catalog refresh unavailable");
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(screen.getByRole("article", { name: "Finance Reader" })).toBeVisible();
+    });
+
     it("loads each catalog page instead of truncating requestable entitlements", async () => {
         const user = userEvent.setup();
         mocks.api.catalog
@@ -305,6 +357,27 @@ describe("Access Request Account Console route pages", () => {
 
         await waitFor(() => expect(mocks.api.approve).toHaveBeenCalledWith("request-1", { comment: "Approved." }));
         await waitFor(() => expect(mocks.api.pending).toHaveBeenCalledTimes(2));
+    });
+
+    it("keeps approval data visible and reports a refresh failure after a decision", async () => {
+        const user = userEvent.setup();
+        const pending = page([pendingRequest("request-1", "Finance Reader")]);
+        mocks.api.pending
+            .mockResolvedValueOnce(pending)
+            .mockRejectedValueOnce(new Error("Approval queue refresh unavailable"))
+            .mockResolvedValue(pending);
+
+        renderRoutePage(<ApprovalsRoutePage />);
+
+        const card = await screen.findByRole("article", { name: "Finance Reader requested by anass" });
+        await user.click(within(card).getByRole("button", { name: "Approve" }));
+        const dialog = screen.getByRole("dialog", { name: "Approve Finance Reader" });
+        await user.click(within(dialog).getByRole("button", { name: "Confirm approval" }));
+
+        const alert = await screen.findByRole("alert");
+        expect(alert).toHaveTextContent("Approval queue refresh unavailable");
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(screen.getByRole("article", { name: "Finance Reader requested by anass" })).toBeVisible();
     });
 
     it("shows a retryable page-level error when loading fails", async () => {

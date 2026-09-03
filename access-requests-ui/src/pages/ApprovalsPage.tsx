@@ -42,7 +42,6 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagina
     const [comment, setComment] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [decisionError, setDecisionError] = useState<string>();
-    const [refreshError, setRefreshError] = useState<string>();
     const decisionCommentRef = useRef<HTMLTextAreaElement>(null);
 
     const closeDialog = () => {
@@ -63,7 +62,6 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagina
 
         setIsSubmitting(true);
         setDecisionError(undefined);
-        setRefreshError(undefined);
 
         try {
             if (pendingDecision.type === "approve") {
@@ -78,19 +76,13 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagina
         }
 
         closeDialog();
-        try {
-            await onRefresh?.();
-        } catch (error) {
-            setRefreshError(errorMessage(error));
-        } finally {
-            setIsSubmitting(false);
-        }
+        await onRefresh?.();
+        setIsSubmitting(false);
     };
 
     return (
         <section aria-labelledby="approvals-title">
             <h1 id="approvals-title">{t("accessRequestsApprovals")}</h1>
-            {refreshError && <p role="alert">{refreshError}</p>}
             {requests.map((request) => (
                 <article
                     key={request.id}

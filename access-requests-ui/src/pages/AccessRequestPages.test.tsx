@@ -271,40 +271,6 @@ describe("Access Request account console pages", () => {
         expect(screen.getByRole("alert")).toHaveTextContent("Request unavailable");
     });
 
-    it("closes a successful request dialog but keeps a refresh failure visible on the page", async () => {
-        const user = userEvent.setup();
-        const requestAccess = vi.fn().mockResolvedValue(undefined);
-        const refreshRequests = vi.fn().mockRejectedValue(new Error("Catalog refresh unavailable"));
-
-        renderAccessRequestUi(
-            <RequestAccessPage
-                entries={[
-                    {
-                        id: "finance-reader",
-                        name: "Finance Reader",
-                        description: "Read-only access to Finance Portal",
-                        resourceType: "CLIENT_ROLE",
-                        riskLevel: "LOW",
-                        alreadyGranted: false,
-                        pendingRequest: false
-                    }
-                ]}
-                onRequest={requestAccess}
-                onRefresh={refreshRequests}
-            />
-        );
-
-        await user.click(screen.getByRole("button", { name: "Request access" }));
-        const dialog = screen.getByRole("dialog", { name: "Request access to Finance Reader" });
-        await user.type(within(dialog).getByLabelText("Justification"), "I need finance reports.");
-        await user.click(within(dialog).getByRole("button", { name: "Submit request" }));
-
-        await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-        expect(requestAccess).toHaveBeenCalledOnce();
-        expect(refreshRequests).toHaveBeenCalledOnce();
-        expect(screen.getByRole("alert")).toHaveTextContent("Catalog refresh unavailable");
-    });
-
     it("moves focus into a request dialog, closes it with Escape, and restores focus to its trigger", async () => {
         const user = userEvent.setup();
 
@@ -618,40 +584,6 @@ describe("Access Request account console pages", () => {
 
         await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Decision unavailable"));
         expect(screen.getByRole("dialog", { name: "Approve Finance Reader" })).toBeVisible();
-    });
-
-    it("closes a successful decision dialog but keeps a refresh failure visible on the page", async () => {
-        const user = userEvent.setup();
-        const approve = vi.fn().mockResolvedValue(undefined);
-        const refreshApprovals = vi.fn().mockRejectedValue(new Error("Approval queue refresh unavailable"));
-
-        renderAccessRequestUi(
-            <ApprovalsPage
-                requests={[
-                    {
-                        id: "request-approval",
-                        requester: "Anass Chahbouni",
-                        entitlementName: "Finance Reader",
-                        resourceType: "CLIENT_ROLE",
-                        riskLevel: "HIGH",
-                        justification: "I need to reconcile finance data before closing.",
-                        requestedAt: "26 Aug 2026"
-                    }
-                ]}
-                onApprove={approve}
-                onRefresh={refreshApprovals}
-                onReject={vi.fn()}
-            />
-        );
-
-        await user.click(screen.getByRole("button", { name: "Approve" }));
-        const dialog = screen.getByRole("dialog", { name: "Approve Finance Reader" });
-        await user.click(within(dialog).getByRole("button", { name: "Confirm approval" }));
-
-        await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-        expect(approve).toHaveBeenCalledOnce();
-        expect(refreshApprovals).toHaveBeenCalledOnce();
-        expect(screen.getByRole("alert")).toHaveTextContent("Approval queue refresh unavailable");
     });
 
     it("moves focus into an approval dialog, closes it with Escape, and restores focus to its trigger", async () => {

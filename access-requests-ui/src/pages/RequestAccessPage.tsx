@@ -36,7 +36,6 @@ export function RequestAccessPage({ entries, onRequest, onRefresh, pagination }:
     const [justification, setJustification] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submissionError, setSubmissionError] = useState<string>();
-    const [refreshError, setRefreshError] = useState<string>();
     const justificationRef = useRef<HTMLTextAreaElement>(null);
 
     const closeDialog = () => {
@@ -52,7 +51,6 @@ export function RequestAccessPage({ entries, onRequest, onRefresh, pagination }:
 
         setIsSubmitting(true);
         setSubmissionError(undefined);
-        setRefreshError(undefined);
 
         try {
             await onRequest({
@@ -66,19 +64,13 @@ export function RequestAccessPage({ entries, onRequest, onRefresh, pagination }:
         }
 
         closeDialog();
-        try {
-            await onRefresh?.();
-        } catch (error) {
-            setRefreshError(errorMessage(error));
-        } finally {
-            setIsSubmitting(false);
-        }
+        await onRefresh?.();
+        setIsSubmitting(false);
     };
 
     return (
         <section aria-labelledby="request-access-title">
             <h1 id="request-access-title">{t("accessRequestsRequestAccess")}</h1>
-            {refreshError && <p role="alert">{refreshError}</p>}
             {entries.map((entry) => (
                 <article key={entry.id} aria-label={entry.name}>
                     <h2>{entry.name}</h2>
