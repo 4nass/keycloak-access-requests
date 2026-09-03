@@ -3,3 +3,8 @@ access-requests-ui/node_modules/
 access-requests-ui/coverage/
 access-requests-ui/dist/
 access-requests-ui/server/
+access-requests-ui/server.download-*/
+access-requests-ui/playwright-report/
+access-requests-ui/test-results/
+.cache/ms-playwright/
+.pnpm-store/

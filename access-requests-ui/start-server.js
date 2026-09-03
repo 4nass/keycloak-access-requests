@@ -15,6 +15,7 @@ const MANAGED_SERVER_DIRECTORY = path.join(DIRECTORY, "server");
 const PROVIDER_JAR = path.join(PROJECT_DIRECTORY, "target", "keycloak-access-requests.jar");
 const SCRIPT_EXTENSION = process.platform === "win32" ? ".bat" : ".sh";
 const KEYCLOAK_VERSION = process.env.KEYCLOAK_VERSION ?? packageJson.dependencies["@keycloak/keycloak-account-ui"];
+const accountDevMode = process.argv.includes("--account-dev");
 const argumentsForKeycloak = process.argv.slice(2).filter((argument) => argument !== "--account-dev");
 const serverDirectory = process.env.KEYCLOAK_HOME
     ? path.resolve(process.env.KEYCLOAK_HOME)
@@ -56,10 +57,27 @@ async function ensureServer(directory) {
         }
 
         await pipeline(Readable.fromWeb(response.body), createGunzip(), extract(temporaryDirectory, { strip: 1 }));
-        await fs.promises.rename(temporaryDirectory, directory);
+        await moveServerDirectory(temporaryDirectory, directory);
     } catch (error) {
         await fs.promises.rm(temporaryDirectory, { force: true, recursive: true });
         throw error;
+    }
+}
+
+async function moveServerDirectory(temporaryDirectory, directory) {
+    try {
+        await fs.promises.rename(temporaryDirectory, directory);
+    } catch (error) {
+        if (process.platform !== "win32" || error?.code !== "EPERM") {
+            throw error;
+        }
+
+        await fs.promises.cp(temporaryDirectory, directory, {
+            errorOnExist: true,
+            force: false,
+            recursive: true
+        });
+        await fs.promises.rm(temporaryDirectory, { force: true, recursive: true });
     }
 }
 
@@ -77,12 +95,16 @@ async function installProvider(directory) {
 function startServer(directory) {
     const environment = {
         ...process.env,
-        KC_ACCOUNT_VITE_URL: process.env.KC_ACCOUNT_VITE_URL ?? "http://localhost:5173",
         KC_BOOTSTRAP_ADMIN_PASSWORD: process.env.KC_BOOTSTRAP_ADMIN_PASSWORD ?? "admin",
         KC_BOOTSTRAP_ADMIN_USERNAME: process.env.KC_BOOTSTRAP_ADMIN_USERNAME ?? "admin"
     };
 
-    console.info(`Starting Keycloak with Account Console HMR at ${environment.KC_ACCOUNT_VITE_URL}.`);
+    if (accountDevMode) {
+        environment.KC_ACCOUNT_VITE_URL = process.env.KC_ACCOUNT_VITE_URL ?? "http://localhost:5173";
+        console.info(`Starting Keycloak with Account Console HMR at ${environment.KC_ACCOUNT_VITE_URL}.`);
+    } else {
+        console.info("Starting Keycloak with the packaged Account Console theme.");
+    }
     const processHandle = spawn(
         keycloakExecutable(directory),
         [

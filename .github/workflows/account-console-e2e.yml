@@ -1,0 +1,91 @@
+name: Account Console E2E
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'access-requests-ui/**'
+      - '*.xml'
+      - 'pom.xml'
+      - '.github/workflows/account-console-e2e.yml'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: account-console-e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  account-console-e2e:
+    name: Keycloak 26.7.3 Account Console E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Java
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Package provider JAR and Account Console theme
+        run: mvn --batch-mode --no-transfer-progress clean package -DskipTests
+
+      - name: Install Playwright browsers
+        working-directory: access-requests-ui
+        run: |
+          "${GITHUB_WORKSPACE}/target/frontend/node/node" \
+            "${GITHUB_WORKSPACE}/target/frontend/node/node_modules/pnpm/bin/pnpm.cjs" exec playwright install --with-deps chromium firefox
+
+      - name: Start Keycloak with the packaged provider
+        working-directory: access-requests-ui
+        run: |
+          nohup "${GITHUB_WORKSPACE}/target/frontend/node/node" ./start-server.js > "${GITHUB_WORKSPACE}/target/keycloak-e2e.log" 2>&1 &
+
+      - name: Wait for Keycloak
+        run: |
+          for attempt in {1..90}; do
+            if curl --fail --silent --show-error http://localhost:8080/realms/master/.well-known/openid-configuration > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat target/keycloak-e2e.log
+          exit 1
+
+      - name: Select the packaged Account Console theme
+        run: |
+          access-requests-ui/server/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin
+          access-requests-ui/server/bin/kcadm.sh update realms/master -s accountTheme=access-requests
+
+      - name: Run Account Console browser tests
+        working-directory: access-requests-ui
+        env:
+          CI: true
+          KEYCLOAK_ACCOUNT_CONSOLE_URL: http://localhost:8080/realms/master/account/
+          KEYCLOAK_TEST_USERNAME: admin
+          KEYCLOAK_TEST_PASSWORD: admin
+        run: |
+          "${GITHUB_WORKSPACE}/target/frontend/node/node" \
+            "${GITHUB_WORKSPACE}/target/frontend/node/node_modules/pnpm/bin/pnpm.cjs" run test:e2e
+
+      - name: Upload E2E diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: account-console-e2e-diagnostics
+          path: |
+            target/keycloak-e2e.log
+            access-requests-ui/playwright-report/
+            access-requests-ui/test-results/
+          if-no-files-found: warn
+          retention-days: 7
