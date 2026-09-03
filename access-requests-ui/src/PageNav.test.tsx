@@ -24,7 +24,7 @@ await i18n.init({
             translation: {
                 accessRequestsApprovals: "Approvals",
                 accessRequestsMyRequests: "My Requests",
-                accessRequestsNav: "Access",
+                accessRequestsNav: "Access requests",
                 accessRequestsRequestAccess: "Request access",
                 accountManagement: "Account management",
                 applications: "Applications",
@@ -39,9 +39,9 @@ await i18n.init({
     }
 });
 
-function renderPageNav() {
+function renderPageNav(initialEntry = "/request-access") {
     return render(
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[initialEntry]}>
             <I18nextProvider i18n={i18n}>
                 <PageNav />
             </I18nextProvider>
@@ -57,7 +57,7 @@ describe("Access Request Account Console navigation", () => {
     it("shows Approvals to an approver even when the approval queue is empty", async () => {
         mocks.capabilities.mockResolvedValue({ canApprove: true });
 
-        renderPageNav();
+        renderPageNav("/approvals");
 
         await waitFor(() => expect(screen.getByRole("link", { name: "Approvals" })).toBeVisible());
     });
@@ -69,5 +69,30 @@ describe("Access Request Account Console navigation", () => {
 
         await waitFor(() => expect(mocks.capabilities).toHaveBeenCalledOnce());
         expect(screen.queryByRole("link", { name: "Approvals" })).not.toBeInTheDocument();
+    });
+
+    it("renders Access requests as an expanded native navigation group for an active route", async () => {
+        mocks.capabilities.mockResolvedValue({ canApprove: false });
+
+        renderPageNav();
+
+        const group = screen.getByRole("button", { name: "Access requests" });
+        expect(group).toHaveAttribute("aria-expanded", "true");
+
+        const navigation = screen.getByRole("navigation", { name: "Account management" });
+        expect(screen.getAllByRole("navigation")).toHaveLength(1);
+        expect(navigation).toContainElement(group);
+        const requestAccess = screen.getByRole("link", { name: "Request access" });
+        expect(navigation).toContainElement(requestAccess);
+        expect(requestAccess).toHaveAttribute("aria-current", "page");
+        expect(navigation).toContainElement(screen.getByRole("link", { name: "My Requests" }));
+    });
+
+    it("collapses Access requests when another account page is active", async () => {
+        mocks.capabilities.mockResolvedValue({ canApprove: false });
+
+        renderPageNav("/personal-info");
+
+        expect(screen.getByRole("button", { name: "Access requests" })).toHaveAttribute("aria-expanded", "false");
     });
 });

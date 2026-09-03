@@ -47,9 +47,9 @@ export function PageNav() {
                         {navigationItems.map(({ path, label }) => (
                             <NavigationItem key={path} path={path} label={t(label)} />
                         ))}
+                        <AccessRequestNavigation canApprove={canApprove} />
                     </NavList>
                 </Nav>
-                <AccessRequestNavigation canApprove={canApprove} />
             </PageSidebarBody>
         </PageSidebar>
     );
