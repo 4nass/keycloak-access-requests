@@ -4,6 +4,7 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.OPTIONS;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
@@ -112,6 +113,19 @@ class AccessRequestRealmResourceProviderTest {
         assertTrue(listHandler.isAnnotationPresent(GET.class));
         assertEquals("mine", listHandler.getAnnotation(Path.class).value());
         assertEquals(MediaType.APPLICATION_JSON, listHandler.getAnnotation(Produces.class).value()[0]);
+    }
+
+    @Test
+    void exposesAJsonGetHandlerForAnAuthenticatedRequestersRequestDetail() {
+        var detailsHandler = Arrays.stream(AccessRequestRealmResource.class.getDeclaredMethods())
+                .filter(method -> method.getName().equals("requestDetails"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("The requester request detail must expose a GET handler."));
+
+        assertTrue(detailsHandler.isAnnotationPresent(GET.class));
+        assertEquals("mine/{requestId}", detailsHandler.getAnnotation(Path.class).value());
+        assertEquals(MediaType.APPLICATION_JSON, detailsHandler.getAnnotation(Produces.class).value()[0]);
+        assertEquals("requestId", detailsHandler.getParameters()[0].getAnnotation(PathParam.class).value());
     }
 
     @Test

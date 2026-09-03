@@ -4,6 +4,7 @@ import ch.anass.keycloak.accessrequests.core.domain.CatalogEntry;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogResult;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestDetails;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueEntry;
@@ -31,11 +32,13 @@ import ch.anass.keycloak.accessrequests.core.service.InvalidJustificationExcepti
 import ch.anass.keycloak.accessrequests.core.service.ConcurrentRequestModificationException;
 import ch.anass.keycloak.accessrequests.core.service.ConcurrentEntitlementModificationException;
 import ch.anass.keycloak.accessrequests.core.service.RequestAlreadyPendingException;
+import ch.anass.keycloak.accessrequests.core.service.RequestDetailsService;
 import ch.anass.keycloak.accessrequests.core.service.RequestNotFoundException;
 import ch.anass.keycloak.accessrequests.core.service.RequestPolicy;
 import ch.anass.keycloak.accessrequests.core.service.RequestService;
 import ch.anass.keycloak.accessrequests.core.service.UserDisabledException;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestEventPublisher;
+import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestHistoryReader;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaEntitlementRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaEntitlementAuditEventPublisher;
@@ -258,6 +261,20 @@ public final class AccessRequestRealmResource {
             return Response.ok(RequestListResponse.from(requestPage)).build();
         } catch (IllegalArgumentException exception) {
             return error(Response.Status.BAD_REQUEST, "INVALID_REQUEST_QUERY", exception.getMessage(), null);
+        }
+    }
+
+    @GET
+    @Path("mine/{requestId}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response requestDetails(@PathParam("requestId") String requestId) {
+        AuthenticatedRequest authenticatedRequest = authenticate();
+        try {
+            AccessRequestDetails details = requestDetailsService().findForRequester(
+                    authenticatedRequest.realm().getId(), authenticatedRequest.user().getId(), requestId);
+            return Response.ok(RequestDetailResponse.from(details)).build();
+        } catch (RequestNotFoundException exception) {
+            return error(Response.Status.NOT_FOUND, "REQUEST_NOT_FOUND", exception.getMessage(), requestId);
         }
     }
 
@@ -496,6 +513,16 @@ public final class AccessRequestRealmResource {
                         authenticatedRequest.realm(), authenticatedRequest.user()));
     }
 
+    private RequestDetailsService requestDetailsService() {
+        var entityManager = Objects.requireNonNull(
+                session.getProvider(JpaConnectionProvider.class),
+                "Keycloak JPA connection provider must not be null")
+                .getEntityManager();
+        return new RequestDetailsService(
+                new JpaAccessRequestRepository(entityManager),
+                new JpaAccessRequestHistoryReader(entityManager));
+    }
+
     private Response decide(String requestId, DecisionSubmission submission, boolean approved) {
         AuthenticatedRequest authenticatedRequest = authenticate();
         if (submission == null) {
@@ -727,6 +754,51 @@ public final class AccessRequestRealmResource {
                     request.decisionStatus(),
                     request.provisioningStatus(),
                     request.createdAt().toString());
+        }
+    }
+
+    public record RequestDetailResponse(
+            String id,
+            String entitlementId,
+            ResourceType resourceType,
+            String resourceName,
+            DecisionStatus decisionStatus,
+            ProvisioningStatus provisioningStatus,
+            String createdAt,
+            String justification,
+            DecisionResponse decision,
+            List<RequestHistoryEntryResponse> history) {
+
+        private static RequestDetailResponse from(AccessRequestDetails details) {
+            AccessRequest request = details.request();
+            DecisionResponse decision = request.approverId() == null
+                    ? null
+                    : new DecisionResponse(
+                            request.approverId(),
+                            request.decisionComment(),
+                            request.decidedAt().toString());
+            return new RequestDetailResponse(
+                    request.id(),
+                    request.entitlementId(),
+                    request.resourceType(),
+                    request.resourceNameSnapshot(),
+                    request.decisionStatus(),
+                    request.provisioningStatus(),
+                    request.createdAt().toString(),
+                    request.justification(),
+                    decision,
+                    details.history().stream().map(RequestHistoryEntryResponse::from).toList());
+        }
+    }
+
+    public record DecisionResponse(String approverId, String comment, String decidedAt) {
+    }
+
+    public record RequestHistoryEntryResponse(String type, String occurredAt) {
+
+        private static RequestHistoryEntryResponse from(
+                ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent event) {
+            return new RequestHistoryEntryResponse(event.type().name(), event.occurredAt().toString());
         }
     }
 

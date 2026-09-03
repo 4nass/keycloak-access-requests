@@ -61,4 +61,16 @@ public class AccessRequestEventEntity {
         this.comment = event.comment();
         this.metadata = event.metadata();
     }
+
+    AccessRequestEvent toDomain() {
+        return AccessRequestEvent.rehydrate(
+                id,
+                requestId,
+                realmId,
+                type,
+                actorId,
+                java.time.Instant.ofEpochMilli(occurredAt),
+                comment,
+                metadata);
+    }
 }
