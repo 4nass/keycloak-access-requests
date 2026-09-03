@@ -83,6 +83,18 @@ public final class AccessRequestEvent {
         return from(request, AccessRequestEventType.PROVISIONING_FAILED, actorId, occurredAt, failureReason);
     }
 
+    public static AccessRequestEvent rehydrate(
+            String id,
+            String requestId,
+            String realmId,
+            AccessRequestEventType type,
+            String actorId,
+            Instant occurredAt,
+            String comment,
+            String metadata) {
+        return new AccessRequestEvent(id, requestId, realmId, type, actorId, occurredAt, comment, metadata);
+    }
+
     private static AccessRequestEvent from(
             AccessRequest request,
             AccessRequestEventType type,
