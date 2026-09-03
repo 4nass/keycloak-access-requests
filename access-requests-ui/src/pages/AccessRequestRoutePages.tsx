@@ -7,6 +7,7 @@ import {
     type CatalogItem,
     type Page,
     type PendingRequest,
+    type RequestDetails,
     type RequestSummary
 } from "../api/AccessRequestsApi";
 import { useAccessRequestsApi } from "../api/useAccessRequestsApi";
@@ -55,7 +56,14 @@ export function MyRequestsRoutePage() {
         return <LoadingState />;
     }
 
-    return <MyRequestsPage onCancel={api.cancel} onRefresh={reload} requests={requestEntries(value)} />;
+    return (
+        <MyRequestsPage
+            onCancel={api.cancel}
+            onRefresh={reload}
+            onRequestDetails={async (requestId) => requestDetails(await api.requestDetails(requestId))}
+            requests={requestEntries(value)}
+        />
+    );
 }
 
 export function ApprovalsRoutePage() {
@@ -133,6 +141,20 @@ function requestEntries(page: Page<RequestSummary>): AccessRequest[] {
         requestedAt: item.createdAt,
         resourceType: item.resourceType
     }));
+}
+
+function requestDetails(details: RequestDetails) {
+    return {
+        decision: details.decision
+            ? {
+                    approver: details.decision.approverId,
+                    comment: details.decision.comment ?? "",
+                    decidedAt: details.decision.decidedAt
+                }
+            : undefined,
+        history: details.history,
+        justification: details.justification
+    };
 }
 
 function pendingEntries(page: Page<PendingRequest>): PendingApproval[] {

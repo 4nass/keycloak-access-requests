@@ -33,6 +33,19 @@ type RequestSummary = {
     createdAt: string;
 };
 
+type RequestDetails = RequestSummary & {
+    justification: string;
+    decision?: {
+        approverId: string;
+        comment: string | null;
+        decidedAt: string;
+    };
+    history: Array<{
+        type: string;
+        occurredAt: string;
+    }>;
+};
+
 type PendingRequest = {
     id: string;
     requesterId: string;
@@ -53,6 +66,7 @@ type AccessRequestsApi = {
         provisioningStatus: string;
     }>;
     mine(query?: { page?: number; size?: number }): Promise<Page<RequestSummary>>;
+    requestDetails(requestId: string): Promise<RequestDetails>;
     pending(query?: { page?: number; size?: number }): Promise<Page<PendingRequest>>;
     capabilities(): Promise<{ canApprove: boolean }>;
     cancel(requestId: string): Promise<void>;
@@ -173,6 +187,40 @@ describe("Access Requests realm API client", () => {
             "https://keycloak.example/realms/finance/access-requests/mine?page=0&size=20",
             "https://keycloak.example/realms/finance/access-requests/pending?page=0&size=20"
         ]);
+    });
+
+    it("loads requester-visible request details using an encoded request identifier", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            jsonResponse({
+                id: "request/1",
+                entitlementId: "finance-reader",
+                resourceType: "CLIENT_ROLE",
+                resourceName: "Finance Reader",
+                decisionStatus: "APPROVED",
+                provisioningStatus: "SUCCEEDED",
+                createdAt: "2026-09-03T10:00:00Z",
+                justification: "I need month-end reports.",
+                decision: {
+                    approverId: "finance-approver",
+                    comment: "Approved.",
+                    decidedAt: "2026-09-03T10:05:00Z"
+                },
+                history: [{ type: "REQUEST_CREATED", occurredAt: "2026-09-03T10:00:00Z" }]
+            })
+        );
+
+        const details = await (await createApi(fetchMock)).requestDetails("request/1");
+
+        expect(details).toMatchObject({
+            justification: "I need month-end reports.",
+            history: [{ type: "REQUEST_CREATED" }]
+        });
+        expect(responseRequest(fetchMock)).toEqual({
+            url: "https://keycloak.example/realms/finance/access-requests/mine/request%2F1",
+            options: expect.objectContaining({
+                headers: expect.objectContaining({ authorization: "Bearer account-console-token" })
+            })
+        });
     });
 
     it("loads the approver capability without deriving it from pending requests", async () => {

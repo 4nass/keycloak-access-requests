@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
         catalog: vi.fn(),
         mine: vi.fn(),
         pending: vi.fn(),
+        requestDetails: vi.fn(),
         reject: vi.fn(),
         submitRequest: vi.fn()
     },
@@ -61,6 +62,7 @@ await i18n.init({
                 accessRequestsPending: "Pending",
                 accessRequestsRequestAccess: "Request access",
                 accessRequestsRequestAccessTo: "Request access to {{entitlement}}",
+                accessRequestsRequestDetails: "{{entitlement}} request details",
                 accessRequestsRequestPending: "Request pending",
                 accessRequestsRequestedBy: "{{entitlement}} requested by {{requester}}",
                 accessRequestsResourceType: "Resource type",
@@ -90,6 +92,7 @@ describe("Access Request Account Console route pages", () => {
         mocks.api.catalog.mockResolvedValue(page([]));
         mocks.api.mine.mockResolvedValue(page([]));
         mocks.api.pending.mockResolvedValue(page([]));
+        mocks.api.requestDetails.mockResolvedValue(undefined);
         mocks.api.reject.mockResolvedValue(undefined);
         mocks.api.submitRequest.mockResolvedValue(undefined);
         mocks.createAccessRequestsApi.mockReset().mockReturnValue(mocks.api);
@@ -154,6 +157,53 @@ describe("Access Request Account Console route pages", () => {
 
         await waitFor(() => expect(mocks.api.cancel).toHaveBeenCalledWith("request-1"));
         await waitFor(() => expect(mocks.api.mine).toHaveBeenCalledTimes(2));
+    });
+
+    it("loads the selected request's full detail before displaying its history", async () => {
+        const user = userEvent.setup();
+        mocks.api.mine.mockResolvedValue(page([
+            {
+                createdAt: "2026-09-03T10:00:00Z",
+                decisionStatus: "APPROVED",
+                entitlementId: "finance-reader",
+                id: "request-1",
+                provisioningStatus: "SUCCEEDED",
+                resourceName: "Finance Reader",
+                resourceType: "CLIENT_ROLE"
+            }
+        ]));
+        mocks.api.requestDetails.mockResolvedValue({
+            createdAt: "2026-09-03T10:00:00Z",
+            decision: {
+                approverId: "finance-approver",
+                comment: "Approved for month-end.",
+                decidedAt: "2026-09-03T10:05:00Z"
+            },
+            decisionStatus: "APPROVED",
+            entitlementId: "finance-reader",
+            history: [
+                { type: "REQUEST_CREATED", occurredAt: "2026-09-03T10:00:00Z" },
+                { type: "REQUEST_APPROVED", occurredAt: "2026-09-03T10:05:00Z" }
+            ],
+            id: "request-1",
+            justification: "I need month-end reports.",
+            provisioningStatus: "SUCCEEDED",
+            resourceName: "Finance Reader",
+            resourceType: "CLIENT_ROLE"
+        });
+
+        renderRoutePage(<MyRequestsRoutePage />);
+
+        const card = await screen.findByRole("article", { name: "Finance Reader" });
+        await user.click(within(card).getByRole("button", { name: "View details" }));
+
+        const dialog = await screen.findByRole("dialog", { name: "Finance Reader request details" });
+        await waitFor(() => expect(mocks.api.requestDetails).toHaveBeenCalledWith("request-1"));
+        expect(within(dialog).getByText("I need month-end reports.")).toBeVisible();
+        expect(within(dialog).getByText("finance-approver")).toBeVisible();
+        expect(within(dialog).getByText("Approved for month-end.")).toBeVisible();
+        expect(within(dialog).getByText("REQUEST_CREATED")).toBeVisible();
+        expect(within(dialog).getByText("REQUEST_APPROVED")).toBeVisible();
     });
 
     it("loads pending approvals and approves a request", async () => {

@@ -31,6 +31,19 @@ export type RequestSummary = {
     createdAt: string;
 };
 
+export type RequestDetails = RequestSummary & {
+    justification: string;
+    decision?: {
+        approverId: string;
+        comment: string | null;
+        decidedAt: string;
+    };
+    history: Array<{
+        type: string;
+        occurredAt: string;
+    }>;
+};
+
 export type PendingRequest = {
     id: string;
     requesterId: string;
@@ -55,6 +68,7 @@ export type AccessRequestsApi = {
         provisioningStatus: string;
     }>;
     mine(query?: { page?: number; size?: number }): Promise<Page<RequestSummary>>;
+    requestDetails(requestId: string): Promise<RequestDetails>;
     pending(query?: { page?: number; size?: number }): Promise<Page<PendingRequest>>;
     capabilities(): Promise<AccessRequestCapabilities>;
     cancel(requestId: string): Promise<void>;
@@ -138,6 +152,7 @@ export function createAccessRequestsApi({ serverBaseUrl, realm, getAccessToken, 
                 method: "POST"
             }),
         mine: (query) => request(`mine?${pageQuery(query)}`),
+        requestDetails: (requestId) => request(`mine/${encodeURIComponent(requestId)}`),
         pending: (query) => request(`pending?${pageQuery(query)}`),
         capabilities: () => request("capabilities"),
         async cancel(requestId) {

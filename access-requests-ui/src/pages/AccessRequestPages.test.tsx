@@ -363,6 +363,63 @@ describe("Access Request account console pages", () => {
         expect(within(approvedRequest).queryByRole("button", { name: "Cancel request" })).not.toBeInTheDocument();
     });
 
+    it("loads request details on demand instead of showing summary placeholders", async () => {
+        const user = userEvent.setup();
+        let resolveDetails: ((details: {
+            justification: string;
+            decision: { approver: string; comment: string; decidedAt: string };
+            history: Array<{ type: string; occurredAt: string }>;
+        }) => void) | undefined;
+        const loadDetails = vi.fn(
+            () => new Promise<{
+                justification: string;
+                decision: { approver: string; comment: string; decidedAt: string };
+                history: Array<{ type: string; occurredAt: string }>;
+            }>((resolve) => {
+                resolveDetails = resolve;
+            })
+        );
+
+        renderAccessRequestUi(
+            <MyRequestsPage
+                requests={[
+                    {
+                        id: "request-1",
+                        entitlementName: "Finance Reader",
+                        resourceType: "CLIENT_ROLE",
+                        decisionStatus: "APPROVED",
+                        provisioningStatus: "SUCCEEDED",
+                        requestedAt: "26 Aug 2026",
+                        justification: "",
+                        history: []
+                    }
+                ]}
+                onCancel={vi.fn()}
+                onRequestDetails={loadDetails}
+            />
+        );
+
+        await user.click(screen.getByRole("button", { name: "View details" }));
+
+        expect(loadDetails).toHaveBeenCalledWith("request-1");
+        const dialog = screen.getByRole("dialog", { name: "Finance Reader request details" });
+        expect(within(dialog).getByText("Loading access requests")).toBeVisible();
+
+        resolveDetails?.({
+            justification: "I need month-end reports.",
+            decision: {
+                approver: "finance-approver",
+                comment: "Approved.",
+                decidedAt: "26 Aug 2026"
+            },
+            history: [{ type: "REQUEST_APPROVED", occurredAt: "26 Aug 2026" }]
+        });
+
+        await waitFor(() => expect(within(dialog).getByText("I need month-end reports.")).toBeVisible());
+        expect(within(dialog).getByText("finance-approver")).toBeVisible();
+        expect(within(dialog).getByText("REQUEST_APPROVED")).toBeVisible();
+    });
+
     it("prevents duplicate cancellation and refreshes requests only after cancellation succeeds", async () => {
         const user = userEvent.setup();
         let resolveCancellation: (() => void) | undefined;

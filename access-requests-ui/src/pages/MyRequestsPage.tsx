@@ -27,9 +27,12 @@ export type AccessRequest = {
     history: RequestHistoryEntry[];
 };
 
+export type AccessRequestDetails = Pick<AccessRequest, "justification" | "decision" | "history">;
+
 type MyRequestsPageProps = {
     requests: AccessRequest[];
     onCancel: (requestId: string) => void | Promise<void>;
+    onRequestDetails?: (requestId: string) => Promise<AccessRequestDetails>;
     onRefresh?: () => void | Promise<void>;
 };
 
@@ -54,11 +57,13 @@ function errorMessage(error: unknown) {
     return error instanceof Error ? error.message : String(error);
 }
 
-export function MyRequestsPage({ requests, onCancel, onRefresh }: MyRequestsPageProps) {
+export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh }: MyRequestsPageProps) {
     const { t } = useTranslation();
     const [selectedRequest, setSelectedRequest] = useState<AccessRequest>();
     const [cancellingRequestId, setCancellingRequestId] = useState<string>();
     const [cancellationError, setCancellationError] = useState<string>();
+    const [detailsError, setDetailsError] = useState<string>();
+    const [isLoadingDetails, setIsLoadingDetails] = useState(false);
     const closeButtonRef = useRef<HTMLButtonElement>(null);
 
     const cancel = async (requestId: string) => {
@@ -76,6 +81,24 @@ export function MyRequestsPage({ requests, onCancel, onRefresh }: MyRequestsPage
             setCancellationError(errorMessage(error));
         } finally {
             setCancellingRequestId(undefined);
+        }
+    };
+
+    const openDetails = async (request: AccessRequest) => {
+        setSelectedRequest(request);
+        setDetailsError(undefined);
+        if (!onRequestDetails) {
+            return;
+        }
+
+        setIsLoadingDetails(true);
+        try {
+            const details = await onRequestDetails(request.id);
+            setSelectedRequest((selected) => selected && selected.id === request.id ? { ...selected, ...details } : selected);
+        } catch (error) {
+            setDetailsError(errorMessage(error));
+        } finally {
+            setIsLoadingDetails(false);
         }
     };
 
@@ -97,7 +120,7 @@ export function MyRequestsPage({ requests, onCancel, onRefresh }: MyRequestsPage
                             {t("accessRequestsCancelRequest")}
                         </button>
                     )}
-                    <button type="button" onClick={() => setSelectedRequest(request)}>
+                    <button type="button" onClick={() => void openDetails(request)}>
                         {t("accessRequestsViewDetails")}
                     </button>
                 </article>
@@ -109,31 +132,39 @@ export function MyRequestsPage({ requests, onCancel, onRefresh }: MyRequestsPage
                     onClose={() => setSelectedRequest(undefined)}
                 >
                     <h2>{selectedRequest.entitlementName}</h2>
-                    <p>{selectedRequest.justification}</p>
-                    {selectedRequest.decision && (
+                    {isLoadingDetails ? (
+                        <p>{t("accessRequestsLoading")}</p>
+                    ) : detailsError ? (
+                        <p role="alert">{detailsError}</p>
+                    ) : (
                         <>
-                            <p>{selectedRequest.decision.approver}</p>
-                            <p>{selectedRequest.decision.comment}</p>
+                            <p>{selectedRequest.justification}</p>
+                            {selectedRequest.decision && (
+                                <>
+                                    <p>{selectedRequest.decision.approver}</p>
+                                    <p>{selectedRequest.decision.comment}</p>
+                                </>
+                            )}
+                            <dl>
+                                <div>
+                                    <dt>{t("accessRequestsDecision")}</dt>
+                                    <dd>{selectedRequest.decisionStatus}</dd>
+                                </div>
+                                <div>
+                                    <dt>{t("accessRequestsProvisioning")}</dt>
+                                    <dd>{selectedRequest.provisioningStatus}</dd>
+                                </div>
+                            </dl>
+                            <h3>{t("accessRequestsHistory")}</h3>
+                            <ol>
+                                {selectedRequest.history.map((event) => (
+                                    <li key={`${event.type}-${event.occurredAt}`}>
+                                        <strong>{event.type}</strong> <time>{event.occurredAt}</time>
+                                    </li>
+                                ))}
+                            </ol>
                         </>
                     )}
-                    <dl>
-                        <div>
-                            <dt>{t("accessRequestsDecision")}</dt>
-                            <dd>{selectedRequest.decisionStatus}</dd>
-                        </div>
-                        <div>
-                            <dt>{t("accessRequestsProvisioning")}</dt>
-                            <dd>{selectedRequest.provisioningStatus}</dd>
-                        </div>
-                    </dl>
-                    <h3>{t("accessRequestsHistory")}</h3>
-                    <ol>
-                        {selectedRequest.history.map((event) => (
-                            <li key={`${event.type}-${event.occurredAt}`}>
-                                <strong>{event.type}</strong> <time>{event.occurredAt}</time>
-                            </li>
-                        ))}
-                    </ol>
                     <button ref={closeButtonRef} type="button" onClick={() => setSelectedRequest(undefined)}>
                         {t("accessRequestsClose")}
                     </button>
