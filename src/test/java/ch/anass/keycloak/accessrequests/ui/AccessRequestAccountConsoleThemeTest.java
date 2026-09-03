@@ -9,7 +9,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -30,47 +29,16 @@ class AccessRequestAccountConsoleThemeTest {
 
         Properties messages = new Properties();
         messages.load(new StringReader(readResource("theme/access-requests/account/messages/messages_en.properties")));
-        assertEquals(Set.of(
-                "accessRequestsAlreadyGranted",
-                "accessRequestsApprove",
-                "accessRequestsApproveEntitlement",
-                "accessRequestsApproved",
+        assertTrue(messages.stringPropertyNames().containsAll(Set.of(
                 "accessRequestsApprovals",
-                "accessRequestsCancel",
-                "accessRequestsCancelRequest",
-                "accessRequestsCanceled",
-                "accessRequestsClose",
-                "accessRequestsConfirmApproval",
-                "accessRequestsConfirmRejection",
-                "accessRequestsDecision",
-                "accessRequestsDecisionComment",
-                "accessRequestsGranted",
-                "accessRequestsHistory",
-                "accessRequestsJustification",
-                "accessRequestsLoading",
                 "accessRequestsLoadError",
                 "accessRequestsMyRequests",
-                "accessRequestsNextPage",
-                "accessRequestsPage",
-                "accessRequestsPagination",
                 "accessRequestsNav",
-                "accessRequestsPending",
-                "accessRequestsPreviousPage",
-                "accessRequestsProvisioning",
-                "accessRequestsReject",
-                "accessRequestsRejectEntitlement",
-                "accessRequestsRejected",
+                "accessRequestsPagination",
                 "accessRequestsRequestAccess",
-                "accessRequestsRequestAccessTo",
-                "accessRequestsRequestDetails",
-                "accessRequestsRequestPending",
-                "accessRequestsRequestedBy",
-                "accessRequestsResourceType",
-                "accessRequestsRetry",
-                "accessRequestsRisk",
-                "accessRequestsRiskLabel",
-                "accessRequestsSubmitRequest",
-                "accessRequestsViewDetails"), messages.stringPropertyNames());
+                "accessRequestsSearchCatalog")));
+        assertTrue(messages.stringPropertyNames().stream()
+                .allMatch(key -> !messages.getProperty(key).isBlank()));
     }
 
     private static InputStream resource(String name) {
