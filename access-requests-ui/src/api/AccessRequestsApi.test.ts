@@ -54,6 +54,7 @@ type AccessRequestsApi = {
     }>;
     mine(query?: { page?: number; size?: number }): Promise<Page<RequestSummary>>;
     pending(query?: { page?: number; size?: number }): Promise<Page<PendingRequest>>;
+    capabilities(): Promise<{ canApprove: boolean }>;
     cancel(requestId: string): Promise<void>;
     approve(requestId: string, decision: { comment: string }): Promise<void>;
     reject(requestId: string, decision: { comment: string }): Promise<void>;
@@ -99,8 +100,8 @@ describe("Access Requests realm API client", () => {
                 items: [
                     {
                         id: "finance-reader",
-                        resourceType: "CLIENT_ROLE",
-                        displayName: "Finance Reader",
+                        type: "CLIENT_ROLE",
+                        name: "Finance Reader",
                         description: "Read-only finance access",
                         riskLevel: "LOW",
                         alreadyGranted: false,
@@ -172,6 +173,18 @@ describe("Access Requests realm API client", () => {
             "https://keycloak.example/realms/finance/access-requests/mine?page=0&size=20",
             "https://keycloak.example/realms/finance/access-requests/pending?page=0&size=20"
         ]);
+    });
+
+    it("loads the approver capability without deriving it from pending requests", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ canApprove: true }));
+
+        await expect((await createApi(fetchMock)).capabilities()).resolves.toEqual({ canApprove: true });
+        expect(responseRequest(fetchMock)).toEqual({
+            url: "https://keycloak.example/realms/finance/access-requests/capabilities",
+            options: expect.objectContaining({
+                headers: expect.objectContaining({ authorization: "Bearer account-console-token" })
+            })
+        });
     });
 
     it("cancels only through the request cancellation endpoint", async () => {

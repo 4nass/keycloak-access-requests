@@ -11,11 +11,7 @@ import type { RouteObject } from "react-router-dom";
 
 import { App } from "./App";
 import { environment } from "./environment";
-import { ApprovalsPage } from "./pages/ApprovalsPage";
-import { MyRequestsPage } from "./pages/MyRequestsPage";
-import { RequestAccessPage } from "./pages/RequestAccessPage";
-
-const noOperation = async () => undefined;
+import { ApprovalsRoutePage, MyRequestsRoutePage, RequestAccessRoutePage } from "./pages/AccessRequestRoutePages";
 
 export const routes: RouteObject[] = [
     {
@@ -31,9 +27,9 @@ export const routes: RouteObject[] = [
             { path: "applications", element: <Applications /> },
             { path: "groups", element: <Groups /> },
             { path: "resources", element: <Resources /> },
-            { path: "request-access", element: <RequestAccessPage entries={[]} onRequest={noOperation} /> },
-            { path: "my-requests", element: <MyRequestsPage onCancel={noOperation} requests={[]} /> },
-            { path: "approvals", element: <ApprovalsPage onApprove={noOperation} onReject={noOperation} requests={[]} /> }
+            { path: "request-access", element: <RequestAccessRoutePage /> },
+            { path: "my-requests", element: <MyRequestsRoutePage /> },
+            { path: "approvals", element: <ApprovalsRoutePage /> }
         ]
     }
 ];
