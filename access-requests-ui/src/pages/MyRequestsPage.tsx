@@ -19,6 +19,7 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { presentAccessRequestsError, type AccessRequestsErrorPresentation } from "../api/AccessRequestsApi";
 import { AccessRequestEmptyState } from "./AccessRequestEmptyState";
 import { AccessRequestPagination, type AccessRequestPaginationState } from "./AccessRequestPagination";
 import {
@@ -63,16 +64,12 @@ type MyRequestsPageProps = {
     onRefresh?: () => void | Promise<void>;
 };
 
-function errorMessage(error: unknown) {
-    return error instanceof Error ? error.message : String(error);
-}
-
 export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh, pagination }: MyRequestsPageProps) {
     const { i18n, t } = useTranslation();
     const { addAlert, addError } = useAccessRequestAlerts();
     const [selectedRequest, setSelectedRequest] = useState<AccessRequest>();
     const [cancellingRequestId, setCancellingRequestId] = useState<string>();
-    const [detailsError, setDetailsError] = useState<string>();
+    const [detailsError, setDetailsError] = useState<AccessRequestsErrorPresentation>();
     const [isLoadingDetails, setIsLoadingDetails] = useState(false);
 
     const cancel = async (requestId: string) => {
@@ -85,7 +82,7 @@ export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh
         try {
             await onCancel(requestId);
         } catch (error) {
-            addError("accessRequestsCancellationFailed", error);
+            addError(error);
             setCancellingRequestId(undefined);
             return;
         }
@@ -110,7 +107,7 @@ export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh
             const details = await onRequestDetails(request.id);
             setSelectedRequest((selected) => selected && selected.id === request.id ? { ...selected, ...details } : selected);
         } catch (error) {
-            setDetailsError(errorMessage(error));
+            setDetailsError(presentAccessRequestsError(error));
         } finally {
             setIsLoadingDetails(false);
         }
@@ -196,7 +193,9 @@ export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh
                     {isLoadingDetails ? (
                         <p>{t("accessRequestsLoading")}</p>
                     ) : detailsError ? (
-                        <Alert isInline role="alert" title={detailsError} variant="danger" />
+                        <Alert isInline role="alert" title={t(detailsError.messageKey)} variant="danger">
+                            {detailsError.requestId && t("accessRequestsErrorReference", { requestId: detailsError.requestId })}
+                        </Alert>
                     ) : (
                         <>
                             <DescriptionList isAutoFit isCompact>

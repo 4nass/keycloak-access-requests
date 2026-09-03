@@ -83,7 +83,7 @@ export function RequestAccessPage({ entries, onRequest, onRefresh, pagination, s
                 justification: justification.trim()
             });
         } catch (error) {
-            addError("accessRequestsRequestSubmissionFailed", error);
+            addError(error);
             setIsSubmitting(false);
             return;
         }

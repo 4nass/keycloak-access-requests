@@ -85,7 +85,6 @@ describe("Access Request account console pages", () => {
             "accessRequestsApprover",
             "accessRequestsCancel",
             "accessRequestsCanceled",
-            "accessRequestsCancellationFailed",
             "accessRequestsCancelRequest",
             "accessRequestsCancelRequestDescription",
             "accessRequestsClose",
@@ -95,7 +94,14 @@ describe("Access Request account console pages", () => {
             "accessRequestsDecidedAt",
             "accessRequestsDecision",
             "accessRequestsDecisionComment",
-            "accessRequestsDecisionFailed",
+            "accessRequestsErrorConflict",
+            "accessRequestsErrorForbidden",
+            "accessRequestsErrorInvalidRequest",
+            "accessRequestsErrorNotFound",
+            "accessRequestsErrorReference",
+            "accessRequestsErrorUnauthorized",
+            "accessRequestsErrorUnavailable",
+            "accessRequestsErrorUnexpected",
             "accessRequestsFirstPage",
             "accessRequestsHistory",
             "accessRequestsHistoryProvisioningFailed",
@@ -145,7 +151,6 @@ describe("Access Request account console pages", () => {
             "accessRequestsRequestedBy",
             "accessRequestsRequestPending",
             "accessRequestsRequestRejected",
-            "accessRequestsRequestSubmissionFailed",
             "accessRequestsRequestSubmitted",
             "accessRequestsResourceType",
             "accessRequestsResourceTypeClientRole",
@@ -454,10 +459,7 @@ describe("Access Request account console pages", () => {
         await waitFor(() => expect(requestAccess).toHaveBeenCalledTimes(1));
         expect(screen.getByRole("dialog", { name: "Request access to Finance Reader" })).toBeVisible();
         expect(within(dialog).getByLabelText("Justification")).toHaveValue(justification);
-        expect(accountAlerts.addError).toHaveBeenCalledWith(
-            "accessRequestsRequestSubmissionFailed",
-            expect.objectContaining({ message: "Request unavailable" })
-        );
+        expect(accountAlerts.addError).toHaveBeenCalledWith(expect.objectContaining({ message: "Request unavailable" }));
     });
 
     it("moves focus into a request dialog, closes it with Escape, and restores focus to its trigger", async () => {
@@ -684,7 +686,6 @@ describe("Access Request account console pages", () => {
             .getByRole("button", { name: "Cancel request" }));
 
         await waitFor(() => expect(accountAlerts.addError).toHaveBeenCalledWith(
-            "accessRequestsCancellationFailed",
             expect.objectContaining({ message: "Cancellation unavailable" })
         ));
         expect(cancelButton).toBeEnabled();
@@ -783,7 +784,6 @@ describe("Access Request account console pages", () => {
         rejectApproval?.(new Error("Decision unavailable"));
 
         await waitFor(() => expect(accountAlerts.addError).toHaveBeenCalledWith(
-            "accessRequestsDecisionFailed",
             expect.objectContaining({ message: "Decision unavailable" })
         ));
         expect(screen.getByRole("dialog", { name: "Approve Finance Reader" })).toBeVisible();

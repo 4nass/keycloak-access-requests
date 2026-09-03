@@ -90,7 +90,7 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagina
                 await onReject(decision);
             }
         } catch (error) {
-            addError("accessRequestsDecisionFailed", error);
+            addError(error);
             setIsSubmitting(false);
             return;
         }

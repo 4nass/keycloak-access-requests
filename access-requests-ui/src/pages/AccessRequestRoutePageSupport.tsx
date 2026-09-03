@@ -2,7 +2,7 @@ import { Alert, AlertActionLink, Spinner } from "@patternfly/react-core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { Page } from "../api/AccessRequestsApi";
+import { presentAccessRequestsError, type Page } from "../api/AccessRequestsApi";
 import type { AccessRequestPaginationState } from "./AccessRequestPagination";
 
 type LoadState<T> = {
@@ -69,7 +69,7 @@ export function LoadingState() {
 
 export function LoadError({ error, onRetry }: { error: unknown; onRetry: () => Promise<void> }) {
     const { t } = useTranslation();
-    const message = error instanceof Error ? error.message : String(error);
+    const presentation = presentAccessRequestsError(error);
 
     return (
         <Alert
@@ -83,7 +83,8 @@ export function LoadError({ error, onRetry }: { error: unknown; onRetry: () => P
             title={t("accessRequestsLoadError")}
             variant="danger"
         >
-            {message}
+            <p>{t(presentation.messageKey)}</p>
+            {presentation.requestId && <p>{t("accessRequestsErrorReference", { requestId: presentation.requestId })}</p>}
         </Alert>
     );
 }

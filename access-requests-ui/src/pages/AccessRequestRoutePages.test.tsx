@@ -48,7 +48,8 @@ vi.mock("./useAccessRequestAlerts", () => ({
 }));
 
 vi.mock("../api/AccessRequestsApi", () => ({
-    createAccessRequestsApi: mocks.createAccessRequestsApi
+    createAccessRequestsApi: mocks.createAccessRequestsApi,
+    presentAccessRequestsError: () => ({ messageKey: "accessRequestsErrorUnexpected" })
 }));
 
 import { ApprovalsRoutePage, MyRequestsRoutePage, RequestAccessRoutePage } from "./AccessRequestRoutePages";
@@ -70,13 +71,19 @@ await i18n.init({
                 accessRequestsCancel: "Cancel",
                 accessRequestsCancelRequest: "Cancel request",
                 accessRequestsCancelRequestDescription: "A canceled request cannot be restored.",
-                accessRequestsCancellationFailed: "Unable to cancel the access request: {{error}}",
                 accessRequestsConfirmApproval: "Confirm approval",
                 accessRequestsCurrentPage: "Current page",
                 accessRequestsDecidedAt: "Decided at",
                 accessRequestsDecision: "Decision",
                 accessRequestsDecisionComment: "Decision comment",
-                accessRequestsDecisionFailed: "Unable to record the decision: {{error}}",
+                accessRequestsErrorConflict: "The request has changed. Refresh the page and try again.",
+                accessRequestsErrorForbidden: "You do not have permission to perform this action.",
+                accessRequestsErrorInvalidRequest: "The submitted information is invalid. Review it and try again.",
+                accessRequestsErrorNotFound: "The requested item is no longer available.",
+                accessRequestsErrorReference: "Reference: {{requestId}}",
+                accessRequestsErrorUnauthorized: "Your session has expired. Sign in again and try again.",
+                accessRequestsErrorUnavailable: "The access request service is temporarily unavailable. Try again later.",
+                accessRequestsErrorUnexpected: "Unable to complete the operation. Try again.",
                 accessRequestsFirstPage: "First page",
                 accessRequestsHistory: "History",
                 accessRequestsHistoryProvisioningFailed: "Provisioning failed",
@@ -120,7 +127,6 @@ await i18n.init({
                 accessRequestsRequestDetails: "{{entitlement}} request details",
                 accessRequestsRequestPending: "Request pending",
                 accessRequestsRequestRejected: "Access request rejected.",
-                accessRequestsRequestSubmissionFailed: "Unable to submit the access request: {{error}}",
                 accessRequestsRequestSubmitted: "Access request submitted.",
                 accessRequestsRequestedBy: "{{entitlement}} requested by {{requester}}",
                 accessRequestsRequestedAt: "Requested at",
@@ -255,7 +261,8 @@ describe("Access Request Account Console route pages", () => {
 
         const alert = await screen.findByRole("alert");
         expect(alert).toHaveTextContent("Unable to load access requests.");
-        expect(alert).toHaveTextContent("My requests refresh unavailable");
+        expect(alert).toHaveTextContent("Unable to complete the operation. Try again.");
+        expect(alert).not.toHaveTextContent("My requests refresh unavailable");
         expect(screen.getByRole("listitem", { name: "Finance Reader" })).toBeVisible();
         await user.click(within(alert).getByRole("button", { name: "Retry" }));
         await waitFor(() => expect(mocks.api.mine).toHaveBeenCalledTimes(3));
@@ -288,7 +295,8 @@ describe("Access Request Account Console route pages", () => {
         await user.click(within(dialog).getByRole("button", { name: "Submit request" }));
 
         const alert = await screen.findByRole("alert");
-        expect(alert).toHaveTextContent("Catalog refresh unavailable");
+        expect(alert).toHaveTextContent("Unable to complete the operation. Try again.");
+        expect(alert).not.toHaveTextContent("Catalog refresh unavailable");
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
         expect(screen.getByRole("listitem", { name: "Finance Reader" })).toBeVisible();
     });
@@ -603,7 +611,8 @@ describe("Access Request Account Console route pages", () => {
         await user.click(within(dialog).getByRole("button", { name: "Confirm approval" }));
 
         const alert = await screen.findByRole("alert");
-        expect(alert).toHaveTextContent("Approval queue refresh unavailable");
+        expect(alert).toHaveTextContent("Unable to complete the operation. Try again.");
+        expect(alert).not.toHaveTextContent("Approval queue refresh unavailable");
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
         expect(screen.getByRole("listitem", { name: "Finance Reader requested by anass" })).toBeVisible();
     });
@@ -616,7 +625,8 @@ describe("Access Request Account Console route pages", () => {
 
         const alert = await screen.findByRole("alert");
         expect(alert).toHaveTextContent("Unable to load access requests.");
-        expect(alert).toHaveTextContent("Catalog unavailable");
+        expect(alert).toHaveTextContent("Unable to complete the operation. Try again.");
+        expect(alert).not.toHaveTextContent("Catalog unavailable");
         await user.click(within(alert).getByRole("button", { name: "Retry" }));
         await waitFor(() => expect(mocks.api.catalog).toHaveBeenCalledTimes(2));
     });
