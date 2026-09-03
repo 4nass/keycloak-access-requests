@@ -7,17 +7,22 @@ import {
     Resources,
     SigningIn
 } from "@keycloak/keycloak-account-ui";
+import { lazy } from "react";
 import type { RouteObject } from "react-router-dom";
 
+import { AccountConsoleError } from "./AccountConsoleError";
 import { App } from "./App";
 import { environment } from "./environment";
-import { ApprovalsRoutePage, MyRequestsRoutePage, RequestAccessRoutePage } from "./pages/AccessRequestRoutePages";
+
+const RequestAccessRoutePage = lazy(() => import("./pages/RequestAccessRoutePage"));
+const MyRequestsRoutePage = lazy(() => import("./pages/MyRequestsRoutePage"));
+const ApprovalsRoutePage = lazy(() => import("./pages/ApprovalsRoutePage"));
 
 export const routes: RouteObject[] = [
     {
         path: decodeURIComponent(new URL(environment.baseUrl).pathname),
         element: <App />,
-        errorElement: <>Unable to load the Account Console.</>,
+        errorElement: <App><AccountConsoleError /></App>,
         children: [
             { index: true, element: <PersonalInfo /> },
             { path: "personal-info", element: <PersonalInfo /> },

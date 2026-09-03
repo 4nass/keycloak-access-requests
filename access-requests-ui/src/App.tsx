@@ -1,15 +1,19 @@
 import { Header } from "@keycloak/keycloak-account-ui";
 import { Page, Spinner } from "@patternfly/react-core";
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 import { Outlet } from "react-router-dom";
 
 import { PageNav } from "./PageNav";
 
-export function App() {
+type AppProps = {
+    children?: ReactNode;
+};
+
+export function App({ children }: AppProps) {
     return (
         <Page header={<Header />} sidebar={<PageNav />} isManagedSidebar>
             <Suspense fallback={<Spinner />}>
-                <Outlet />
+                {children ?? <Outlet />}
             </Suspense>
         </Page>
     );

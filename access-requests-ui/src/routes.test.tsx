@@ -17,4 +17,10 @@ describe("Access Request Account Console routes", () => {
 
         expect(router.state.matches.at(-1)?.route.path).toBe(path);
     });
+
+    it.each(["request-access", "my-requests", "approvals"])("loads the %s page lazily", (path) => {
+        const route = routes[0].children?.find((child) => child.path === path);
+
+        expect(route?.element).toHaveProperty("type.$$typeof", Symbol.for("react.lazy"));
+    });
 });
