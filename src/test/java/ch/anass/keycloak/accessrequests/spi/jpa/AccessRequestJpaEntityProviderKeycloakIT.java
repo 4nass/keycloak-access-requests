@@ -27,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.util.jar.JarFile;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -64,6 +65,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
     @Test
     void appliesTheProviderChangelogAtKeycloakStartupAndKeepsItAppliedAfterRestart() throws Exception {
+        assertAccountConsoleBundleIsPackagedInProviderJar(providerJar());
+
         try (KeycloakContainer firstServer = keycloak()) {
             firstServer.start();
             configureAdminCliTokenBehavior(firstServer);
@@ -92,8 +95,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     }
 
     private KeycloakContainer keycloak() {
-        Path providerJar = Path.of("target", "keycloak-access-requests.jar").toAbsolutePath();
-        assertTrue(Files.isRegularFile(providerJar), "The provider JAR must be built before integration tests run.");
+        Path providerJar = providerJar();
 
         return new KeycloakContainer(KEYCLOAK_IMAGE)
                 .withNetwork(NETWORK)
@@ -105,6 +107,37 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 .withAdminPassword("admin")
                 .withProviderLibsFrom(List.of(providerJar.toFile()))
                 .withStartupTimeout(Duration.ofMinutes(3));
+    }
+
+    private Path providerJar() {
+        Path providerJar = Path.of("target", "keycloak-access-requests.jar").toAbsolutePath();
+        assertTrue(Files.isRegularFile(providerJar), "The provider JAR must be built before integration tests run.");
+        return providerJar;
+    }
+
+    private void assertAccountConsoleBundleIsPackagedInProviderJar(Path providerJar) throws Exception {
+        String resourcePath = "theme/access-requests/account/resources/";
+        try (JarFile provider = new JarFile(providerJar.toFile())) {
+            String manifest = readJarEntry(provider, resourcePath + ".vite/manifest.json");
+            var entryPoint = Pattern.compile(
+                            "\"src/main\\.tsx\"\\s*:\\s*\\{[^}]*\"file\"\\s*:\\s*\"([^\"]+\\.js)\"",
+                            Pattern.DOTALL)
+                    .matcher(manifest);
+            assertTrue(entryPoint.find(), "The Vite manifest must declare the Account Console entrypoint.");
+
+            String bundle = readJarEntry(provider, resourcePath + entryPoint.group(1));
+            assertTrue(bundle.contains("request-access"));
+            assertTrue(bundle.contains("my-requests"));
+            assertTrue(bundle.contains("approvals"));
+        }
+    }
+
+    private String readJarEntry(JarFile provider, String path) throws Exception {
+        var entry = provider.getJarEntry(path);
+        assertTrue(entry != null, () -> "The provider JAR must package " + path + ".");
+        try (var input = provider.getInputStream(entry)) {
+            return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 
     private void configureAdminCliTokenBehavior(KeycloakContainer server) throws Exception {
