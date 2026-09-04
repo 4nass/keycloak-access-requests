@@ -5,7 +5,7 @@ on:
     branches: [ main ]
     paths:
       - 'src/**'
-      - 'access-requests-ui/**'
+      - 'themes/access-requests-ui/**'
       - '*.xml'
       - 'pom.xml'
   pull_request:

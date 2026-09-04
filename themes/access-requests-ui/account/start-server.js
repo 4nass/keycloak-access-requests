@@ -10,7 +10,7 @@ import { extract } from "tar-fs";
 import packageJson from "./package.json" with { type: "json" };
 
 const DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_DIRECTORY = path.resolve(DIRECTORY, "..");
+const PROJECT_DIRECTORY = path.resolve(DIRECTORY, "..", "..");
 const MANAGED_SERVER_DIRECTORY = path.join(DIRECTORY, "server");
 const PROVIDER_JAR = path.join(PROJECT_DIRECTORY, "target", "keycloak-access-requests.jar");
 const SCRIPT_EXTENSION = process.platform === "win32" ? ".bat" : ".sh";

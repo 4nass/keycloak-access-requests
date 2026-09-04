@@ -40,7 +40,7 @@ updates:
           - "*"
 
   - package-ecosystem: npm
-    directory: /access-requests-ui
+    directory: /themes/access-requests-ui
     schedule:
       interval: weekly
       day: monday

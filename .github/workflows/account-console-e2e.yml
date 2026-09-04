@@ -5,7 +5,7 @@ on:
     branches: [ main ]
     paths:
       - 'src/**'
-      - 'access-requests-ui/**'
+      - 'themes/access-requests-ui/**'
       - '*.xml'
       - 'pom.xml'
       - '.github/workflows/account-console-e2e.yml'
@@ -41,13 +41,13 @@ jobs:
         run: mvn --batch-mode --no-transfer-progress clean package -DskipTests
 
       - name: Install Playwright browsers
-        working-directory: access-requests-ui
+        working-directory: themes/access-requests-ui
         run: |
           "${GITHUB_WORKSPACE}/target/frontend/node/node" \
             "${GITHUB_WORKSPACE}/target/frontend/node/node_modules/pnpm/bin/pnpm.cjs" exec playwright install --with-deps chromium firefox
 
       - name: Start Keycloak with the packaged provider
-        working-directory: access-requests-ui
+        working-directory: themes/access-requests-ui/account
         run: |
           nohup "${GITHUB_WORKSPACE}/target/frontend/node/node" ./start-server.js > "${GITHUB_WORKSPACE}/target/keycloak-e2e.log" 2>&1 &
 
@@ -64,11 +64,11 @@ jobs:
 
       - name: Select the packaged Account Console theme
         run: |
-          access-requests-ui/server/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin
-          access-requests-ui/server/bin/kcadm.sh update realms/master -s accountTheme=access-requests
+          themes/access-requests-ui/account/server/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin
+          themes/access-requests-ui/account/server/bin/kcadm.sh update realms/master -s accountTheme=access-requests
 
       - name: Run Account Console browser tests
-        working-directory: access-requests-ui
+        working-directory: themes/access-requests-ui
         env:
           CI: true
           KEYCLOAK_ACCOUNT_CONSOLE_URL: http://localhost:8080/realms/master/account/
@@ -85,7 +85,7 @@ jobs:
           name: account-console-e2e-diagnostics
           path: |
             target/keycloak-e2e.log
-            access-requests-ui/playwright-report/
-            access-requests-ui/test-results/
+            themes/access-requests-ui/playwright-report/
+            themes/access-requests-ui/test-results/
           if-no-files-found: warn
           retention-days: 7

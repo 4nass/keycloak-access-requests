@@ -1,19 +1,14 @@
 {
-  "name": "@4nass/keycloak-access-requests-ui",
+  "name": "@4nass/keycloak-access-requests-account-ui",
   "version": "26.7.3-SNAPSHOT",
   "private": true,
   "type": "module",
-  "engines": {
-    "node": ">=22.0.0"
-  },
-  "packageManager": "pnpm@11.18.0",
   "scripts": {
     "build": "tsc --noEmit && vite build",
     "dev": "vite",
     "start-keycloak": "node ./start-server.js --account-dev",
     "start-keycloak:packaged": "node ./start-server.js",
     "test": "vitest run",
-    "test:e2e": "playwright test",
     "test:watch": "vitest"
   },
   "dependencies": {
@@ -32,7 +27,6 @@
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.7",
-    "@playwright/test": "1.60.0",
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react-swc": "4.2.2",

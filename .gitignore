@@ -1,10 +1,15 @@
 target/
+# Local artifacts from the pre-workspace layout.
 access-requests-ui/node_modules/
-access-requests-ui/coverage/
-access-requests-ui/dist/
-access-requests-ui/server/
-access-requests-ui/server.download-*/
 access-requests-ui/playwright-report/
 access-requests-ui/test-results/
+themes/access-requests-ui/node_modules/
+themes/access-requests-ui/account/node_modules/
+themes/access-requests-ui/account/coverage/
+themes/access-requests-ui/account/dist/
+themes/access-requests-ui/account/server/
+themes/access-requests-ui/account/server.download-*/
+themes/access-requests-ui/playwright-report/
+themes/access-requests-ui/test-results/
 .cache/ms-playwright/
 .pnpm-store/

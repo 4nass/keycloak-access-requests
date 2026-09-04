@@ -16,7 +16,7 @@ The scope includes:
 - synchronous provisioning for realm roles, client roles, and groups;
 - idempotency, realm isolation, and self-approval protection;
 - an immutable business history;
-- Keycloak REST endpoints, declarative administration settings, and an Account Console theme;
+- Keycloak REST endpoints and Account/Admin Console themes;
 - PostgreSQL and Liquibase for persistence.
 
 Advanced governance, temporary access, revocation, notifications, and external connectors are out of scope.
@@ -25,7 +25,7 @@ Advanced governance, temporary access, revocation, notifications, and external c
 
 The Account Console is for end users and approvers. It exposes **Request access**, **My Requests**, and **Approvals**. It never exposes entitlement administration.
 
-The entitlement catalog belongs to the Keycloak Admin Console. Its REST endpoints remain available for automation and for the future Admin Console integration.
+The entitlement catalog belongs to the Keycloak Admin Console. Its REST endpoints remain available for automation while the Admin Console theme is implemented.
 
 ## Compatibility
 
@@ -41,10 +41,16 @@ The current line starts at Keycloak 26.7.3. Later 26.7 patch releases must be re
 
 ```text
 keycloak-access-requests/
-├── access-requests-ui/                 # React source for the Account Console theme
-│   ├── src/
-│   ├── package.json
-│   └── pnpm-lock.yaml
+├── themes/
+│   └── access-requests-ui/             # pnpm workspace for all console themes
+│       ├── account/                     # React source for the Account Console theme
+│       │   ├── src/
+│       │   └── package.json
+│       ├── e2e/                         # Browser tests against a packaged Keycloak theme
+│       ├── playwright.config.ts
+│       ├── package.json                 # Shared build, test, and development commands
+│       ├── pnpm-lock.yaml
+│       └── pnpm-workspace.yaml
 ├── src/
 │   ├── main/
 │   │   ├── java/ch/anass/keycloak/accessrequests/
@@ -54,15 +60,15 @@ keycloak-access-requests/
 │   │   │       ├── realm/               # Realm resource provider and endpoints
 │   │   │       └── jpa/                 # Keycloak JPA entity provider
 │   │   └── resources/
-│   │       ├── META-INF/                # Provider registrations and theme descriptor
-│   │       └── theme/access-requests/   # Account Console FreeMarker bootstrap
+│   │       ├── META-INF/                # Provider registrations
+│   │       └── theme/access-requests/   # Packaged Account, Admin, and email theme resources
 │   └── test/
 │       ├── java/
 │       └── resources/
 └── pom.xml
 ```
 
-The project is a single Maven module. Keycloak-specific packages and resources are created with their first implementation; empty placeholder directories are not tracked.
+The project is a single Maven module. The Admin and email source directories are created with their first implementation; empty placeholder directories are not tracked.
 
 ## Requirements
 
@@ -108,7 +114,7 @@ mvn test
 mvn package
 ```
 
-The build produces `target/keycloak-access-requests.jar`. It includes the Keycloak providers and the Account Console theme in one deployable JAR.
+The build produces `target/keycloak-access-requests.jar`. It includes the Keycloak providers and its console themes in one deployable JAR.
 
 ## Account Console theme
 
@@ -127,29 +133,29 @@ The theme packages the native Account Console shell and the **Request access**, 
 The Account Console uses the same Vite and Keycloak workflow as the official Account Console scaffold. Run the commands in two terminals:
 
 ```bash
-cd access-requests-ui
+cd themes/access-requests-ui
 pnpm install
-pnpm run dev
+pnpm run account:dev
 ```
 
 ```bash
 mvn package
-cd access-requests-ui
-pnpm run start-keycloak
+cd themes/access-requests-ui
+pnpm run account:start-keycloak
 ```
 
-`start-keycloak` downloads Keycloak `26.7.3` once to `access-requests-ui/server/`, installs the built provider JAR, and starts it in development mode with `KC_ACCOUNT_VITE_URL=http://localhost:5173`. Open `http://localhost:8080/realms/master/account` and sign in with `admin` / `admin`.
+`account:start-keycloak` downloads Keycloak `26.7.3` once to `themes/access-requests-ui/account/server/`, installs the built provider JAR, and starts it in development mode with `KC_ACCOUNT_VITE_URL=http://localhost:5173`. Open `http://localhost:8080/realms/master/account` and sign in with `admin` / `admin`.
 
-Pass Keycloak development options after `--`, for example `pnpm run start-keycloak -- --http-port=8181`. To start an existing Keycloak installation instead of the managed local server, set `KEYCLOAK_HOME`; its providers directory is intentionally not changed by this script.
+Pass Keycloak development options after `--`, for example `pnpm run account:start-keycloak -- --http-port=8181`. To start an existing Keycloak installation instead of the managed local server, set `KEYCLOAK_HOME`; its providers directory is intentionally not changed by this script.
 
-`pnpm run start-keycloak:packaged` starts the same local server without Vite. It serves the Account Console theme and its assets from the provider JAR, which is the mode exercised by the CI browser tests.
+`pnpm run account:start-keycloak:packaged` starts the same local server without Vite. It serves the Account Console theme and its assets from the provider JAR, which is the mode exercised by the CI browser tests.
 
 ## Account Console browser tests
 
 The UI follows Keycloak's Playwright setup and runs the same scenarios in Chromium and Firefox. With Vite and `start-keycloak` running in separate terminals, install the browsers once and run:
 
 ```bash
-cd access-requests-ui
+cd themes/access-requests-ui
 pnpm exec playwright install chromium firefox
 pnpm run test:e2e
 ```

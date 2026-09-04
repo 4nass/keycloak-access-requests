@@ -1,3 +1,6 @@
+packages:
+  - account
+
 allowBuilds:
   '@swc/core': true
   esbuild: true

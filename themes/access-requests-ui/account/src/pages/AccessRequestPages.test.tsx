@@ -31,7 +31,7 @@ const testI18n = createInstance();
 const messageBundle = await readFile(
     resolve(
         dirname(fileURLToPath(import.meta.url)),
-        "../../../src/main/resources/theme/access-requests/account/messages/messages_en.properties"
+        "../../../../../src/main/resources/theme/access-requests/account/messages/messages_en.properties"
     ),
     "utf8"
 );

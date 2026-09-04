@@ -1,0 +1,21 @@
+{
+  "name": "@4nass/keycloak-access-requests-themes",
+  "version": "26.7.3-SNAPSHOT",
+  "private": true,
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter @4nass/keycloak-access-requests-account-ui run build",
+    "test": "pnpm --filter @4nass/keycloak-access-requests-account-ui run test",
+    "account:dev": "pnpm --filter @4nass/keycloak-access-requests-account-ui run dev",
+    "account:start-keycloak": "pnpm --filter @4nass/keycloak-access-requests-account-ui run start-keycloak",
+    "account:start-keycloak:packaged": "pnpm --filter @4nass/keycloak-access-requests-account-ui run start-keycloak:packaged",
+    "test:e2e": "playwright test",
+    "account:test:e2e": "playwright test e2e/account-console.spec.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0"
+  }
+}
