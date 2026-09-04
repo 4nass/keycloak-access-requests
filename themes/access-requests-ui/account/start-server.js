@@ -8,11 +8,11 @@ import { fileURLToPath } from "node:url";
 import { extract } from "tar-fs";
 
 import packageJson from "./package.json" with { type: "json" };
+import { providerJarPath } from "./server-paths.js";
 
 const DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_DIRECTORY = path.resolve(DIRECTORY, "..", "..");
 const MANAGED_SERVER_DIRECTORY = path.join(DIRECTORY, "server");
-const PROVIDER_JAR = path.join(PROJECT_DIRECTORY, "target", "keycloak-access-requests.jar");
+const PROVIDER_JAR = providerJarPath(DIRECTORY);
 const SCRIPT_EXTENSION = process.platform === "win32" ? ".bat" : ".sh";
 const KEYCLOAK_VERSION = process.env.KEYCLOAK_VERSION ?? packageJson.dependencies["@keycloak/keycloak-account-ui"];
 const accountDevMode = process.argv.includes("--account-dev");
