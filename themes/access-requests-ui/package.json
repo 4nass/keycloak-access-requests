@@ -16,6 +16,6 @@
     "account:test:e2e": "playwright test e2e/account-console.spec.ts"
   },
   "devDependencies": {
-    "@playwright/test": "1.60.0"
+    "@playwright/test": "1.62.1"
   }
 }
