@@ -30,8 +30,8 @@ importers:
         specifier: 25.7.3
         version: 25.7.3(typescript@7.0.2)
       i18next-fetch-backend:
-        specifier: 7.0.0
-        version: 7.0.0
+        specifier: 8.0.0
+        version: 8.0.0
       react:
         specifier: 18.3.1
         version: 18.3.1
@@ -1017,6 +1017,10 @@ packages:
   i18next-fetch-backend@7.0.0:
     resolution: {integrity: sha512-BUS/xzHDXNwGKKBQTaNWxY3xvgC40jcYw+4nSpTlaxcGenAubgIgBFuq4CIeeYcs3UkAQs8mf5y6iLnHhd01vw==}
     engines: {node: '>=20'}
+
+  i18next-fetch-backend@8.0.0:
+    resolution: {integrity: sha512-M+FOEvd8pPwGoR++gn/4n2kOi6aEIGY5IK+WaFxxkpc/O3zZIpNzlhzJqBRuNg6YI3GGMNx9Mx/vgxtpP5XI+Q==}
+    engines: {node: '>=22.0.0'}
 
   i18next@25.7.3:
     resolution: {integrity: sha512-2XaT+HpYGuc2uTExq9TVRhLsso+Dxym6PWaKpn36wfBmTI779OQ7iP/XaZHzrnGyzU4SHpFrTYLKfVyBfAhVNA==}
@@ -2244,6 +2248,8 @@ snapshots:
       void-elements: 3.1.0
 
   i18next-fetch-backend@7.0.0: {}
+
+  i18next-fetch-backend@8.0.0: {}
 
   i18next@25.7.3(typescript@7.0.2):
     dependencies:
