@@ -1,4 +1,4 @@
-name: Account Console E2E
+name: Console E2E
 
 on:
   push:
@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   account-console-e2e:
-    name: Keycloak 26.7.3 Account Console E2E
+    name: Keycloak 26.7.3 Console E2E
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -37,7 +37,7 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Package provider JAR and Account Console theme
+      - name: Package provider JAR and console themes
         run: mvn --batch-mode --no-transfer-progress clean package -DskipTests
 
       - name: Install Playwright browsers
@@ -47,9 +47,9 @@ jobs:
             "${GITHUB_WORKSPACE}/target/frontend/node/node_modules/pnpm/bin/pnpm.cjs" exec playwright install --with-deps chromium firefox
 
       - name: Start Keycloak with the packaged provider
-        working-directory: themes/access-requests-ui/account
+        working-directory: themes/access-requests-ui
         run: |
-          nohup "${GITHUB_WORKSPACE}/target/frontend/node/node" ./start-server.js > "${GITHUB_WORKSPACE}/target/keycloak-e2e.log" 2>&1 &
+          nohup "${GITHUB_WORKSPACE}/target/frontend/node/node" ./scripts/start-account-keycloak.js > "${GITHUB_WORKSPACE}/target/keycloak-e2e.log" 2>&1 &
 
       - name: Wait for Keycloak
         run: |
@@ -62,16 +62,17 @@ jobs:
           cat target/keycloak-e2e.log
           exit 1
 
-      - name: Select the packaged Account Console theme
+      - name: Select the packaged console themes
         run: |
-          themes/access-requests-ui/account/server/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin
-          themes/access-requests-ui/account/server/bin/kcadm.sh update realms/master -s accountTheme=access-requests
+          themes/access-requests-ui/server/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin
+          themes/access-requests-ui/server/bin/kcadm.sh update realms/master -s accountTheme=access-requests -s adminTheme=access-requests
 
-      - name: Run Account Console browser tests
+      - name: Run console browser tests
         working-directory: themes/access-requests-ui
         env:
           CI: true
           KEYCLOAK_ACCOUNT_CONSOLE_URL: http://localhost:8080/realms/master/account/
+          KEYCLOAK_ADMIN_CONSOLE_URL: http://localhost:8080/admin/master/console/
           KEYCLOAK_TEST_USERNAME: admin
           KEYCLOAK_TEST_PASSWORD: admin
         run: |

@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AccessRequestJpaEntityProviderKeycloakIT {
 
     private static final String ACCOUNT_CONSOLE_RESOURCE_PATH = "theme/access-requests/account/resources/";
+    private static final String ADMIN_CONSOLE_RESOURCE_PATH = "theme/access-requests/admin/resources/";
     private static final String ACCESS_REQUESTS_API_AUDIENCE = "access-requests-api";
     private static final String ACCESS_REQUEST_MANAGER_ROLE = "manage-access-requests";
     private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.3";
@@ -70,7 +71,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
     @Test
     void appliesTheProviderChangelogAtKeycloakStartupAndKeepsItAppliedAfterRestart() throws Exception {
-        assertAccountConsoleBundleIsPackagedInProviderJar(providerJar());
+        assertConsoleBundlesArePackagedInProviderJar(providerJar());
 
         try (KeycloakContainer firstServer = keycloak()) {
             firstServer.start();
@@ -120,27 +121,40 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         return providerJar;
     }
 
-    private void assertAccountConsoleBundleIsPackagedInProviderJar(Path providerJar) throws Exception {
+    private void assertConsoleBundlesArePackagedInProviderJar(Path providerJar) throws Exception {
         try (JarFile provider = new JarFile(providerJar.toFile())) {
             JsonNode manifest = new ObjectMapper().readTree(
                     readJarEntry(provider, ACCOUNT_CONSOLE_RESOURCE_PATH + ".vite/manifest.json"));
             assertTrue(manifest.isObject(), "The Vite manifest must be a JSON object.");
 
-            JsonNode entryPoint = manifest.get("src/main.tsx");
+            JsonNode entryPoint = manifest.get("src/account/main.tsx");
             assertTrue(entryPoint != null && entryPoint.isObject(),
                     "The Vite manifest must declare the Account Console entrypoint.");
-            assertManifestReferences(provider, manifest, "src/main.tsx", new HashSet<>());
+            assertManifestReferences(provider, manifest, ACCOUNT_CONSOLE_RESOURCE_PATH, "src/account/main.tsx", new HashSet<>());
 
             assertTrue(manifestReferences(entryPoint, "dynamicImports").containsAll(Set.of(
-                    "src/pages/RequestAccessRoutePage.tsx",
-                    "src/pages/MyRequestsRoutePage.tsx",
-                    "src/pages/ApprovalsRoutePage.tsx")),
+                    "src/account/pages/RequestAccessRoutePage.tsx",
+                    "src/account/pages/MyRequestsRoutePage.tsx",
+                    "src/account/pages/ApprovalsRoutePage.tsx")),
                     "The Account Console entrypoint must lazy-load all access request routes.");
+
+            JsonNode adminManifest = new ObjectMapper().readTree(
+                    readJarEntry(provider, ADMIN_CONSOLE_RESOURCE_PATH + ".vite/manifest.json"));
+            assertTrue(adminManifest.isObject(), "The Admin Console Vite manifest must be a JSON object.");
+
+            JsonNode adminEntryPoint = adminManifest.get("src/admin/main.tsx");
+            assertTrue(adminEntryPoint != null && adminEntryPoint.isObject(),
+                    "The Vite manifest must declare the Admin Console entrypoint.");
+            assertManifestReferences(provider, adminManifest, ADMIN_CONSOLE_RESOURCE_PATH, "src/admin/main.tsx", new HashSet<>());
         }
     }
 
     private void assertManifestReferences(
-            JarFile provider, JsonNode manifest, String manifestEntryName, Set<String> visitedEntries) {
+            JarFile provider,
+            JsonNode manifest,
+            String resourcePath,
+            String manifestEntryName,
+            Set<String> visitedEntries) {
         if (!visitedEntries.add(manifestEntryName)) {
             return;
         }
@@ -149,18 +163,19 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertTrue(manifestEntry != null && manifestEntry.isObject(),
                 () -> "The Vite manifest entry '" + manifestEntryName + "' must exist.");
 
-        assertManifestFileIsPackaged(provider, manifestEntryName, "file", manifestEntry.get("file"));
-        assertManifestFilesArePackaged(provider, manifestEntryName, "css", manifestEntry.get("css"));
-        assertManifestFilesArePackaged(provider, manifestEntryName, "assets", manifestEntry.get("assets"));
-        assertManifestDependenciesArePackaged(provider, manifest, manifestEntryName, "imports", manifestEntry.get("imports"),
+        assertManifestFileIsPackaged(provider, resourcePath, manifestEntryName, "file", manifestEntry.get("file"));
+        assertManifestFilesArePackaged(provider, resourcePath, manifestEntryName, "css", manifestEntry.get("css"));
+        assertManifestFilesArePackaged(provider, resourcePath, manifestEntryName, "assets", manifestEntry.get("assets"));
+        assertManifestDependenciesArePackaged(provider, manifest, resourcePath, manifestEntryName, "imports", manifestEntry.get("imports"),
                 visitedEntries);
-        assertManifestDependenciesArePackaged(provider, manifest, manifestEntryName, "dynamicImports",
+        assertManifestDependenciesArePackaged(provider, manifest, resourcePath, manifestEntryName, "dynamicImports",
                 manifestEntry.get("dynamicImports"), visitedEntries);
     }
 
     private void assertManifestDependenciesArePackaged(
             JarFile provider,
             JsonNode manifest,
+            String resourcePath,
             String manifestEntryName,
             String field,
             JsonNode dependencies,
@@ -175,12 +190,12 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertTrue(dependency.isTextual(),
                     () -> "The Vite manifest field '" + field + "' for '" + manifestEntryName
                             + "' must only contain manifest entry names.");
-            assertManifestReferences(provider, manifest, dependency.asText(), visitedEntries);
+            assertManifestReferences(provider, manifest, resourcePath, dependency.asText(), visitedEntries);
         }
     }
 
     private void assertManifestFilesArePackaged(
-            JarFile provider, String manifestEntryName, String field, JsonNode files) {
+            JarFile provider, String resourcePath, String manifestEntryName, String field, JsonNode files) {
         if (files == null) {
             return;
         }
@@ -188,19 +203,19 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertTrue(files.isArray(),
                 () -> "The Vite manifest field '" + field + "' for '" + manifestEntryName + "' must be an array.");
         for (JsonNode file : files) {
-            assertManifestFileIsPackaged(provider, manifestEntryName, field, file);
+            assertManifestFileIsPackaged(provider, resourcePath, manifestEntryName, field, file);
         }
     }
 
     private void assertManifestFileIsPackaged(
-            JarFile provider, String manifestEntryName, String field, JsonNode file) {
+            JarFile provider, String resourcePath, String manifestEntryName, String field, JsonNode file) {
         assertTrue(file != null && file.isTextual(),
                 () -> "The Vite manifest field '" + field + "' for '" + manifestEntryName + "' must be a file path.");
 
         String filePath = file.asText();
         assertTrue(isSafeRelativeResourcePath(filePath),
                 () -> "The Vite manifest must use a safe relative resource path, but found '" + filePath + "'.");
-        assertTrue(provider.getJarEntry(ACCOUNT_CONSOLE_RESOURCE_PATH + filePath) != null,
+        assertTrue(provider.getJarEntry(resourcePath + filePath) != null,
                 () -> "The provider JAR must package Vite " + field + " '" + filePath
                         + "' referenced by '" + manifestEntryName + "'.");
     }
