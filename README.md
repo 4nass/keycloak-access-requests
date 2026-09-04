@@ -25,7 +25,7 @@ Advanced governance, temporary access, revocation, notifications, and external c
 
 The Account Console is for end users and approvers. It exposes **Request access**, **My Requests**, and **Approvals**. It never exposes entitlement administration.
 
-The entitlement catalog belongs to the Keycloak Admin Console. Its REST endpoints remain available for automation while the Admin Console theme is implemented.
+The entitlement catalog belongs to the Keycloak Admin Console. It manages the configured entitlement, its requestability, risk level, and approver role. Its REST endpoints remain available for automation.
 
 ## Compatibility
 
@@ -42,15 +42,18 @@ The current line starts at Keycloak 26.7.3. Later 26.7 patch releases must be re
 ```text
 keycloak-access-requests/
 ├── themes/
-│   └── access-requests-ui/             # pnpm workspace for all console themes
-│       ├── account/                     # React source for the Account Console theme
-│       │   ├── src/
-│       │   └── package.json
+│   └── access-requests-ui/             # Shared React workspace for all console themes
+│       ├── src/
+│       │   ├── account/                 # Account Console application
+│       │   └── admin/                   # Admin Console application
 │       ├── e2e/                         # Browser tests against a packaged Keycloak theme
 │       ├── playwright.config.ts
-│       ├── package.json                 # Shared build, test, and development commands
+│       ├── tsconfig.json
+│       ├── tsconfig.node.json
+│       ├── vite.config.ts
+│       ├── package.json                 # Shared dependencies, builds, tests, and development commands
 │       ├── pnpm-lock.yaml
-│       └── pnpm-workspace.yaml
+│       └── scripts/                     # Console-specific Keycloak development launchers
 ├── src/
 │   ├── main/
 │   │   ├── java/ch/anass/keycloak/accessrequests/
@@ -144,7 +147,7 @@ cd themes/access-requests-ui
 pnpm run account:start-keycloak
 ```
 
-`account:start-keycloak` downloads Keycloak `26.7.3` once to `themes/access-requests-ui/account/server/`, installs the built provider JAR, and starts it in development mode with `KC_ACCOUNT_VITE_URL=http://localhost:5173`. Open `http://localhost:8080/realms/master/account` and sign in with `admin` / `admin`.
+`account:start-keycloak` downloads Keycloak `26.7.3` once to `themes/access-requests-ui/server/`, installs the built provider JAR, and starts it in development mode with `KC_ACCOUNT_VITE_URL=http://localhost:5173`. Open `http://localhost:8080/realms/master/account` and sign in with `admin` / `admin`.
 
 Pass Keycloak development options after `--`, for example `pnpm run account:start-keycloak -- --http-port=8181`. To start an existing Keycloak installation instead of the managed local server, set `KEYCLOAK_HOME`; its providers directory is intentionally not changed by this script.
 
@@ -159,6 +162,25 @@ cd themes/access-requests-ui
 pnpm exec playwright install chromium firefox
 pnpm run test:e2e
 ```
+
+## Admin Console theme
+
+The Admin Console theme is also named `access-requests` and extends `keycloak.v2`. Enable Keycloak's `declarative-ui` feature, then select it as the **Admin Console theme** in **Realm settings → Themes**. It packages the standard Keycloak Admin Console shell plus an **Access requests** navigation entry and the access entitlement catalog page.
+
+For local development, build the provider and run the Admin Vite server alongside Keycloak:
+
+```bash
+cd themes/access-requests-ui
+pnpm run admin:dev
+```
+
+```bash
+mvn package
+cd themes/access-requests-ui
+pnpm run admin:start-keycloak
+```
+
+`admin:start-keycloak` uses `KC_ADMIN_VITE_URL=http://localhost:5174`; `admin:start-keycloak:packaged` runs the same local server without Vite.
 
 The default target is `http://localhost:8080/realms/master/account/` with the local `admin` / `admin` bootstrap account. Set `KEYCLOAK_ACCOUNT_CONSOLE_URL`, `KEYCLOAK_TEST_USERNAME`, and `KEYCLOAK_TEST_PASSWORD` to target another development environment.
 

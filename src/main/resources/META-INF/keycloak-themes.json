@@ -2,7 +2,7 @@
   "themes": [
     {
       "name": "access-requests",
-      "types": ["account"]
+      "types": ["account", "admin"]
     }
   ]
 }
