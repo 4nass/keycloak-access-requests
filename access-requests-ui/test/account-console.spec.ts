@@ -11,9 +11,13 @@ test("renders the Access requests navigation in the local Account Console", asyn
     await page.locator("#kc-login").click();
 
     await expect(page).toHaveURL(/\/realms\/[^/]+\/account\//);
-    await expect(page.getByRole("button", { name: "Access requests" })).toBeVisible();
+    const accessRequestsNavigation = page.getByRole("button", { name: "Access requests" });
+    await expect(accessRequestsNavigation).toBeVisible();
 
-    await page.getByRole("button", { name: "Access requests" }).click();
+    await accessRequestsNavigation.focus();
+    await expect(accessRequestsNavigation).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(accessRequestsNavigation).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByRole("link", { name: "Request access" })).toBeVisible();
     await expect(page.getByRole("link", { name: "My Requests" })).toBeVisible();
 });
