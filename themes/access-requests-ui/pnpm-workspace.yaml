@@ -1,8 +1,3 @@
-packages:
-  - account
-
 allowBuilds:
   '@swc/core': true
   esbuild: true
-minimumReleaseAgeExclude:
-  - '@testing-library/user-event@14.6.7'

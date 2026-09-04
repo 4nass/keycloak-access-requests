@@ -7,16 +7,18 @@ import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { extract } from "tar-fs";
 
-import packageJson from "./package.json" with { type: "json" };
-import { providerJarPath } from "./server-paths.js";
+import packageJson from "../package.json" with { type: "json" };
+import { providerJarPath } from "./provider-jar-path.js";
 
 const DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
-const MANAGED_SERVER_DIRECTORY = path.join(DIRECTORY, "server");
-const PROVIDER_JAR = providerJarPath(DIRECTORY);
+const WORKSPACE_DIRECTORY = path.resolve(DIRECTORY, "..");
+const MANAGED_SERVER_DIRECTORY = path.join(WORKSPACE_DIRECTORY, "server");
+const PROVIDER_JAR = providerJarPath(WORKSPACE_DIRECTORY);
 const SCRIPT_EXTENSION = process.platform === "win32" ? ".bat" : ".sh";
 const KEYCLOAK_VERSION = process.env.KEYCLOAK_VERSION ?? packageJson.dependencies["@keycloak/keycloak-account-ui"];
 const accountDevMode = process.argv.includes("--account-dev");
-const argumentsForKeycloak = process.argv.slice(2).filter((argument) => argument !== "--account-dev");
+const adminDevMode = process.argv.includes("--admin-dev");
+const argumentsForKeycloak = process.argv.slice(2).filter((argument) => argument !== "--account-dev" && argument !== "--admin-dev");
 const serverDirectory = process.env.KEYCLOAK_HOME
     ? path.resolve(process.env.KEYCLOAK_HOME)
     : MANAGED_SERVER_DIRECTORY;
@@ -102,14 +104,17 @@ function startServer(directory) {
     if (accountDevMode) {
         environment.KC_ACCOUNT_VITE_URL = process.env.KC_ACCOUNT_VITE_URL ?? "http://localhost:5173";
         console.info(`Starting Keycloak with Account Console HMR at ${environment.KC_ACCOUNT_VITE_URL}.`);
+    } else if (adminDevMode) {
+        environment.KC_ADMIN_VITE_URL = process.env.KC_ADMIN_VITE_URL ?? "http://localhost:5174";
+        console.info(`Starting Keycloak with Administration Console HMR at ${environment.KC_ADMIN_VITE_URL}.`);
     } else {
-        console.info("Starting Keycloak with the packaged Account Console theme.");
+        console.info("Starting Keycloak with the packaged console themes.");
     }
     const processHandle = spawn(
         keycloakExecutable(directory),
         [
             "start-dev",
-            "--features=login:v2,account:v3,admin-fine-grained-authz,transient-users,oid4vc-vci,organization",
+            "--features=login:v2,account:v3,admin-fine-grained-authz,declarative-ui,transient-users,oid4vc-vci,organization",
             ...argumentsForKeycloak
         ],
         {

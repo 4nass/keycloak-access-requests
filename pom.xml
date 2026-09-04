@@ -168,8 +168,13 @@
                 <directory>src/main/resources</directory>
             </resource>
             <resource>
-                <directory>${project.basedir}/themes/access-requests-ui/account/dist</directory>
+                <directory>${project.basedir}/themes/access-requests-ui/dist/account</directory>
                 <targetPath>theme/access-requests/account/resources</targetPath>
+                <filtering>false</filtering>
+            </resource>
+            <resource>
+                <directory>${project.basedir}/themes/access-requests-ui/dist/admin</directory>
+                <targetPath>theme/access-requests/admin/resources</targetPath>
                 <filtering>false</filtering>
             </resource>
         </resources>
@@ -268,7 +273,7 @@
                         </configuration>
                     </execution>
                     <execution>
-                        <id>install-account-console-dependencies</id>
+                        <id>install-console-theme-dependencies</id>
                         <phase>generate-resources</phase>
                         <goals>
                             <goal>pnpm</goal>
@@ -278,7 +283,7 @@
                         </configuration>
                     </execution>
                     <execution>
-                        <id>build-account-console</id>
+                        <id>build-console-themes</id>
                         <phase>generate-resources</phase>
                         <goals>
                             <goal>pnpm</goal>
@@ -288,7 +293,7 @@
                         </configuration>
                     </execution>
                     <execution>
-                        <id>test-account-console</id>
+                        <id>test-console-themes</id>
                         <phase>test</phase>
                         <goals>
                             <goal>pnpm</goal>

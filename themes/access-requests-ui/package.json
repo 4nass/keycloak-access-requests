@@ -1,5 +1,5 @@
 {
-  "name": "@4nass/keycloak-access-requests-themes",
+  "name": "@4nass/keycloak-access-requests-ui",
   "version": "26.7.3-SNAPSHOT",
   "private": true,
   "packageManager": "pnpm@11.18.0",
@@ -7,15 +7,50 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "build": "pnpm --filter @4nass/keycloak-access-requests-account-ui run build",
-    "test": "pnpm --filter @4nass/keycloak-access-requests-account-ui run test",
-    "account:dev": "pnpm --filter @4nass/keycloak-access-requests-account-ui run dev",
-    "account:start-keycloak": "pnpm --filter @4nass/keycloak-access-requests-account-ui run start-keycloak",
-    "account:start-keycloak:packaged": "pnpm --filter @4nass/keycloak-access-requests-account-ui run start-keycloak:packaged",
+    "build": "pnpm run build:account && pnpm run build:admin",
+    "build:account": "tsc --noEmit && vite build --mode account",
+    "build:admin": "tsc --noEmit && vite build --mode admin",
+    "test": "pnpm run test:account && pnpm run test:admin",
+    "test:account": "vitest run --mode account",
+    "test:account:watch": "vitest --mode account",
+    "account:dev": "vite --mode account",
+    "account:start-keycloak": "node ./scripts/start-account-keycloak.js --account-dev",
+    "account:start-keycloak:packaged": "node ./scripts/start-account-keycloak.js",
+    "test:admin": "vitest run --mode admin",
+    "test:admin:watch": "vitest --mode admin",
+    "admin:dev": "vite --mode admin --port 5174",
+    "admin:start-keycloak": "node ./scripts/start-account-keycloak.js --admin-dev",
+    "admin:start-keycloak:packaged": "node ./scripts/start-account-keycloak.js",
     "test:e2e": "playwright test",
-    "account:test:e2e": "playwright test e2e/account-console.spec.ts"
+    "account:test:e2e": "playwright test e2e/account-console.spec.ts",
+    "admin:test:e2e": "playwright test e2e/admin-console.spec.ts"
+  },
+  "dependencies": {
+    "@keycloak/keycloak-account-ui": "26.7.3",
+    "@keycloak/keycloak-admin-ui": "26.7.3",
+    "@keycloak/keycloak-ui-shared": "26.7.3",
+    "@patternfly/patternfly": "5.4.2",
+    "@patternfly/react-core": "5.4.14",
+    "@patternfly/react-icons": "5.4.2",
+    "i18next": "25.7.3",
+    "i18next-fetch-backend": "7.0.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-i18next": "16.5.1",
+    "react-router-dom": "7.18.2"
   },
   "devDependencies": {
-    "@playwright/test": "1.60.0"
+    "@playwright/test": "1.60.0",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react-swc": "4.2.2",
+    "jsdom": "30.0.1",
+    "tar-fs": "3.1.3",
+    "typescript": "7.0.2",
+    "vite": "7.3.6",
+    "vitest": "4.1.11"
   }
 }

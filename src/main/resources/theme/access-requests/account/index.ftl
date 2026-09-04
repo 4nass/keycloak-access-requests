@@ -101,7 +101,7 @@
         });
       </script>
       <script type="module" src="${devServerUrl}/@vite/client"></script>
-      <script type="module" src="${devServerUrl}/src/main.tsx"></script>
+      <script type="module" src="${devServerUrl}/src/account/main.tsx"></script>
     </#if>
     <#if entryStyles?has_content>
       <#list entryStyles as style>

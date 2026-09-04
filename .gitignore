@@ -4,6 +4,11 @@ access-requests-ui/node_modules/
 access-requests-ui/playwright-report/
 access-requests-ui/test-results/
 themes/access-requests-ui/node_modules/
+themes/access-requests-ui/coverage/
+themes/access-requests-ui/dist/
+themes/access-requests-ui/server/
+themes/access-requests-ui/server.download-*/
+# Local artifacts retained from the former nested Account workspace.
 themes/access-requests-ui/account/node_modules/
 themes/access-requests-ui/account/coverage/
 themes/access-requests-ui/account/dist/
