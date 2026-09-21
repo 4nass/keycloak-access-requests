@@ -85,7 +85,6 @@ class AccessRequestAdminConsoleBrowserIT {
                 .withAdminUsername("admin")
                 .withAdminPassword("admin")
                 .useTls()
-                .withFeaturesEnabled("declarative-ui")
                 .withProviderLibsFrom(List.of(providerJar().toFile()))
                 .withStartupTimeout(Duration.ofMinutes(3));
     }
@@ -174,7 +173,7 @@ class AccessRequestAdminConsoleBrowserIT {
             try {
                 configureDriver(driver);
                 logInToAdminConsole(keycloak, driver, fixture.observerUsername(), fixture.observerPassword());
-                openAccessRequests(driver);
+                openAccessRequestsDirectly(driver);
                 assertPageHeading(driver, "You do not have permission to manage access requests in this realm.");
                 assertTrue(driver.findElements(By.xpath("//button[normalize-space()='Create entitlement']")).isEmpty(),
                         "An administrator without manage-access-requests must not see catalog write controls.");
@@ -262,6 +261,10 @@ class AccessRequestAdminConsoleBrowserIT {
                             .formatted(driver.findElement(By.tagName("body")).getText(), tail(driver.getPageSource())),
                     exception);
         }
+    }
+
+    private void openAccessRequestsDirectly(WebDriver driver) {
+        driver.navigate().to(adminConsoleUri() + "#/master/access-requests");
     }
 
     private void assertPageHeading(WebDriver driver, String heading) {

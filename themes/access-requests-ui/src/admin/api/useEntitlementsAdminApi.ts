@@ -1,10 +1,11 @@
-import { type AdminEnvironment, useEnvironment } from "@keycloak/keycloak-admin-ui";
+import { type AdminEnvironment, useEnvironment, useRealm } from "@keycloak/keycloak-admin-ui";
 import { useCallback, useMemo } from "react";
 
 import { createEntitlementsAdminApi } from "./EntitlementsAdminApi";
 
 export function useEntitlementsAdminApi() {
     const { environment, keycloak } = useEnvironment<AdminEnvironment>();
+    const { realm } = useRealm();
     const getAccessToken = useCallback(async () => {
         if (!keycloak) {
             throw new Error("The Administration Console access token is unavailable.");
@@ -21,9 +22,9 @@ export function useEntitlementsAdminApi() {
         () => createEntitlementsAdminApi({
             fetch,
             getAccessToken,
-            realm: environment.realm,
+            realm,
             serverBaseUrl: environment.serverBaseUrl
         }),
-        [environment.realm, environment.serverBaseUrl, getAccessToken]
+        [realm, environment.serverBaseUrl, getAccessToken]
     );
 }

@@ -174,7 +174,7 @@ pnpm run test:e2e
 
 ## Admin Console theme
 
-The Admin Console theme is also named `access-requests` and extends `keycloak.v2`. Enable Keycloak's `declarative-ui` feature, then select it as the **Admin Console theme** in **Realm settings → Themes**. It packages the standard Keycloak Admin Console shell plus an **Access requests** navigation entry and the access entitlement catalog page.
+The Admin Console theme is also named `access-requests` and extends `keycloak.v2`. Select it as the **Admin Console theme** in **Realm settings → Themes**. It packages a React Admin Console shell based on Keycloak's public UI package, including an **Access requests** entry in the native navigation and the access entitlement catalog page. No experimental Keycloak feature is required.
 
 For local development, build the provider and run the Admin Vite server alongside Keycloak:
 
