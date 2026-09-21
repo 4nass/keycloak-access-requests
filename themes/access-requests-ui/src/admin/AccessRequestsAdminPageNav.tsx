@@ -26,7 +26,12 @@ type SelectedItem = {
 };
 
 /**
- * Mirrors Keycloak's public Admin Console navigation and adds the server-authorized catalog entry.
+ * Forked from Keycloak 26.7.3's PageNav:
+ * https://github.com/keycloak/keycloak/blob/26.7.3/js/apps/admin-ui/src/PageNav.tsx
+ *
+ * The public PageNav export has no supported contribution point for an additional navigation item.
+ * Keep this implementation aligned with that source on every Keycloak minor upgrade; the only
+ * product-specific addition is the server-authorized Access requests catalog entry.
  */
 export function AccessRequestsAdminPageNav() {
     const { t } = useTranslation();
