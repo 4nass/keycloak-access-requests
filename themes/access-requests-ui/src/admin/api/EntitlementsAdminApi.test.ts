@@ -42,6 +42,18 @@ const entitlement = {
 };
 
 describe("Entitlements administration API client", () => {
+    it("reads the server-authoritative catalog capability with the administrator token", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ canManageCatalog: true }));
+
+        await expect(createApi(fetchMock).capabilities()).resolves.toEqual({ canManageCatalog: true });
+        expect(request(fetchMock)).toEqual({
+            url: "https://keycloak.example/realms/finance/access-requests/admin/capabilities",
+            init: expect.objectContaining({
+                headers: expect.objectContaining({ authorization: "Bearer admin-console-token" })
+            })
+        });
+    });
+
     it("loads the complete catalog page with the administrator token", async () => {
         const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
             items: [entitlement],
@@ -126,6 +138,19 @@ describe("Entitlements administration API client", () => {
             });
             expect(presentEntitlementsAdminError(error)).toEqual({ messageKey, requestId: "request-42" });
         }
+    });
+
+    it("identifies unauthorized capability checks without exposing the response body", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+            code: "INTERNAL_ADMIN_MESSAGE",
+            message: "This detail must never be shown in the browser.",
+            requestId: "request-42"
+        }, 403));
+
+        await expect(createApi(fetchMock).capabilities()).rejects.toMatchObject({
+            requestId: "request-42",
+            status: 403
+        });
     });
 
     it("preserves a network failure for page-level recovery", async () => {

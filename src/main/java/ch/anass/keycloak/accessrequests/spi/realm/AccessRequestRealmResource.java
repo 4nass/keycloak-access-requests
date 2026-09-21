@@ -70,6 +70,7 @@ import org.keycloak.services.managers.AppAuthManager;
 import org.keycloak.services.managers.AuthenticationManager;
 import org.keycloak.services.resources.admin.AdminAuth;
 import org.keycloak.services.resources.admin.AdminRoot;
+import org.keycloak.services.resources.admin.fgap.AdminPermissions;
 
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -265,6 +266,14 @@ public final class AccessRequestRealmResource {
     }
 
     @GET
+    @Path("admin/capabilities")
+    @Produces(MediaType.APPLICATION_JSON)
+    public AdminCapabilitiesResponse adminCapabilities() {
+        requireAccessRequestManager();
+        return new AdminCapabilitiesResponse(true);
+    }
+
+    @GET
     @Path("mine/{requestId}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response requestDetails(@PathParam("requestId") String requestId) {
@@ -365,7 +374,10 @@ public final class AccessRequestRealmResource {
         RealmModel targetRealm = Objects.requireNonNull(session.getContext().getRealm(), "realm must not be null");
         try {
             AdminAuth adminAuth = AdminRoot.authenticateRealmAdminRequest(session);
-            if (!accessRequestManagerAuthorizer.canManage(targetRealm, adminAuth.getUser())) {
+            var permissions = AdminPermissions.evaluator(session, targetRealm, adminAuth);
+            permissions.requireAnyAdminRole();
+            if (!permissions.isRealmAdmin()
+                    && !accessRequestManagerAuthorizer.canManage(targetRealm, adminAuth.getUser())) {
                 throw new ForbiddenException();
             }
             return new AccessRequestManager(targetRealm, adminAuth.getUser());
@@ -814,6 +826,9 @@ public final class AccessRequestRealmResource {
     }
 
     public record CapabilitiesResponse(boolean canApprove) {
+    }
+
+    public record AdminCapabilitiesResponse(boolean canManageCatalog) {
     }
 
     public record PendingRequestSummaryResponse(

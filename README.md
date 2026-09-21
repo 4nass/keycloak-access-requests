@@ -96,7 +96,16 @@ To revoke a client, remove the scope from that client. Newly issued tokens will 
 
 ## Catalog administration
 
-Create the realm role `manage-access-requests` and assign it only to the administrators who manage this extension. It is the only role accepted by the administrative catalog API; `manage-realm` and `manage-users` do not grant access to it.
+The catalog API uses Keycloak administration authorization as its first boundary. A user must already hold a Keycloak administration role for the target realm. On top of that, a delegated catalog manager needs the realm role `manage-access-requests`.
+
+`realm-management:realm-admin` and the `admin` role in the master realm are full administrators, so they can manage the catalog without a separate assignment. `manage-realm` and `manage-users` alone do not grant catalog access.
+
+For delegated administration, create an `access-request-managers` group and map both roles to it:
+
+- the realm role `manage-access-requests`;
+- the minimum `realm-management` role needed to access the target realm's Administration Console, normally `view-realm`.
+
+This gives operators one group to assign while keeping the Keycloak administration boundary separate from the access-request domain permission.
 
 The API is available under the realm resource:
 

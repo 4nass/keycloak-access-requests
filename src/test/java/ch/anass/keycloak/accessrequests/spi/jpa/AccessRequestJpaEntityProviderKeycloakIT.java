@@ -276,6 +276,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     private void assertEntitlementCatalogAdministration(GenericContainer<?> server) throws Exception {
         URI entitlementEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/entitlements"
                 .formatted(server.getHost(), server.getMappedPort(8080)));
+        URI capabilityEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/capabilities"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
         String adminToken = accessToken(server, "admin-cli");
 
         HttpResponse<Void> unauthenticatedResponse = HttpClient.newHttpClient().send(
@@ -283,13 +285,22 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(401, unauthenticatedResponse.statusCode());
 
+        HttpResponse<String> globalAdministratorCapability = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(capabilityEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, globalAdministratorCapability.statusCode());
+        assertTrue(globalAdministratorCapability.body().contains("\"canManageCatalog\":true"));
+
         String delegatedClientId = "catalog-delegated-" + UUID.randomUUID();
         createDirectAccessClient(server, adminToken, delegatedClientId);
         String delegatedUsername = "catalog-delegated-user-" + UUID.randomUUID();
         String delegatedPassword = "catalog-delegated-password";
         createEnabledUser(server, adminToken, delegatedUsername, delegatedPassword);
         String delegatedUserToken = accessToken(server, delegatedClientId, delegatedUsername, delegatedPassword);
-        assignRealmManagementRoles(server, adminToken, subjectOf(delegatedUserToken), "manage-realm", "manage-users");
+        assignRealmManagementRoles(server, adminToken, subjectOf(delegatedUserToken), "view-realm");
         delegatedUserToken = accessToken(server, delegatedClientId, delegatedUsername, delegatedPassword);
 
         HttpResponse<Void> delegatedManagerResponse = HttpClient.newHttpClient().send(
@@ -300,12 +311,38 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(403, delegatedManagerResponse.statusCode());
 
+        String roleOnlyUsername = "catalog-role-only-user-" + UUID.randomUUID();
+        String roleOnlyPassword = "catalog-role-only-password";
+        createEnabledUser(server, adminToken, roleOnlyUsername, roleOnlyPassword);
+        String roleOnlyToken = accessToken(server, delegatedClientId, roleOnlyUsername, roleOnlyPassword);
         ensureRealmRoleAndAssignToUser(
                 server,
                 adminToken,
-                subjectOf(adminToken),
+                subjectOf(roleOnlyToken),
                 ACCESS_REQUEST_MANAGER_ROLE);
-        String managerToken = accessToken(server, "admin-cli");
+        roleOnlyToken = accessToken(server, delegatedClientId, roleOnlyUsername, roleOnlyPassword);
+        HttpResponse<Void> roleOnlyResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(entitlementEndpoint)
+                        .header("Authorization", "Bearer " + roleOnlyToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(403, roleOnlyResponse.statusCode());
+
+        ensureRealmRoleAndAssignToUser(
+                server,
+                adminToken,
+                subjectOf(delegatedUserToken),
+                ACCESS_REQUEST_MANAGER_ROLE);
+        String managerToken = accessToken(server, delegatedClientId, delegatedUsername, delegatedPassword);
+        HttpResponse<String> delegatedManagerCapability = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(capabilityEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, delegatedManagerCapability.statusCode());
+        assertTrue(delegatedManagerCapability.body().contains("\"canManageCatalog\":true"));
         String targetRoleId = createRealmRole(server, adminToken, "catalog-target-" + UUID.randomUUID());
         String approverRoleId = createRealmRole(server, adminToken, "catalog-approver-" + UUID.randomUUID());
         String description = "Read-only access to the catalog-managed finance report.";

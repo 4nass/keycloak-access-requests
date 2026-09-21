@@ -1,7 +1,7 @@
 import { AdminUi, routes as keycloakRoutes } from "@keycloak/keycloak-admin-ui";
 import type { RouteObject } from "react-router-dom";
 
-import { EntitlementCatalogPage } from "./pages/EntitlementCatalogPage";
+import { EntitlementCatalogRoute } from "./pages/EntitlementCatalogRoute";
 
 type AdminRoute = RouteObject & {
     handle?: {
@@ -12,9 +12,9 @@ type AdminRoute = RouteObject & {
 
 const entitlementCatalogRoute: AdminRoute = {
     path: "/:realm/access-requests",
-    element: <EntitlementCatalogPage />,
+    element: <EntitlementCatalogRoute />,
     handle: {
-        // The extension endpoint enforces manage-access-requests. The client-side route must not be an authority.
+        // The server capability check is authoritative. UiPageProvider navigation has no per-user access hook.
         access: "anyone",
         breadcrumb: (translate) => translate("accessRequestsAdminCatalog")
     }

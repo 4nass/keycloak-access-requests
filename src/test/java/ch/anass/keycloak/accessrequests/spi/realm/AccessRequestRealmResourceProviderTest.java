@@ -91,6 +91,19 @@ class AccessRequestRealmResourceProviderTest {
     }
 
     @Test
+    void exposesAJsonGetHandlerForTheAdministrativeCatalogCapability() {
+        var capabilitiesHandler = Arrays.stream(AccessRequestRealmResource.class.getDeclaredMethods())
+                .filter(method -> method.getName().equals("adminCapabilities"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "The Administration Console must be able to read catalog management capability."));
+
+        assertTrue(capabilitiesHandler.isAnnotationPresent(GET.class));
+        assertEquals("admin/capabilities", capabilitiesHandler.getAnnotation(Path.class).value());
+        assertEquals(MediaType.APPLICATION_JSON, capabilitiesHandler.getAnnotation(Produces.class).value()[0]);
+    }
+
+    @Test
     void exposesAJsonPostHandlerForRequestSubmission() {
         var submitHandler = Arrays.stream(AccessRequestRealmResource.class.getDeclaredMethods())
                 .filter(method -> method.getName().equals("submitRequest"))

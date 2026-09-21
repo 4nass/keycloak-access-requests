@@ -29,7 +29,12 @@ export type EntitlementUpdate = Pick<
     "displayName" | "description" | "riskLevel" | "approverRoleId" | "requestable" | "version"
 >;
 
+export type AdminCapabilities = {
+    canManageCatalog: boolean;
+};
+
 export type EntitlementsAdminApi = {
+    capabilities(): Promise<AdminCapabilities>;
     list(query?: { page?: number; size?: number }): Promise<EntitlementPage>;
     create(submission: EntitlementCreation): Promise<Entitlement>;
     update(id: string, submission: EntitlementUpdate): Promise<Entitlement>;
@@ -69,7 +74,7 @@ type Options = {
 
 export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToken, fetch: fetchRequest }: Options): EntitlementsAdminApi {
     const endpoint = (path: string) =>
-        `${serverBaseUrl.replace(/\/$/, "")}/realms/${encodeURIComponent(realm)}/access-requests/admin/entitlements${path}`;
+        `${serverBaseUrl.replace(/\/$/, "")}/realms/${encodeURIComponent(realm)}/access-requests${path}`;
 
     const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
         const accessToken = await getAccessToken();
@@ -95,9 +100,10 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
     });
 
     return {
-        list: (query) => request(`?${pageQuery(query)}`),
-        create: (submission) => request("", json("POST", submission)),
-        update: (id, submission) => request(`/${encodeURIComponent(id)}`, json("PUT", submission))
+        capabilities: () => request("/admin/capabilities"),
+        list: (query) => request(`/admin/entitlements?${pageQuery(query)}`),
+        create: (submission) => request("/admin/entitlements", json("POST", submission)),
+        update: (id, submission) => request(`/admin/entitlements/${encodeURIComponent(id)}`, json("PUT", submission))
     };
 }
 
@@ -127,6 +133,10 @@ export function presentEntitlementsAdminError(error: unknown): EntitlementsAdmin
         messageKey: errorMessageKey(error),
         requestId: error.requestId
     };
+}
+
+export function isEntitlementsAdminAuthorizationError(error: unknown): boolean {
+    return isEntitlementsAdminApiError(error) && (error.status === 401 || error.status === 403);
 }
 
 function isEntitlementsAdminApiError(error: unknown): error is EntitlementsAdminApiError {
