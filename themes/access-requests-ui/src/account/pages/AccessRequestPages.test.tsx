@@ -28,21 +28,29 @@ import { RequestAccessPage } from "./RequestAccessPage";
 
 const testI18n = createInstance();
 
-const messageBundle = await readFile(
-    resolve(
-        dirname(fileURLToPath(import.meta.url)),
-        "../../../../../src/main/resources/theme/access-requests/account/messages/messages_en.properties"
-    ),
-    "utf8"
+const messageDirectory = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../../../../src/main/resources/theme/access-requests/account/messages"
 );
-const messages = Object.fromEntries(
-    messageBundle
+
+async function readMessages(locale: string) {
+    const messageBundle = new TextDecoder("utf-8", { fatal: true }).decode(
+        await readFile(resolve(messageDirectory, `messages_${locale}.properties`))
+    );
+    return Object.fromEntries(
+        messageBundle
         .split(/\r?\n/)
         .filter((line) => line && !line.startsWith("#"))
         .map((line) => {
             const separator = line.indexOf("=");
             return [line.slice(0, separator), line.slice(separator + 1)];
         })
+    );
+}
+
+const messages = await readMessages("en");
+const translatedMessages = await Promise.all(
+    ["fr", "de", "es"].map(async (locale) => [locale, await readMessages(locale)] as const)
 );
 
 await testI18n.init({
@@ -169,13 +177,22 @@ describe("Access Request account console pages", () => {
             "accessRequestsSubmitRequest",
             "accessRequestsViewDetails"
         ].sort());
+        expect(Object.values(messages).every((message) => !message.includes("''"))).toBe(true);
     });
 
-    it("falls back to the English theme messages when a locale is not supplied", async () => {
+    it("keeps every supported Account Console locale complete", () => {
+        translatedMessages.forEach(([locale, translated]) => {
+            expect(Object.keys(translated).sort(), locale).toEqual(Object.keys(messages).sort());
+            expect(Object.values(translated).every((message) => message.trim().length > 0), locale).toBe(true);
+            expect(Object.values(translated).every((message) => !message.includes("''")), locale).toBe(true);
+        });
+    });
+
+    it("falls back to the English theme messages when Chinese is not supplied", async () => {
         const fallbackI18n = createInstance();
         await fallbackI18n.init({
             fallbackLng: "en",
-            lng: "fr",
+            lng: "zh-CN",
             resources: {
                 en: {
                     translation: messages

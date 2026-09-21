@@ -5,21 +5,29 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const adminSourceDirectory = dirname(fileURLToPath(import.meta.url));
-const messageBundle = await readFile(
-    resolve(
-        adminSourceDirectory,
-        "../../../../src/main/resources/theme/access-requests/admin/messages/messages_en.properties"
-    ),
-    "utf8"
+const messageDirectory = resolve(
+    adminSourceDirectory,
+    "../../../../src/main/resources/theme/access-requests/admin/messages"
 );
-const messages = Object.fromEntries(
-    messageBundle
+
+async function readMessages(locale: string) {
+    const messageBundle = new TextDecoder("utf-8", { fatal: true }).decode(
+        await readFile(resolve(messageDirectory, `messages_${locale}.properties`))
+    );
+    return Object.fromEntries(
+        messageBundle
         .split(/\r?\n/)
         .filter((line) => line && !line.startsWith("#"))
         .map((line) => {
             const separator = line.indexOf("=");
             return [line.slice(0, separator), line.slice(separator + 1)];
         })
+    );
+}
+
+const messages = await readMessages("en");
+const translatedMessages = await Promise.all(
+    ["fr", "de", "es"].map(async (locale) => [locale, await readMessages(locale)] as const)
 );
 
 const expectedMessageKeys = [
@@ -95,6 +103,15 @@ describe("Access Request Admin Console translations", () => {
     it("ships the complete, non-empty English message bundle", () => {
         expect(Object.keys(messages).sort()).toEqual(expectedMessageKeys.sort());
         expect(Object.values(messages).every((message) => message.trim().length > 0)).toBe(true);
+        expect(Object.values(messages).every((message) => !message.includes("''"))).toBe(true);
+    });
+
+    it("keeps every supported Admin Console locale complete", () => {
+        translatedMessages.forEach(([locale, translated]) => {
+            expect(Object.keys(translated).sort(), locale).toEqual(Object.keys(messages).sort());
+            expect(Object.values(translated).every((message) => message.trim().length > 0), locale).toBe(true);
+            expect(Object.values(translated).every((message) => !message.includes("''")), locale).toBe(true);
+        });
     });
 
     it("ships a translation for every feature key referenced by the Admin Console", async () => {
@@ -105,11 +122,11 @@ describe("Access Request Admin Console translations", () => {
         expect(missingKeys).toEqual([]);
     });
 
-    it("falls back to English when the selected locale has no theme bundle", async () => {
+    it("falls back to English when Chinese has no theme bundle", async () => {
         const i18n = createInstance();
         await i18n.init({
             fallbackLng: "en",
-            lng: "fr-FR",
+            lng: "zh-CN",
             resources: {
                 en: {
                     translation: messages
