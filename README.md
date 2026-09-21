@@ -191,7 +191,7 @@ pnpm run admin:start-keycloak
 
 `admin:start-keycloak` uses `KC_ADMIN_VITE_URL=http://localhost:5174`; `admin:start-keycloak:packaged` runs the same local server without Vite.
 
-The default target is `http://localhost:8080/realms/master/account/` with the local `admin` / `admin` bootstrap account. Set `KEYCLOAK_ACCOUNT_CONSOLE_URL`, `KEYCLOAK_TEST_USERNAME`, and `KEYCLOAK_TEST_PASSWORD` to target another development environment.
+The default target is `http://localhost:8080/admin/master/console/` with the local `admin` / `admin` bootstrap account. Set `KEYCLOAK_ADMIN_CONSOLE_URL`, `KEYCLOAK_TEST_USERNAME`, and `KEYCLOAK_TEST_PASSWORD` to target another development environment.
 
 ## License
 
