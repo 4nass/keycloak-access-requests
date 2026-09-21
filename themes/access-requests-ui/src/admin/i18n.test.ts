@@ -1,0 +1,124 @@
+import { createInstance } from "i18next";
+import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+const adminSourceDirectory = dirname(fileURLToPath(import.meta.url));
+const messageBundle = await readFile(
+    resolve(
+        adminSourceDirectory,
+        "../../../../src/main/resources/theme/access-requests/admin/messages/messages_en.properties"
+    ),
+    "utf8"
+);
+const messages = Object.fromEntries(
+    messageBundle
+        .split(/\r?\n/)
+        .filter((line) => line && !line.startsWith("#"))
+        .map((line) => {
+            const separator = line.indexOf("=");
+            return [line.slice(0, separator), line.slice(separator + 1)];
+        })
+);
+
+const expectedMessageKeys = [
+    "access-requests",
+    "accessRequestsAdminActive",
+    "accessRequestsAdminApproverRole",
+    "accessRequestsAdminCancel",
+    "accessRequestsAdminCatalog",
+    "accessRequestsAdminCatalogDescription",
+    "accessRequestsAdminCreated",
+    "accessRequestsAdminCreateEntitlement",
+    "accessRequestsAdminDescription",
+    "accessRequestsAdminDisplayName",
+    "accessRequestsAdminEditEntitlement",
+    "accessRequestsAdminEmpty",
+    "accessRequestsAdminErrorConflict",
+    "accessRequestsAdminErrorForbidden",
+    "accessRequestsAdminErrorInvalidRequest",
+    "accessRequestsAdminErrorNotFound",
+    "accessRequestsAdminErrorUnauthorized",
+    "accessRequestsAdminErrorUnavailable",
+    "accessRequestsAdminErrorUnexpected",
+    "accessRequestsAdminInactive",
+    "accessRequestsAdminLoadError",
+    "accessRequestsAdminReferencesEmpty",
+    "accessRequestsAdminReferencesLoading",
+    "accessRequestsAdminRequestable",
+    "accessRequestsAdminResourceId",
+    "accessRequestsAdminResourceType",
+    "accessRequestsAdminResourceTypeClientRole",
+    "accessRequestsAdminResourceTypeGroup",
+    "accessRequestsAdminResourceTypeRealmRole",
+    "accessRequestsAdminRiskLevel",
+    "accessRequestsAdminRiskLevelCritical",
+    "accessRequestsAdminRiskLevelHigh",
+    "accessRequestsAdminRiskLevelLow",
+    "accessRequestsAdminRiskLevelMedium",
+    "accessRequestsAdminSave",
+    "accessRequestsAdminSearchApproverRoles",
+    "accessRequestsAdminSearchApproverRolesPlaceholder",
+    "accessRequestsAdminSearchResources",
+    "accessRequestsAdminSearchResourcesPlaceholder",
+    "accessRequestsAdminSelectApproverRole",
+    "accessRequestsAdminSelectResource",
+    "accessRequestsAdminUpdated",
+    "accessRequestsAdminVersion"
+];
+
+const featureSourcePaths = [
+    "AccessRequestsAdminApp.tsx",
+    "AccessRequestsAdminPageNav.tsx",
+    "api/EntitlementsAdminApi.ts",
+    "api/useEntitlementsAdminApi.ts",
+    "environment.ts",
+    "i18n.ts",
+    "main.tsx",
+    "pages/EntitlementCatalogPage.tsx",
+    "pages/EntitlementCatalogRoute.tsx",
+    "routes.tsx"
+];
+
+async function referencedAdminMessageKeys() {
+    const source = await Promise.all(
+        featureSourcePaths.map((path) => readFile(resolve(adminSourceDirectory, path), "utf8"))
+    );
+
+    return new Set(
+        source.flatMap((content) => Array.from(content.matchAll(/["'](accessRequestsAdmin[A-Za-z0-9]+)["']/g), (match) => match[1]))
+    );
+}
+
+describe("Access Request Admin Console translations", () => {
+    it("ships the complete, non-empty English message bundle", () => {
+        expect(Object.keys(messages).sort()).toEqual(expectedMessageKeys.sort());
+        expect(Object.values(messages).every((message) => message.trim().length > 0)).toBe(true);
+    });
+
+    it("ships a translation for every feature key referenced by the Admin Console", async () => {
+        const missingKeys = [...await referencedAdminMessageKeys()]
+            .filter((key) => !messages[key] || messages[key].trim().length === 0)
+            .sort();
+
+        expect(missingKeys).toEqual([]);
+    });
+
+    it("falls back to English when the selected locale has no theme bundle", async () => {
+        const i18n = createInstance();
+        await i18n.init({
+            fallbackLng: "en",
+            lng: "fr-FR",
+            resources: {
+                en: {
+                    translation: messages
+                }
+            }
+        });
+
+        expect(i18n.t("accessRequestsAdminCatalog")).toBe("Access requests");
+        expect(i18n.t("accessRequestsAdminErrorForbidden"))
+            .toBe("You do not have permission to manage access requests in this realm.");
+    });
+});
