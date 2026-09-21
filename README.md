@@ -1,213 +1,49 @@
-# keycloak-access-requests
+# Keycloak Access Requests
 
-A lightweight Keycloak extension for managing access requests for realm roles, client roles, and groups.
+Keycloak Access Requests is a Keycloak provider for requesting, approving, and provisioning access to realm roles, client roles, and groups.
 
-## Scope
+It is delivered as one JAR containing the server provider, database migrations, Account Console theme, and Admin Console theme.
 
-The project focuses on this workflow:
+## Supported baseline
 
-`Catalog → Request → Approval → Provisioning → Audit`
+| Extension version | Supported Keycloak line | Tested baseline |
+| --- | --- | --- |
+| `26.7.3-SNAPSHOT` | 26.7.x | 26.7.3 |
 
-The scope includes:
+One extension release targets one Keycloak minor line. Keycloak 26.5.x and 26.6.x are not supported.
 
-- an explicit catalog of requestable entitlements;
-- request creation, viewing, and cancellation;
-- approval or rejection by an authorized approver;
-- synchronous provisioning for realm roles, client roles, and groups;
-- idempotency, realm isolation, and self-approval protection;
-- an immutable business history;
-- Keycloak REST endpoints and Account/Admin Console themes;
-- PostgreSQL and Liquibase for persistence.
+## Quick start
 
-Advanced governance, temporary access, revocation, notifications, and external connectors are out of scope.
-
-## Console responsibilities
-
-The Account Console is for end users and approvers. It exposes **Request access**, **My Requests**, and **Approvals**. It never exposes entitlement administration.
-
-The entitlement catalog belongs to the Keycloak Admin Console. It manages the configured entitlement, its requestability, risk level, and approver role. Its REST endpoints remain available for automation.
-
-## Compatibility
-
-The extension is a single-target provider. Each extension release is versioned to its Keycloak baseline and supports that Keycloak minor line only. A new Keycloak minor line requires a dedicated extension release and build; one provider JAR is never built for multiple Keycloak minor lines.
-
-| Extension version | Keycloak minor line | Minimum tested version | Quarkus BOM | Validation |
-|---|---:|---:|---:|---|
-| 26.7.3-SNAPSHOT | 26.7.x | 26.7.3 | 3.33.3.1 | Main CI |
-
-The current line starts at Keycloak 26.7.3. Later 26.7 patch releases must be revalidated before being declared supported. Keycloak 26.5.x and 26.6.x are not supported.
-
-## Structure
-
-```text
-keycloak-access-requests/
-├── themes/
-│   └── access-requests-ui/             # Shared React workspace for all console themes
-│       ├── src/
-│       │   ├── account/                 # Account Console application
-│       │   └── admin/                   # Admin Console application
-│       ├── e2e/                         # Browser tests against a packaged Keycloak theme
-│       ├── playwright.config.ts
-│       ├── tsconfig.json
-│       ├── tsconfig.node.json
-│       ├── vite.config.ts
-│       ├── package.json                 # Shared dependencies, builds, tests, and development commands
-│       ├── pnpm-lock.yaml
-│       └── scripts/                     # Console-specific Keycloak development launchers
-├── src/
-│   ├── main/
-│   │   ├── java/ch/anass/keycloak/accessrequests/
-│   │   │   ├── core/                    # Domain model, ports, and business services
-│   │   │   ├── persistence/jpa/         # JPA entities and repository adapters
-│   │   │   └── spi/                     # Keycloak integration as it is implemented
-│   │   │       ├── realm/               # Realm resource provider and endpoints
-│   │   │       └── jpa/                 # Keycloak JPA entity provider
-│   │   └── resources/
-│   │       ├── META-INF/                # Provider registrations
-│   │       └── theme/access-requests/   # Packaged Account, Admin, and email theme resources
-│   └── test/
-│       ├── java/
-│       └── resources/
-└── pom.xml
-```
-
-The project is a single Maven module. The Admin and email source directories are created with their first implementation; empty placeholder directories are not tracked.
-
-## Requirements
-
-- Java 21+
-- Maven 3.9+
-- Node.js 24.18.1 and pnpm 11.18.0 are provisioned by Maven for reproducible builds
-- Extension version: `26.7.3-SNAPSHOT`
-- Keycloak 26.7.3 and Quarkus 3.33.3.1 as the development baseline
-- Keycloak 26.7.x is the only supported Keycloak minor line
-- PostgreSQL for integration tests
-
-## Client access
-
-The catalog API accepts access tokens with the `access-requests-api` audience. Configure this in the Keycloak Admin Console for each realm:
-
-1. Create an OIDC client named `access-requests-api`. It represents this API and does not need login flows.
-2. Create an OIDC client scope named `access-requests-api`.
-3. Add an **Audience** mapper to the scope. Set **Included Client Audience** to `access-requests-api` and enable **Add to access token**.
-4. Add this scope as a **Default** client scope to each client that may call the catalog API.
-
-To revoke a client, remove the scope from that client. Newly issued tokens will no longer be accepted.
-
-## Catalog administration
-
-The catalog API uses Keycloak administration authorization as its first boundary. A user must already hold a Keycloak administration role for the target realm. On top of that, a delegated catalog manager needs the realm role `manage-access-requests`.
-
-`realm-management:realm-admin` and the `admin` role in the master realm are full administrators, so they can manage the catalog without a separate assignment. `manage-realm` and `manage-users` alone do not grant catalog access.
-
-For delegated administration, create an `access-request-managers` group and map both roles to it:
-
-- the realm role `manage-access-requests`;
-- the minimum `realm-management` role needed to access the target realm's Administration Console, normally `view-realm`.
-
-This gives operators one group to assign while keeping the Keycloak administration boundary separate from the access-request domain permission.
-
-The API is available under the realm resource:
-
-- `GET /admin/entitlements?page=0&size=20` lists drafts and requestable entitlements;
-- `POST /admin/entitlements` creates a draft (`requestable=false`);
-- `GET /admin/entitlements/{id}` returns one entitlement;
-- `PUT /admin/entitlements/{id}` updates its metadata and `requestable` state.
-
-The Keycloak resource selected at creation is immutable. A `PUT` includes the current `version`; a stale version returns `409 Conflict` so an administrator cannot overwrite another administrator's change.
-
-## Commands
-
-Run these commands from the project root:
+Build the provider with Java 21 and Maven 3.9 or newer:
 
 ```bash
-mvn validate
-mvn test
-mvn package
+mvn --batch-mode --no-transfer-progress package
 ```
 
-The build produces `target/keycloak-access-requests.jar`. It includes the Keycloak providers and its console themes in one deployable JAR.
+Copy `target/keycloak-access-requests.jar` to the Keycloak `providers/` directory, run `kc.sh build`, then restart Keycloak. Select the `access-requests` Account and Admin Console themes in **Realm settings → Themes**.
 
-## Account Console theme
+The complete deployment, configuration, and verification procedure is in [the installation guide](doc/installation.md).
 
-The Account Console theme is named `access-requests` and extends `keycloak.v3`. Maven builds its React assets and packages them with the FreeMarker `index.ftl` bootstrap.
+## What it provides
 
-To enable it in a realm:
+- an entitlement catalog with a resource, risk level, approver role, and requestable state;
+- user-facing request, history, cancellation, and approval flows;
+- synchronous provisioning of realm roles, client roles, and groups after approval;
+- immutable request and entitlement audit history;
+- realm-scoped REST endpoints and native-looking Keycloak console themes.
 
-1. Copy `target/keycloak-access-requests.jar` to Keycloak's `providers` directory.
-2. Run `kc.sh build` for an optimized Keycloak installation, then restart the server.
-3. In **Realm settings → Themes**, select `access-requests` as the **Account theme**.
+## Documentation
 
-The theme packages the native Account Console shell and the **Request access**, **My Requests**, and **Approvals** pages. The UI is covered by component, route, and API-client tests.
+Start with the [documentation index](doc/README.md):
 
-### Localization
-
-The Account and Admin Console themes provide English (`en`), French (`fr`), German (`de`), and Spanish (`es`) message bundles. Enable realm internationalization before users can select these languages:
-
-1. Open **Realm settings → Localization** in the Admin Console.
-2. Enable **Internationalization**.
-3. Add **English**, **French**, **German**, and **Spanish** to **Supported locales**.
-4. Choose a default locale from that list, then save. English is recommended when no organization-specific default is required.
-
-Keycloak resolves the locale per user, preferring an explicit user choice, the user profile, the OIDC `ui_locales` parameter, the saved browser choice, and the browser's `Accept-Language` header before the realm default. The locale selector is available after the user next signs in. Chinese is not currently a packaged theme locale, so an unsupported Chinese locale resolves to the realm default or English.
-
-Theme translations are UTF-8 message bundles. Use **Realm settings → Localization → Realm overrides** only for a deliberate realm-wide wording override: it overrides the same message key in every applicable theme.
-
-## Account Console local development
-
-The Account Console uses the same Vite and Keycloak workflow as the official Account Console scaffold. Run the commands in two terminals:
-
-```bash
-cd themes/access-requests-ui
-pnpm install
-pnpm run account:dev
-```
-
-```bash
-mvn package
-cd themes/access-requests-ui
-pnpm run account:start-keycloak
-```
-
-`account:start-keycloak` downloads Keycloak `26.7.3` once to `themes/access-requests-ui/server/`, installs the built provider JAR, and starts it in development mode with `KC_ACCOUNT_VITE_URL=http://localhost:5173`. Open `http://localhost:8080/realms/master/account` and sign in with `admin` / `admin`.
-
-Pass Keycloak development options after `--`, for example `pnpm run account:start-keycloak -- --http-port=8181`. To start an existing Keycloak installation instead of the managed local server, set `KEYCLOAK_HOME`; its providers directory is intentionally not changed by this script.
-
-`pnpm run account:start-keycloak:packaged` starts the same local server without Vite. It serves the Account Console theme and its assets from the provider JAR, which is the mode exercised by the CI browser tests.
-
-## Account Console browser tests
-
-The UI follows Keycloak's Playwright setup and runs the same scenarios in Chromium and Firefox. With Vite and `start-keycloak` running in separate terminals, install the browsers once and run:
-
-```bash
-cd themes/access-requests-ui
-pnpm exec playwright install chromium firefox
-pnpm run test:e2e
-```
-
-CI invokes the same browser suite through Maven's `playwright-e2e` profile after starting a packaged Keycloak server. To use that lifecycle locally against a running packaged server, run `mvn verify -Pplaywright-e2e -DskipTests -DskipITs`.
-
-## Admin Console theme
-
-The Admin Console theme is also named `access-requests` and extends `keycloak.v2`. Select it as the **Admin Console theme** in **Realm settings → Themes**. It packages a React Admin Console shell based on Keycloak's public UI package, including an **Access requests** entry in the native navigation and the access entitlement catalog page. No experimental Keycloak feature is required.
-
-For local development, build the provider and run the Admin Vite server alongside Keycloak:
-
-```bash
-cd themes/access-requests-ui
-pnpm run admin:dev
-```
-
-```bash
-mvn package
-cd themes/access-requests-ui
-pnpm run admin:start-keycloak
-```
-
-`admin:start-keycloak` uses `KC_ADMIN_VITE_URL=http://localhost:5174`; `admin:start-keycloak:packaged` runs the same local server without Vite.
-
-The default target is `http://localhost:8080/admin/master/console/` with the local `admin` / `admin` bootstrap account. Set `KEYCLOAK_ADMIN_CONSOLE_URL`, `KEYCLOAK_TEST_USERNAME`, and `KEYCLOAK_TEST_PASSWORD` to target another development environment.
+- [Installation and upgrades](doc/installation.md)
+- [Realm configuration and authorization](doc/configuration.md)
+- [Workflow and entitlement model](doc/workflow.md)
+- [REST API reference](doc/api.md)
+- [Console themes](doc/consoles.md)
+- [Architecture](doc/architecture.md)
+- [Development and testing](doc/development.md)
 
 ## License
 
-This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+This project is licensed under the [Apache License 2.0](LICENSE).
