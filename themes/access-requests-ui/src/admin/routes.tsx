@@ -1,8 +1,14 @@
 import { routes as keycloakRoutes } from "@keycloak/keycloak-admin-ui";
+import { lazy } from "react";
 import type { RouteObject } from "react-router-dom";
 
 import { AccessRequestsAdminApp } from "./AccessRequestsAdminApp";
-import { EntitlementCatalogRoute } from "./pages/EntitlementCatalogRoute";
+
+const EntitlementCatalogRoute = lazy(async () => {
+    const module = await import("./pages/EntitlementCatalogRoute");
+
+    return { default: module.EntitlementCatalogRoute };
+});
 
 type AdminRoute = RouteObject & {
     handle?: {
