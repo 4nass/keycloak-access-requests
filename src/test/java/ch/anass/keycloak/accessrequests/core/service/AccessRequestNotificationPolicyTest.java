@@ -38,10 +38,10 @@ class AccessRequestNotificationPolicyTest {
                 () -> assertEquals(AccessRequestNotificationType.REQUEST_SUBMITTED, notification.type()),
                 () -> assertEquals(AccessRequestNotificationRecipientType.REALM_ROLE, notification.recipientType()),
                 () -> assertEquals(entitlement.approverRoleId(), notification.recipientId()),
-                () -> assertEquals(request.id(), notification.requestId()),
-                () -> assertEquals(request.realmId(), notification.realmId()),
-                () -> assertEquals(request.requesterId(), notification.requesterId()),
-                () -> assertEquals(entitlement.id(), notification.entitlementId()));
+                () -> assertEquals(request.id(), notification.request().id()),
+                () -> assertEquals(request.justification(), notification.request().justification()),
+                () -> assertEquals(entitlement.id(), notification.entitlement().id()),
+                () -> assertEquals(entitlement.displayName(), notification.entitlement().displayName()));
     }
 
     @Test
@@ -65,8 +65,8 @@ class AccessRequestNotificationPolicyTest {
                 () -> assertEquals(AccessRequestNotificationRecipientType.USER, rejection.recipientType()),
                 () -> assertEquals(request.requesterId(), approval.recipientId()),
                 () -> assertEquals(request.requesterId(), rejection.recipientId()),
-                () -> assertEquals("Approved for the close.", approval.comment()),
-                () -> assertEquals("Please add more context.", rejection.comment()));
+                () -> assertEquals("Approved for the close.", approval.event().comment()),
+                () -> assertEquals("Please add more context.", rejection.event().comment()));
     }
 
     @Test
@@ -86,7 +86,7 @@ class AccessRequestNotificationPolicyTest {
                 () -> assertEquals(AccessRequestNotificationType.PROVISIONING_FAILED, notification.type()),
                 () -> assertEquals(AccessRequestNotificationRecipientType.USER, notification.recipientType()),
                 () -> assertEquals(request.requesterId(), notification.recipientId()),
-                () -> assertEquals("The configured role no longer exists.", notification.comment()));
+                () -> assertEquals("The configured role no longer exists.", notification.event().comment()));
     }
 
     @Test

@@ -3,6 +3,8 @@ package ch.anass.keycloak.accessrequests.core.service;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotification;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationType;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
@@ -16,6 +18,7 @@ import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
+import ch.anass.keycloak.accessrequests.core.port.AccessRequestNotificationPublisher;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
 import ch.anass.keycloak.accessrequests.core.port.ApprovalAuthorizer;
@@ -51,6 +54,8 @@ class RequestServiceTest {
     private final InMemoryEffectiveAccessChecker effectiveAccess = new InMemoryEffectiveAccessChecker();
     private final InMemoryUserStatusReader users = new InMemoryUserStatusReader();
     private final InMemoryAccessRequestEventPublisher events = new InMemoryAccessRequestEventPublisher();
+    private final InMemoryAccessRequestNotificationPublisher notifications =
+            new InMemoryAccessRequestNotificationPublisher();
     private final InMemoryApprovalAuthorizer approvalAuthorizer = new InMemoryApprovalAuthorizer();
     private final InMemoryEntitlementProvisioner provisioner = new InMemoryEntitlementProvisioner();
     private final InMemoryAccessRequestTransaction transaction =
@@ -64,7 +69,8 @@ class RequestServiceTest {
             events,
             approvalAuthorizer,
             transaction,
-            List.of(provisioner));
+            List.of(provisioner),
+            notifications);
 
     @Test
     void createsPendingRequestForRequestableEntitlement() {
@@ -88,6 +94,70 @@ class RequestServiceTest {
         assertEquals(AccessRequestEventType.REQUEST_CREATED, events.published().get(0).type());
         assertEquals(created.id(), events.published().get(0).requestId());
         assertEquals("requester-1", events.published().get(0).actorId());
+    }
+
+    @Test
+    void publishesOnlyUserFacingNotificationsFromTheRequestLifecycle() {
+        Entitlement entitlement = financeEntitlement();
+        entitlements.add(entitlement);
+        AccessRequest request = service.create(
+                "realm-1",
+                "requester-1",
+                "entitlement-1",
+                "Access is needed for the finance project.");
+
+        service.approve("realm-1", request.id(), "approver-1", "Approved for the project.");
+
+        List<AccessRequestNotification> published = notifications.published();
+        assertEquals(List.of(
+                        AccessRequestNotificationType.REQUEST_SUBMITTED,
+                        AccessRequestNotificationType.REQUEST_APPROVED),
+                published.stream().map(AccessRequestNotification::type).toList());
+        assertEquals(entitlement.approverRoleId(), published.get(0).recipientId());
+        assertEquals("requester-1", published.get(1).recipientId());
+        assertEquals("Approved for the project.", published.get(1).event().comment());
+    }
+
+    @Test
+    void publishesARejectionNotificationToTheRequester() {
+        entitlements.add(financeEntitlement());
+        AccessRequest request = service.create(
+                "realm-1",
+                "requester-1",
+                "entitlement-1",
+                "Access is needed for the finance project.");
+
+        service.reject("realm-1", request.id(), "approver-1", "Please add more context.");
+
+        List<AccessRequestNotification> published = notifications.published();
+        assertEquals(List.of(
+                        AccessRequestNotificationType.REQUEST_SUBMITTED,
+                        AccessRequestNotificationType.REQUEST_REJECTED),
+                published.stream().map(AccessRequestNotification::type).toList());
+        assertEquals("requester-1", published.get(1).recipientId());
+        assertEquals("Please add more context.", published.get(1).event().comment());
+    }
+
+    @Test
+    void publishesAProvisioningFailureNotificationToTheRequester() {
+        entitlements.add(financeEntitlement());
+        provisioner.failWith("The configured role no longer exists.");
+        AccessRequest request = service.create(
+                "realm-1",
+                "requester-1",
+                "entitlement-1",
+                "Access is needed for the finance project.");
+
+        service.approve("realm-1", request.id(), "approver-1", "Approved for the project.");
+
+        List<AccessRequestNotification> published = notifications.published();
+        assertEquals(List.of(
+                        AccessRequestNotificationType.REQUEST_SUBMITTED,
+                        AccessRequestNotificationType.REQUEST_APPROVED,
+                        AccessRequestNotificationType.PROVISIONING_FAILED),
+                published.stream().map(AccessRequestNotification::type).toList());
+        assertEquals("requester-1", published.get(2).recipientId());
+        assertEquals("The configured role no longer exists.", published.get(2).event().comment());
     }
 
     @Test
@@ -851,6 +921,21 @@ class RequestServiceTest {
         }
     }
 
+    private static final class InMemoryAccessRequestNotificationPublisher
+            implements AccessRequestNotificationPublisher {
+
+        private final List<AccessRequestNotification> values = new ArrayList<>();
+
+        @Override
+        public synchronized void publish(AccessRequestNotification notification) {
+            values.add(notification);
+        }
+
+        synchronized List<AccessRequestNotification> published() {
+            return List.copyOf(values);
+        }
+    }
+
     private static final class InMemoryApprovalAuthorizer implements ApprovalAuthorizer {
 
         private final Map<String, Boolean> decisions = new HashMap<>();
@@ -924,6 +1009,12 @@ class RequestServiceTest {
 
     private static final class InMemoryEntitlementProvisioner implements EntitlementProvisioner {
 
+        private ProvisioningResult result = ProvisioningResult.succeeded();
+
+        void failWith(String reason) {
+            result = ProvisioningResult.failed(reason);
+        }
+
         @Override
         public boolean supports(ResourceType resourceType) {
             return true;
@@ -931,7 +1022,7 @@ class RequestServiceTest {
 
         @Override
         public ProvisioningResult grant(String realmId, String requesterId, Entitlement entitlement) {
-            return ProvisioningResult.succeeded();
+            return result;
         }
     }
 }

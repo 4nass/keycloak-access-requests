@@ -10,6 +10,7 @@ import ch.anass.keycloak.accessrequests.core.domain.SelfApprovalException;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedApprovalException;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
+import ch.anass.keycloak.accessrequests.core.port.AccessRequestNotificationPublisher;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
 import ch.anass.keycloak.accessrequests.core.port.ApprovalAuthorizer;
@@ -27,12 +28,17 @@ import java.util.UUID;
 
 public final class RequestService {
 
+    private static final AccessRequestNotificationPublisher NO_OP_NOTIFICATION_PUBLISHER = notification -> {
+    };
+
     private final EntitlementRepository entitlementRepository;
     private final AccessRequestRepository accessRequestRepository;
     private final EffectiveAccessChecker effectiveAccessChecker;
     private final UserStatusReader userStatusReader;
     private final RequestPolicy requestPolicy;
     private final AccessRequestEventPublisher eventPublisher;
+    private final AccessRequestNotificationPublisher notificationPublisher;
+    private final AccessRequestNotificationPolicy notificationPolicy;
     private final ApprovalAuthorizer approvalAuthorizer;
     private final AccessRequestTransaction transaction;
     private final List<EntitlementProvisioner> provisioners;
@@ -49,7 +55,8 @@ public final class RequestService {
             AccessRequestTransaction transaction,
             List<EntitlementProvisioner> provisioners) {
         this(entitlementRepository, accessRequestRepository, effectiveAccessChecker, userStatusReader,
-                requestPolicy, eventPublisher, approvalAuthorizer, transaction, provisioners, Clock.systemUTC());
+                requestPolicy, eventPublisher, approvalAuthorizer, transaction, provisioners,
+                NO_OP_NOTIFICATION_PUBLISHER, Clock.systemUTC());
     }
 
     public RequestService(
@@ -63,12 +70,47 @@ public final class RequestService {
             AccessRequestTransaction transaction,
             List<EntitlementProvisioner> provisioners,
             Clock clock) {
+        this(entitlementRepository, accessRequestRepository, effectiveAccessChecker, userStatusReader,
+                requestPolicy, eventPublisher, approvalAuthorizer, transaction, provisioners,
+                NO_OP_NOTIFICATION_PUBLISHER, clock);
+    }
+
+    public RequestService(
+            EntitlementRepository entitlementRepository,
+            AccessRequestRepository accessRequestRepository,
+            EffectiveAccessChecker effectiveAccessChecker,
+            UserStatusReader userStatusReader,
+            RequestPolicy requestPolicy,
+            AccessRequestEventPublisher eventPublisher,
+            ApprovalAuthorizer approvalAuthorizer,
+            AccessRequestTransaction transaction,
+            List<EntitlementProvisioner> provisioners,
+            AccessRequestNotificationPublisher notificationPublisher) {
+        this(entitlementRepository, accessRequestRepository, effectiveAccessChecker, userStatusReader,
+                requestPolicy, eventPublisher, approvalAuthorizer, transaction, provisioners, notificationPublisher,
+                Clock.systemUTC());
+    }
+
+    public RequestService(
+            EntitlementRepository entitlementRepository,
+            AccessRequestRepository accessRequestRepository,
+            EffectiveAccessChecker effectiveAccessChecker,
+            UserStatusReader userStatusReader,
+            RequestPolicy requestPolicy,
+            AccessRequestEventPublisher eventPublisher,
+            ApprovalAuthorizer approvalAuthorizer,
+            AccessRequestTransaction transaction,
+            List<EntitlementProvisioner> provisioners,
+            AccessRequestNotificationPublisher notificationPublisher,
+            Clock clock) {
         this.entitlementRepository = Objects.requireNonNull(entitlementRepository);
         this.accessRequestRepository = Objects.requireNonNull(accessRequestRepository);
         this.effectiveAccessChecker = Objects.requireNonNull(effectiveAccessChecker);
         this.userStatusReader = Objects.requireNonNull(userStatusReader);
         this.requestPolicy = Objects.requireNonNull(requestPolicy);
         this.eventPublisher = Objects.requireNonNull(eventPublisher);
+        this.notificationPublisher = Objects.requireNonNull(notificationPublisher);
+        this.notificationPolicy = new AccessRequestNotificationPolicy();
         this.approvalAuthorizer = Objects.requireNonNull(approvalAuthorizer);
         this.transaction = Objects.requireNonNull(transaction);
         this.provisioners = List.copyOf(Objects.requireNonNull(provisioners));
@@ -113,7 +155,8 @@ public final class RequestService {
             return transaction.execute(() -> {
                 AccessRequest persisted = accessRequestRepository.createIfNoPending(request)
                         .orElseThrow(() -> new RequestAlreadyPendingException(entitlementId));
-                eventPublisher.publish(AccessRequestEvent.created(persisted, requesterId, occurredAt));
+                AccessRequestEvent event = AccessRequestEvent.created(persisted, requesterId, occurredAt);
+                publish(event, persisted, entitlement);
                 return persisted;
             });
         } catch (DuplicatePendingRequestException exception) {
@@ -153,9 +196,10 @@ public final class RequestService {
             Instant decidedAt = Instant.now(clock);
             candidate.approve(approverId, decisionComment, decidedAt);
             AccessRequest approved = updateOrThrow(candidate, request.version());
-            eventPublisher.publish(AccessRequestEvent.approved(
-                    approved, approverId, decidedAt, decisionComment));
-            eventPublisher.publish(AccessRequestEvent.provisioningStarted(approved, approverId, decidedAt));
+            AccessRequestEvent approvalEvent = AccessRequestEvent.approved(
+                    approved, approverId, decidedAt, decisionComment);
+            publish(approvalEvent, approved, entitlement);
+            publish(AccessRequestEvent.provisioningStarted(approved, approverId, decidedAt), approved, entitlement);
 
             ProvisioningResult result = provision(realmId, approved.requesterId(), entitlement);
             AccessRequest completed = approved.copy();
@@ -166,10 +210,11 @@ public final class RequestService {
                 completed.markProvisioningFailed(completedAt);
             }
             AccessRequest persisted = updateOrThrow(completed, approved.version());
-            eventPublisher.publish(result.isSuccessful()
+            AccessRequestEvent provisioningEvent = result.isSuccessful()
                     ? AccessRequestEvent.provisioningSucceeded(persisted, approverId, completedAt)
                     : AccessRequestEvent.provisioningFailed(
-                            persisted, approverId, completedAt, result.failureReason()));
+                            persisted, approverId, completedAt, result.failureReason());
+            publish(provisioningEvent, persisted, entitlement);
             return persisted;
         });
     }
@@ -179,18 +224,25 @@ public final class RequestService {
             String requestId,
             String approverId,
             String decisionComment) {
-        AccessRequest request = findRequest(realmId, requestId);
-        authorizeDecision(realmId, request, approverId);
-
         return transaction.execute(() -> {
+            AccessRequest request = findRequest(realmId, requestId);
+            Entitlement entitlement = entitlementRepository.findById(realmId, request.entitlementId())
+                    .orElseThrow(() -> new EntitlementNotFoundException(request.entitlementId()));
+            authorizeDecision(realmId, request, approverId);
             AccessRequest candidate = request.copy();
             Instant occurredAt = Instant.now(clock);
             candidate.reject(approverId, decisionComment, occurredAt);
             AccessRequest persisted = updateOrThrow(candidate, request.version());
-            eventPublisher.publish(AccessRequestEvent.rejected(
-                    persisted, approverId, occurredAt, decisionComment));
+            AccessRequestEvent event = AccessRequestEvent.rejected(
+                    persisted, approverId, occurredAt, decisionComment);
+            publish(event, persisted, entitlement);
             return persisted;
         });
+    }
+
+    private void publish(AccessRequestEvent event, AccessRequest request, Entitlement entitlement) {
+        eventPublisher.publish(event);
+        notificationPolicy.notificationsFor(request, entitlement, event).forEach(notificationPublisher::publish);
     }
 
     private AccessRequest findRequest(String realmId, String requestId) {
