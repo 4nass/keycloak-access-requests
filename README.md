@@ -140,6 +140,19 @@ To enable it in a realm:
 
 The theme packages the native Account Console shell and the **Request access**, **My Requests**, and **Approvals** pages. The UI is covered by component, route, and API-client tests.
 
+### Localization
+
+The Account and Admin Console themes provide English (`en`), French (`fr`), German (`de`), and Spanish (`es`) message bundles. Enable realm internationalization before users can select these languages:
+
+1. Open **Realm settings → Localization** in the Admin Console.
+2. Enable **Internationalization**.
+3. Add **English**, **French**, **German**, and **Spanish** to **Supported locales**.
+4. Choose a default locale from that list, then save. English is recommended when no organization-specific default is required.
+
+Keycloak resolves the locale per user, preferring an explicit user choice, the user profile, the OIDC `ui_locales` parameter, the saved browser choice, and the browser's `Accept-Language` header before the realm default. The locale selector is available after the user next signs in. Chinese is not currently a packaged theme locale, so an unsupported Chinese locale resolves to the realm default or English.
+
+Theme translations are UTF-8 message bundles. Use **Realm settings → Localization → Realm overrides** only for a deliberate realm-wide wording override: it overrides the same message key in every applicable theme.
+
 ## Account Console local development
 
 The Account Console uses the same Vite and Keycloak workflow as the official Account Console scaffold. Run the commands in two terminals:
