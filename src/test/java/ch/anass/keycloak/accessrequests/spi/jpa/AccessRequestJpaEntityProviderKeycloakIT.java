@@ -278,6 +278,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 .formatted(server.getHost(), server.getMappedPort(8080)));
         URI capabilityEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/capabilities"
                 .formatted(server.getHost(), server.getMappedPort(8080)));
+        URI referenceEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/references?type=REALM_ROLE"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
         String adminToken = accessToken(server, "admin-cli");
 
         HttpResponse<Void> unauthenticatedResponse = HttpClient.newHttpClient().send(
@@ -310,6 +312,13 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .build(),
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(403, delegatedManagerResponse.statusCode());
+        HttpResponse<Void> delegatedReferenceResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(referenceEndpoint)
+                        .header("Authorization", "Bearer " + delegatedUserToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(403, delegatedReferenceResponse.statusCode());
 
         String roleOnlyUsername = "catalog-role-only-user-" + UUID.randomUUID();
         String roleOnlyPassword = "catalog-role-only-password";
@@ -345,6 +354,11 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertTrue(delegatedManagerCapability.body().contains("\"canManageCatalog\":true"));
         String targetRoleId = createRealmRole(server, adminToken, "catalog-target-" + UUID.randomUUID());
         String approverRoleId = createRealmRole(server, adminToken, "catalog-approver-" + UUID.randomUUID());
+        ClientRole clientRole = createClientRole(server, adminToken, "catalog-client-target-" + UUID.randomUUID());
+        String groupId = createGroup(server, adminToken, "catalog-group-target-" + UUID.randomUUID());
+        assertKeycloakReferenceIsListed(server, managerToken, "REALM_ROLE", "catalog-target", targetRoleId);
+        assertKeycloakReferenceIsListed(server, managerToken, "CLIENT_ROLE", "catalog-client-target", clientRole.roleId());
+        assertKeycloakReferenceIsListed(server, managerToken, "GROUP", "catalog-group-target", groupId);
         String description = "Read-only access to the catalog-managed finance report.";
         HttpResponse<String> creationResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementEndpoint)
@@ -1349,6 +1363,20 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .build(),
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(201, response.statusCode());
+    }
+
+    private void assertKeycloakReferenceIsListed(
+            GenericContainer<?> server, String accessToken, String type, String search, String expectedId) throws Exception {
+        URI endpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/references?type=%s&search=%s"
+                .formatted(server.getHost(), server.getMappedPort(8080), type, search));
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(endpoint)
+                        .header("Authorization", "Bearer " + accessToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"id\":\"" + expectedId + "\""));
     }
 
     private void createDirectAccessClient(GenericContainer<?> server, String adminToken, String clientId)

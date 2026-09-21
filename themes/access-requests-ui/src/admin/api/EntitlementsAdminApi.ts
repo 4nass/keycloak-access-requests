@@ -33,9 +33,17 @@ export type AdminCapabilities = {
     canManageCatalog: boolean;
 };
 
+export type KeycloakReference = {
+    type: Entitlement["resourceType"];
+    id: string;
+    name: string;
+    description: string;
+};
+
 export type EntitlementsAdminApi = {
     capabilities(): Promise<AdminCapabilities>;
     list(query?: { page?: number; size?: number }): Promise<EntitlementPage>;
+    references(type: Entitlement["resourceType"], query?: { search?: string; max?: number }): Promise<KeycloakReference[]>;
     create(submission: EntitlementCreation): Promise<Entitlement>;
     update(id: string, submission: EntitlementUpdate): Promise<Entitlement>;
 };
@@ -98,10 +106,19 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
         page: String(query.page ?? 0),
         size: String(query.size ?? 20)
     });
+    const referenceQuery = (type: Entitlement["resourceType"], query: { search?: string; max?: number } = {}) => new URLSearchParams({
+        type,
+        search: query.search ?? "",
+        max: String(query.max ?? 50)
+    });
 
     return {
         capabilities: () => request("/admin/capabilities"),
         list: (query) => request(`/admin/entitlements?${pageQuery(query)}`),
+        references: async (type, query) => {
+            const response = await request<{ items: KeycloakReference[] }>(`/admin/references?${referenceQuery(type, query)}`);
+            return response.items;
+        },
         create: (submission) => request("/admin/entitlements", json("POST", submission)),
         update: (id, submission) => request(`/admin/entitlements/${encodeURIComponent(id)}`, json("PUT", submission))
     };

@@ -35,13 +35,15 @@ import {
     ToolbarItem,
     Title
 } from "@patternfly/react-core";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useDeferredValue, useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
     presentEntitlementsAdminError,
     type Entitlement,
-    type EntitlementCreation
+    type EntitlementCreation,
+    type EntitlementsAdminApi,
+    type KeycloakReference
 } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
 
@@ -245,6 +247,7 @@ export function EntitlementCatalogPage() {
             </PageSection>
             {dialog && (
                 <EntitlementDialog
+                    api={api}
                     error={formMessage}
                     form={form}
                     isSaving={isSaving}
@@ -299,6 +302,7 @@ function EntitlementListItem({ entitlement, onEdit }: { entitlement: Entitlement
 }
 
 function EntitlementDialog({
+    api,
     error,
     form,
     isSaving,
@@ -307,6 +311,7 @@ function EntitlementDialog({
     onSave,
     onUpdate
 }: {
+    api: EntitlementsAdminApi;
     error?: string;
     form: FormValues;
     isSaving: boolean;
@@ -341,7 +346,10 @@ function EntitlementDialog({
                     <FormSelect
                         id="entitlement-resource-type"
                         isDisabled={!isCreate || isSaving}
-                        onChange={(_event, value) => onUpdate("resourceType", value as FormValues["resourceType"])}
+                        onChange={(_event, value) => {
+                            onUpdate("resourceType", value as FormValues["resourceType"]);
+                            onUpdate("resourceId", "");
+                        }}
                         value={form.resourceType}
                     >
                         <FormSelectOption label={t("accessRequestsAdminResourceTypeRealmRole")} value="REALM_ROLE" />
@@ -350,13 +358,21 @@ function EntitlementDialog({
                     </FormSelect>
                 </FormGroup>
                 <FormGroup fieldId="entitlement-resource-id" isRequired label={t("accessRequestsAdminResourceId")}>
-                    <TextInput
-                        id="entitlement-resource-id"
-                        isDisabled={!isCreate || isSaving}
-                        isRequired
-                        onChange={(_event, value) => onUpdate("resourceId", value)}
-                        value={form.resourceId}
-                    />
+                    {isCreate ? (
+                        <KeycloakReferenceSelector
+                            api={api}
+                            fieldId="entitlement-resource-id"
+                            isDisabled={isSaving}
+                            onSelect={(value) => onUpdate("resourceId", value)}
+                            resourceType={form.resourceType}
+                            searchLabel="accessRequestsAdminSearchResources"
+                            searchPlaceholder="accessRequestsAdminSearchResourcesPlaceholder"
+                            selectionPlaceholder="accessRequestsAdminSelectResource"
+                            value={form.resourceId}
+                        />
+                    ) : (
+                        <TextInput id="entitlement-resource-id" readOnly value={form.resourceId} />
+                    )}
                 </FormGroup>
                 <FormGroup fieldId="entitlement-display-name" isRequired label={t("accessRequestsAdminDisplayName")}>
                     <TextInput
@@ -390,11 +406,15 @@ function EntitlementDialog({
                     </FormSelect>
                 </FormGroup>
                 <FormGroup fieldId="entitlement-approver-role" isRequired label={t("accessRequestsAdminApproverRole")}>
-                    <TextInput
-                        id="entitlement-approver-role"
+                    <KeycloakReferenceSelector
+                        api={api}
+                        fieldId="entitlement-approver-role"
                         isDisabled={isSaving}
-                        isRequired
-                        onChange={(_event, value) => onUpdate("approverRoleId", value)}
+                        onSelect={(value) => onUpdate("approverRoleId", value)}
+                        resourceType="REALM_ROLE"
+                        searchLabel="accessRequestsAdminSearchApproverRoles"
+                        searchPlaceholder="accessRequestsAdminSearchApproverRolesPlaceholder"
+                        selectionPlaceholder="accessRequestsAdminSelectApproverRole"
                         value={form.approverRoleId}
                     />
                 </FormGroup>
@@ -411,6 +431,98 @@ function EntitlementDialog({
                 )}
             </Form>
         </Modal>
+    );
+}
+
+function KeycloakReferenceSelector({
+    api,
+    fieldId,
+    isDisabled,
+    onSelect,
+    resourceType,
+    searchLabel,
+    searchPlaceholder,
+    selectionPlaceholder,
+    value
+}: {
+    api: EntitlementsAdminApi;
+    fieldId: string;
+    isDisabled: boolean;
+    onSelect: (value: string) => void;
+    resourceType: Entitlement["resourceType"];
+    searchLabel: string;
+    searchPlaceholder: string;
+    selectionPlaceholder: string;
+    value: string;
+}) {
+    const { t } = useTranslation();
+    const [search, setSearch] = useState("");
+    const deferredSearch = useDeferredValue(search);
+    const [references, setReferences] = useState<KeycloakReference[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<unknown>();
+
+    useEffect(() => {
+        let active = true;
+        setLoading(true);
+        setLoadError(undefined);
+        void api.references(resourceType, { search: deferredSearch })
+            .then((items) => {
+                if (active) {
+                    setReferences(items);
+                }
+            })
+            .catch((referenceError: unknown) => {
+                if (active) {
+                    setReferences([]);
+                    setLoadError(referenceError);
+                }
+            })
+            .finally(() => {
+                if (active) {
+                    setLoading(false);
+                }
+            });
+        return () => {
+            active = false;
+        };
+    }, [api, deferredSearch, resourceType]);
+
+    const selectedReference = references.find((reference) => reference.id === value);
+    const selectedOption = value && !selectedReference
+        ? { description: "", id: value, name: value, type: resourceType }
+        : selectedReference;
+
+    return (
+        <>
+            <TextInput
+                aria-label={t(searchLabel)}
+                id={`${fieldId}-search`}
+                isDisabled={isDisabled}
+                onChange={(_event, nextSearch) => setSearch(nextSearch)}
+                placeholder={t(searchPlaceholder)}
+                value={search}
+            />
+            {loadError && <Alert isInline title={errorText(loadError, t)} variant="danger" className="pf-v5-u-mt-sm" />}
+            <FormSelect
+                aria-label={t(selectionPlaceholder)}
+                id={fieldId}
+                isDisabled={isDisabled || loading || Boolean(loadError)}
+                isRequired
+                onChange={(_event, nextValue) => onSelect(nextValue)}
+                value={value}
+            >
+                <FormSelectOption isDisabled label={t(selectionPlaceholder)} value="" />
+                {selectedOption && <FormSelectOption label={selectedOption.name} value={selectedOption.id} />}
+                {loading && <FormSelectOption isDisabled label={t("accessRequestsAdminReferencesLoading")} value="loading" />}
+                {!loading && !loadError && references.length === 0 && (
+                    <FormSelectOption isDisabled label={t("accessRequestsAdminReferencesEmpty")} value="empty" />
+                )}
+                {references.filter((reference) => reference.id !== selectedOption?.id).map((reference) => (
+                    <FormSelectOption key={reference.id} label={reference.name} value={reference.id} />
+                ))}
+            </FormSelect>
+        </>
     );
 }
 

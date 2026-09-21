@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
     create: vi.fn(),
     list: vi.fn(),
+    references: vi.fn(),
     update: vi.fn()
 }));
 
@@ -32,6 +33,12 @@ describe("EntitlementCatalogPage", () => {
     beforeEach(() => {
         api.create.mockReset();
         api.list.mockReset().mockResolvedValue({ items: [entitlement], page: 0, size: 20, total: 1 });
+        api.references.mockReset().mockImplementation((type) => Promise.resolve(type === "REALM_ROLE"
+            ? [
+                { description: "Access to finance reports", id: "finance-reader-role", name: "Finance Reader", type },
+                { description: "Approves finance access", id: "finance-approvers", name: "Finance Approvers", type }
+            ]
+            : []));
         api.update.mockReset().mockResolvedValue({ ...entitlement, requestable: false, version: 5 });
     });
 
@@ -65,6 +72,38 @@ describe("EntitlementCatalogPage", () => {
             version: 4
         }));
         await waitFor(() => expect(screen.getByText("accessRequestsAdminUpdated")).toBeVisible());
+    });
+
+    it("selects immutable Keycloak resources and approver roles instead of accepting raw identifiers", async () => {
+        const user = userEvent.setup();
+        api.create.mockResolvedValue({ ...entitlement, id: "finance-reader" });
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminCreateEntitlement" }));
+        await waitFor(() => expect(api.references).toHaveBeenCalled());
+        await user.selectOptions(
+            screen.getByRole("combobox", { name: "accessRequestsAdminSelectResource" }),
+            "finance-reader-role"
+        );
+        await user.selectOptions(
+            screen.getByRole("combobox", { name: "accessRequestsAdminSelectApproverRole" }),
+            "finance-approvers"
+        );
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminDisplayName" }), "Finance reader access");
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminDescription" }), "Read-only finance access.");
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminSave" }));
+
+        await waitFor(() => expect(api.create).toHaveBeenCalledWith({
+            approverRoleId: "finance-approvers",
+            description: "Read-only finance access.",
+            displayName: "Finance reader access",
+            resourceId: "finance-reader-role",
+            resourceType: "REALM_ROLE",
+            riskLevel: "LOW"
+        }));
+        expect(screen.queryByRole("textbox", { name: "accessRequestsAdminResourceId" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("textbox", { name: "accessRequestsAdminApproverRole" })).not.toBeInTheDocument();
     });
 
     it("retains the existing page and shows a safe inline error when refresh fails", async () => {

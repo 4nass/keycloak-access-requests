@@ -76,6 +76,25 @@ describe("Entitlements administration API client", () => {
         });
     });
 
+    it("loads Keycloak-managed references through the delegated catalog API", async () => {
+        const reference = {
+            description: "Reviews finance access requests",
+            id: "role-finance-approvers",
+            name: "finance-approvers",
+            type: "REALM_ROLE" as const
+        };
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ items: [reference] }));
+
+        await expect(createApi(fetchMock).references("REALM_ROLE", { max: 25, search: "finance" }))
+            .resolves.toEqual([reference]);
+        expect(request(fetchMock)).toEqual({
+            url: "https://keycloak.example/realms/finance/access-requests/admin/references?type=REALM_ROLE&search=finance&max=25",
+            init: expect.objectContaining({
+                headers: expect.objectContaining({ authorization: "Bearer admin-console-token" })
+            })
+        });
+    });
+
     it("creates an entitlement using the immutable Keycloak resource fields", async () => {
         const fetchMock = vi.fn().mockResolvedValue(jsonResponse(entitlement, 201));
         const submission = {

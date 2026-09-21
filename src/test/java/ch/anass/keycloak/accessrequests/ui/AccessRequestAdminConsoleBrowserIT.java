@@ -14,6 +14,7 @@ import org.openqa.selenium.logging.LogType;
 import org.openqa.selenium.logging.LoggingPreferences;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
@@ -285,11 +286,12 @@ class AccessRequestAdminConsoleBrowserIT {
         WebDriverWait wait = waitFor(driver);
         wait.until(ExpectedConditions.elementToBeClickable(
                 By.xpath("//button[normalize-space()='Create entitlement']"))).click();
-        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("entitlement-resource-id")))
-                .sendKeys(fixture.managedTargetRoleId());
+        new Select(wait.until(ExpectedConditions.elementToBeClickable(By.id("entitlement-resource-id"))))
+                .selectByValue(fixture.managedTargetRoleId());
         driver.findElement(By.id("entitlement-display-name")).sendKeys(displayName);
         driver.findElement(By.id("entitlement-description")).sendKeys("Created through the deployed Administration Console.");
-        driver.findElement(By.id("entitlement-approver-role")).sendKeys(fixture.approverRoleId());
+        new Select(wait.until(ExpectedConditions.elementToBeClickable(By.id("entitlement-approver-role"))))
+                .selectByValue(fixture.approverRoleId());
         driver.findElement(By.xpath("//button[normalize-space()='Save']")).click();
 
         try {

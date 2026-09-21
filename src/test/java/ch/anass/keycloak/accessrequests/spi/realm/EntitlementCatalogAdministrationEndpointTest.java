@@ -73,6 +73,23 @@ class EntitlementCatalogAdministrationEndpointTest {
     }
 
     @Test
+    void exposesAnAuthorizedKeycloakReferenceLookupForNativeCatalogSelectors() throws Exception {
+        Method handler = handler("listKeycloakReferences");
+
+        assertTrue(handler.isAnnotationPresent(GET.class));
+        assertEquals("admin/references", handler.getAnnotation(Path.class).value());
+        assertJsonResponse(handler);
+        assertEquals(3, handler.getParameterCount());
+        assertEquals(ResourceType.class, handler.getParameterTypes()[0]);
+        assertEquals("type", handler.getParameters()[0].getAnnotation(QueryParam.class).value());
+        assertEquals(String.class, handler.getParameterTypes()[1]);
+        assertEquals("search", handler.getParameters()[1].getAnnotation(QueryParam.class).value());
+        assertEquals(int.class, handler.getParameterTypes()[2]);
+        assertEquals("max", handler.getParameters()[2].getAnnotation(QueryParam.class).value());
+        assertEquals("50", handler.getParameters()[2].getAnnotation(DefaultValue.class).value());
+    }
+
+    @Test
     void usesAnExplicitCreationPayloadForTheImmutableKeycloakResource() throws Exception {
         Class<?> creation = Class.forName(ENTITLEMENT_CREATION_TYPE);
 
@@ -130,6 +147,16 @@ class EntitlementCatalogAdministrationEndpointTest {
                         "id", "resourceType", "resourceId", "displayName", "description", "riskLevel",
                         "approverRoleId", "requestable", "createdAt", "updatedAt", "version"},
                 Arrays.stream(AccessRequestRealmResource.EntitlementResponse.class.getRecordComponents())
+                        .map(RecordComponent::getName)
+                        .toArray(String[]::new));
+    }
+
+    @Test
+    void returnsOnlySafeKeycloakReferenceFieldsForTheSelector() {
+        assertTrue(AccessRequestRealmResource.KeycloakReferenceResponse.class.isRecord());
+        assertArrayEquals(
+                new String[]{"type", "id", "name", "description"},
+                Arrays.stream(AccessRequestRealmResource.KeycloakReferenceResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));
     }
