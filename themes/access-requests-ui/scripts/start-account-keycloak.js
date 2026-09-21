@@ -114,7 +114,6 @@ function startServer(directory) {
         keycloakExecutable(directory),
         [
             "start-dev",
-            "--features=login:v2,account:v3,admin-fine-grained-authz,transient-users,oid4vc-vci,organization",
             ...argumentsForKeycloak
         ],
         {
