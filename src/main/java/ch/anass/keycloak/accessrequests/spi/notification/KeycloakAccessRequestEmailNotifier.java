@@ -12,6 +12,7 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
@@ -99,10 +100,10 @@ public final class KeycloakAccessRequestEmailNotifier implements AccessRequestNo
     }
 
     private static Map<String, Object> templateAttributes(AccessRequestNotification notification) {
-        return Map.of(
+        return new HashMap<>(Map.of(
                 "request", notification.request(),
                 "entitlement", notification.entitlement(),
-                "event", notification.event());
+                "event", notification.event()));
     }
 
     private void logDeliveryFailure(AccessRequestNotification notification, Exception exception) {

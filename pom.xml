@@ -66,6 +66,8 @@
         <selenium.chrome.container>selenium/standalone-chrome:4.45.0-20260606</selenium.chrome.container>
         <postgresql.version>18</postgresql.version>
         <postgresql.container>mirror.gcr.io/postgres:${postgresql.version}</postgresql.container>
+        <mailpit.version>v1.30.7</mailpit.version>
+        <mailpit.container>axllent/mailpit:${mailpit.version}</mailpit.container>
         <maven.surefire.version>3.5.6</maven.surefire.version>
         <maven.failsafe.version>3.5.6</maven.failsafe.version>
         <frontend.maven.plugin.version>2.0.2</frontend.maven.plugin.version>
@@ -200,6 +202,7 @@
                             <webdriver.remote.enableTracing>false</webdriver.remote.enableTracing>
                             <keycloak.version>${keycloak.version}</keycloak.version>
                             <postgresql.container>${postgresql.container}</postgresql.container>
+                            <mailpit.container>${mailpit.container}</mailpit.container>
                             <selenium.chrome.container>${selenium.chrome.container}</selenium.chrome.container>
                         </systemPropertyVariables>
                     </configuration>

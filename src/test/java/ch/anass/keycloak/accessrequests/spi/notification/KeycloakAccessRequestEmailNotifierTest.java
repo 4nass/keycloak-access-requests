@@ -256,11 +256,14 @@ class KeycloakAccessRequestEmailNotifierTest {
                         if (emailRecipient.getId().equals(failingRecipientId)) {
                             throw new EmailException("SMTP rejected the message");
                         }
+                        Map<String, Object> attributes = (Map<String, Object>) arguments[2];
+                        attributes.put("keycloakThemeAttribute", "theme");
+                        attributes.remove("keycloakThemeAttribute");
                         deliveries.add(new Delivery(
                                 emailRecipient.getId(),
                                 (String) arguments[0],
                                 (String) arguments[1],
-                                Map.copyOf((Map<String, Object>) arguments[2])));
+                                Map.copyOf(attributes)));
                         return null;
                     }
                     default -> {
