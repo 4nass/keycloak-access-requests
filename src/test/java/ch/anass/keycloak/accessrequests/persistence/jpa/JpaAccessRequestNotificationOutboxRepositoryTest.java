@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JpaAccessRequestNotificationOutboxRepositoryTest {
@@ -65,6 +66,37 @@ class JpaAccessRequestNotificationOutboxRepositoryTest {
             assertTrue(new JpaAccessRequestNotificationOutboxRepository(entityManager)
                     .claimDue(queuedAt.plus(Duration.ofDays(1)), Duration.ofMinutes(5), "processor-3", 50)
                     .isEmpty());
+            entityManager.getTransaction().commit();
+        }
+    }
+
+    @Test
+    void commitsTheLeaseForTheOwnerAndRejectsOtherOrExpiredClaims() {
+        Instant queuedAt = Instant.parse("2026-09-22T10:00:00Z");
+        try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
+            entityManager.getTransaction().begin();
+            new JpaAccessRequestNotificationOutboxRepository(entityManager)
+                    .enqueue(notification(), AccessRequestNotificationRecipientType.USER, "requester-lease", queuedAt);
+            entityManager.getTransaction().commit();
+        }
+
+        String deliveryId;
+        try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
+            entityManager.getTransaction().begin();
+            deliveryId = new JpaAccessRequestNotificationOutboxRepository(entityManager)
+                    .claimDue(queuedAt, Duration.ofMinutes(5), "processor-lease", 1)
+                    .getFirst()
+                    .id();
+            entityManager.getTransaction().commit();
+        }
+
+        try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
+            entityManager.getTransaction().begin();
+            JpaAccessRequestNotificationOutboxRepository outbox =
+                    new JpaAccessRequestNotificationOutboxRepository(entityManager);
+            assertTrue(outbox.ownsActiveClaim(deliveryId, "processor-lease", queuedAt.plusSeconds(1)));
+            assertFalse(outbox.ownsActiveClaim(deliveryId, "another-processor", queuedAt.plusSeconds(1)));
+            assertFalse(outbox.ownsActiveClaim(deliveryId, "processor-lease", queuedAt.plus(Duration.ofMinutes(6))));
             entityManager.getTransaction().commit();
         }
     }

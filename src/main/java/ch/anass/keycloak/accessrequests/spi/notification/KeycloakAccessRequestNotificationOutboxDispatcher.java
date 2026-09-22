@@ -4,6 +4,7 @@ import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotification;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationRecipientType;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationType;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestEventEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestNotificationOutboxEntity;
@@ -72,7 +73,7 @@ public final class KeycloakAccessRequestNotificationOutboxDispatcher implements 
     }
 
     private static boolean deliverNext(KeycloakSessionFactory sessionFactory) {
-        return KeycloakModelUtils.runJobInTransactionWithResult(sessionFactory, session -> {
+        DeliveryClaim claim = KeycloakModelUtils.runJobInTransactionWithResult(sessionFactory, session -> {
             EntityManager entityManager = Objects.requireNonNull(
                     session.getProvider(JpaConnectionProvider.class),
                     "Keycloak JPA connection provider must not be null")
@@ -84,63 +85,73 @@ public final class KeycloakAccessRequestNotificationOutboxDispatcher implements 
             List<AccessRequestNotificationOutboxEntity> entries =
                     outbox.claimDue(now, LEASE_DURATION, processorId, 1);
             if (entries.isEmpty()) {
-                return false;
+                return null;
             }
-            deliver(session, entityManager, outbox, entries.getFirst(), processorId, now);
-            return true;
+            return DeliveryClaim.from(entries.getFirst(), processorId);
         });
+        if (claim == null) {
+            return false;
+        }
+
+        // The claim transaction has committed before this second transaction can perform SMTP I/O.
+        KeycloakModelUtils.runJobInTransaction(sessionFactory, session -> deliverClaim(session, claim));
+        return true;
     }
 
-    private static void deliver(
-            KeycloakSession session,
-            EntityManager entityManager,
-            JpaAccessRequestNotificationOutboxRepository outbox,
-            AccessRequestNotificationOutboxEntity entry,
-            String processorId,
-            Instant now) {
+    private static void deliverClaim(KeycloakSession session, DeliveryClaim claim) {
+        EntityManager entityManager = Objects.requireNonNull(
+                session.getProvider(JpaConnectionProvider.class),
+                "Keycloak JPA connection provider must not be null")
+                .getEntityManager();
+        JpaAccessRequestNotificationOutboxRepository outbox =
+                new JpaAccessRequestNotificationOutboxRepository(entityManager);
         try {
-            RealmModel realm = session.realms().getRealm(entry.realmId());
+            if (!outbox.ownsActiveClaim(claim.id(), claim.processorId(), Instant.now())) {
+                LOG.debugf("Skipping stale access request notification claim %s.", claim.id());
+                return;
+            }
+            RealmModel realm = session.realms().getRealm(claim.realmId());
             AccessRequest request = new JpaAccessRequestRepository(entityManager)
-                    .findById(entry.realmId(), entry.requestId())
+                    .findById(claim.realmId(), claim.requestId())
                     .orElse(null);
             Entitlement entitlement = new JpaEntitlementRepository(entityManager)
-                    .findById(entry.realmId(), entry.entitlementId())
+                    .findById(claim.realmId(), claim.entitlementId())
                     .orElse(null);
-            AccessRequestEventEntity eventEntity = entityManager.find(AccessRequestEventEntity.class, entry.eventId());
+            AccessRequestEventEntity eventEntity = entityManager.find(AccessRequestEventEntity.class, claim.eventId());
             if (realm == null || request == null || entitlement == null || eventEntity == null) {
-                outbox.markDiscarded(entry.id(), processorId, now);
+                outbox.markDiscarded(claim.id(), claim.processorId(), Instant.now());
                 return;
             }
             session.getContext().setRealm(realm);
             AccessRequestNotification notification = new AccessRequestNotification(
-                    entry.notificationType(),
-                    entry.recipientType(),
-                    entry.recipientId(),
+                    claim.notificationType(),
+                    claim.recipientType(),
+                    claim.recipientId(),
                     request,
                     entitlement,
                     eventEntity.toDomain());
-            if (entry.recipientType() == AccessRequestNotificationRecipientType.REALM_ROLE) {
-                if (queueRoleMemberDeliveries(session, realm, outbox, notification, now)) {
-                    outbox.markDelivered(entry.id(), processorId, now);
+            if (claim.recipientType() == AccessRequestNotificationRecipientType.REALM_ROLE) {
+                if (queueRoleMemberDeliveries(session, realm, outbox, notification, Instant.now())) {
+                    outbox.markDelivered(claim.id(), claim.processorId(), Instant.now());
                 } else {
-                    outbox.markDiscarded(entry.id(), processorId, now);
+                    outbox.markDiscarded(claim.id(), claim.processorId(), Instant.now());
                 }
                 return;
             }
             KeycloakAccessRequestEmailNotifier.DeliveryResult result =
-                    new KeycloakAccessRequestEmailNotifier(session, realm).deliver(notification, entry.recipientId());
+                    new KeycloakAccessRequestEmailNotifier(session, realm).deliver(notification, claim.recipientId());
             if (result == KeycloakAccessRequestEmailNotifier.DeliveryResult.SENT) {
-                outbox.markDelivered(entry.id(), processorId, now);
+                outbox.markDelivered(claim.id(), claim.processorId(), Instant.now());
             } else {
-                outbox.markDiscarded(entry.id(), processorId, now);
+                outbox.markDiscarded(claim.id(), claim.processorId(), Instant.now());
             }
         } catch (Exception exception) {
             LOG.warnf(
                     exception,
                     "Could not deliver access request notification %s for request %s.",
-                    entry.notificationType(),
-                    entry.requestId());
-            outbox.markFailed(entry.id(), processorId, now, MAXIMUM_ATTEMPTS);
+                    claim.notificationType(),
+                    claim.requestId());
+            outbox.markFailed(claim.id(), claim.processorId(), Instant.now(), MAXIMUM_ATTEMPTS);
         }
     }
 
@@ -174,5 +185,30 @@ public final class KeycloakAccessRequestNotificationOutboxDispatcher implements 
     interface IsolatedDeliveryRunner {
 
         boolean run(KeycloakSessionFactory sessionFactory);
+    }
+
+    private record DeliveryClaim(
+            String id,
+            String processorId,
+            String realmId,
+            String recipientId,
+            AccessRequestNotificationRecipientType recipientType,
+            AccessRequestNotificationType notificationType,
+            String eventId,
+            String requestId,
+            String entitlementId) {
+
+        private static DeliveryClaim from(AccessRequestNotificationOutboxEntity entry, String processorId) {
+            return new DeliveryClaim(
+                    entry.id(),
+                    processorId,
+                    entry.realmId(),
+                    entry.recipientId(),
+                    entry.recipientType(),
+                    entry.notificationType(),
+                    entry.eventId(),
+                    entry.requestId(),
+                    entry.entitlementId());
+        }
     }
 }

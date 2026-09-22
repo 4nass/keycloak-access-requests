@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class KeycloakAccessRequestNotificationOutboxDispatcherTest {
 
     @Test
-    void startsOneIsolatedTransactionForEachDueDelivery() {
+    void startsOneIsolatedDeliveryWorkflowForEachDueDelivery() {
         AtomicInteger transactions = new AtomicInteger();
         KeycloakAccessRequestNotificationOutboxDispatcher dispatcher =
                 new KeycloakAccessRequestNotificationOutboxDispatcher(sessionFactory ->
@@ -24,7 +24,7 @@ class KeycloakAccessRequestNotificationOutboxDispatcherTest {
     }
 
     @Test
-    void capsOneTimerTickAtFiftyIsolatedTransactions() {
+    void capsOneTimerTickAtFiftyDueDeliveries() {
         AtomicInteger transactions = new AtomicInteger();
         KeycloakAccessRequestNotificationOutboxDispatcher dispatcher =
                 new KeycloakAccessRequestNotificationOutboxDispatcher(sessionFactory -> {

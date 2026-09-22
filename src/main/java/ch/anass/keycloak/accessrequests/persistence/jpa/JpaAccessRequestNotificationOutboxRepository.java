@@ -230,6 +230,26 @@ public final class JpaAccessRequestNotificationOutboxRepository {
         transition(id, processorId, AccessRequestNotificationOutboxState.DELIVERED, deliveredAt, null);
     }
 
+    /**
+     * Checks that a worker still owns a committed, unexpired lease before it performs an external side effect.
+     */
+    public boolean ownsActiveClaim(String id, String processorId, Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        return entityManager.createQuery("""
+                        select count(entry)
+                          from AccessRequestNotificationOutboxEntity entry
+                         where entry.id = :id
+                           and entry.state = :processing
+                           and entry.processorId = :processorId
+                           and entry.leaseUntilTimestamp > :now
+                        """, Long.class)
+                .setParameter("id", id)
+                .setParameter("processing", AccessRequestNotificationOutboxState.PROCESSING)
+                .setParameter("processorId", processorId)
+                .setParameter("now", now.toEpochMilli())
+                .getSingleResult() == 1L;
+    }
+
     public void markDiscarded(String id, String processorId, Instant discardedAt) {
         transition(id, processorId, AccessRequestNotificationOutboxState.DISCARDED, discardedAt, null);
     }

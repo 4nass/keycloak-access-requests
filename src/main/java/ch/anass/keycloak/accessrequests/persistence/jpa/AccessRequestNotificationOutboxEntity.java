@@ -142,18 +142,6 @@ public class AccessRequestNotificationOutboxEntity {
         return id;
     }
 
-    public String eventId() {
-        return eventId;
-    }
-
-    public String requestId() {
-        return requestId;
-    }
-
-    public String entitlementId() {
-        return entitlementId;
-    }
-
     public String realmId() {
         return realmId;
     }
@@ -168,6 +156,18 @@ public class AccessRequestNotificationOutboxEntity {
 
     public AccessRequestNotificationType notificationType() {
         return notificationType;
+    }
+
+    public String eventId() {
+        return eventId;
+    }
+
+    public String requestId() {
+        return requestId;
+    }
+
+    public String entitlementId() {
+        return entitlementId;
     }
 
     public int attemptCount() {

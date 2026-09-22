@@ -82,7 +82,7 @@ class KeycloakAccessRequestEmailDeliveryIT {
             .withExposedPorts(1025);
 
     @Container
-    private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(POSTGRESQL_IMAGE)
+    private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(POSTGRESQL_IMAGE)
             .withDatabaseName("keycloak")
             .withUsername("keycloak")
             .withPassword("keycloak")
