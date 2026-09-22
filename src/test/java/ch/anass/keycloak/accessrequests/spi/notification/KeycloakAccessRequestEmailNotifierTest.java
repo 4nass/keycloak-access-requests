@@ -234,6 +234,7 @@ class KeycloakAccessRequestEmailNotifierTest {
             });
         }
 
+        @SuppressWarnings("unchecked")
         private KeycloakSession session() {
             UserProvider userProvider = proxy(UserProvider.class, (proxy, method, arguments) -> switch (method.getName()) {
                 case "getUserById" -> users.get(arguments[1]);
