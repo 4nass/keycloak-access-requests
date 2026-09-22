@@ -1,30 +1,21 @@
 package ch.anass.keycloak.accessrequests.spi.notification;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotification;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationRecipientType;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationType;
-import ch.anass.keycloak.accessrequests.core.port.AccessRequestNotificationPublisher;
-import org.jboss.logging.Logger;
 import org.keycloak.email.EmailException;
 import org.keycloak.email.EmailTemplateProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
 
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Stream;
 
 /**
- * Delivers access request lifecycle notifications through Keycloak's configured email provider.
+ * Delivers one already queued access request notification through Keycloak's configured email provider.
  */
-public final class KeycloakAccessRequestEmailNotifier implements AccessRequestNotificationPublisher {
-
-    private static final Logger LOG = Logger.getLogger(KeycloakAccessRequestEmailNotifier.class);
+public final class KeycloakAccessRequestEmailNotifier {
 
     private final KeycloakSession session;
     private final RealmModel realm;
@@ -34,65 +25,26 @@ public final class KeycloakAccessRequestEmailNotifier implements AccessRequestNo
         this.realm = Objects.requireNonNull(realm, "realm must not be null");
     }
 
-    @Override
-    public void publish(AccessRequestNotification notification) {
+    public DeliveryResult deliver(AccessRequestNotification notification, String recipientId) throws EmailException {
         if (notification == null || !realm.getId().equals(notification.request().realmId())) {
-            return;
+            return DeliveryResult.DISCARDED;
         }
-
-        Set<String> deliveredUserIds = new HashSet<>();
-        try {
-            switch (notification.recipientType()) {
-                case USER -> deliverUser(notification.recipientId(), notification, deliveredUserIds);
-                case REALM_ROLE -> deliverRoleMembers(notification.recipientId(), notification, deliveredUserIds);
-            }
-        } catch (RuntimeException exception) {
-            logDeliveryFailure(notification, exception);
+        UserModel recipient = session.users().getUserById(realm, recipientId);
+        if (!isDeliverable(recipient)) {
+            return DeliveryResult.DISCARDED;
         }
+        EmailTemplateProvider email = session.getProvider(EmailTemplateProvider.class);
+        if (email == null) {
+            throw new IllegalStateException("Keycloak email template provider must not be null");
+        }
+        EmailTemplate template = EmailTemplate.forType(notification.type());
+        email.setRealm(realm)
+                .setUser(recipient)
+                .send(template.subjectKey(), template.fileName(), templateAttributes(notification));
+        return DeliveryResult.SENT;
     }
 
-    private void deliverRoleMembers(
-            String roleId,
-            AccessRequestNotification notification,
-            Set<String> deliveredUserIds) {
-        RoleModel role = realm.getRoleById(roleId);
-        if (role == null) {
-            return;
-        }
-        try (Stream<UserModel> members = session.users().getRoleMembersStream(realm, role)) {
-            members.forEach(member -> deliver(member, notification, deliveredUserIds));
-        }
-    }
-
-    private void deliverUser(
-            String userId,
-            AccessRequestNotification notification,
-            Set<String> deliveredUserIds) {
-        deliver(session.users().getUserById(realm, userId), notification, deliveredUserIds);
-    }
-
-    private void deliver(
-            UserModel recipient,
-            AccessRequestNotification notification,
-            Set<String> deliveredUserIds) {
-        try {
-            if (!isDeliverable(recipient) || !deliveredUserIds.add(recipient.getId())) {
-                return;
-            }
-            EmailTemplateProvider email = session.getProvider(EmailTemplateProvider.class);
-            if (email == null) {
-                return;
-            }
-            EmailTemplate template = EmailTemplate.forType(notification.type());
-            email.setRealm(realm)
-                    .setUser(recipient)
-                    .send(template.subjectKey(), template.fileName(), templateAttributes(notification));
-        } catch (EmailException | RuntimeException exception) {
-            logDeliveryFailure(notification, exception);
-        }
-    }
-
-    private static boolean isDeliverable(UserModel user) {
+    static boolean isDeliverable(UserModel user) {
         return user != null
                 && user.isEnabled()
                 && hasText(user.getId())
@@ -104,14 +56,6 @@ public final class KeycloakAccessRequestEmailNotifier implements AccessRequestNo
                 "request", notification.request(),
                 "entitlement", notification.entitlement(),
                 "event", notification.event()));
-    }
-
-    private void logDeliveryFailure(AccessRequestNotification notification, Exception exception) {
-        LOG.warnf(
-                exception,
-                "Could not deliver access request notification %s for request %s.",
-                notification.type(),
-                notification.request().id());
     }
 
     private static boolean hasText(String value) {
@@ -136,5 +80,10 @@ public final class KeycloakAccessRequestEmailNotifier implements AccessRequestNo
                         "access-request-provisioning-failed.ftl");
             };
         }
+    }
+
+    public enum DeliveryResult {
+        SENT,
+        DISCARDED
     }
 }

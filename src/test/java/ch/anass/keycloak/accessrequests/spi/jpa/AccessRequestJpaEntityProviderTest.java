@@ -2,6 +2,7 @@ package ch.anass.keycloak.accessrequests.spi.jpa;
 
 import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestEventEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestNotificationOutboxEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.EntitlementEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.EntitlementAuditEventEntity;
 import org.junit.jupiter.api.Test;
@@ -41,11 +42,12 @@ class AccessRequestJpaEntityProviderTest {
     void exposesTheAccessRequestEntitiesToKeycloak() {
         JpaEntityProvider provider = providerFactory().create(null);
 
-        assertEquals(4, provider.getEntities().size());
+        assertEquals(5, provider.getEntities().size());
         assertEquals(
                 Set.of(
                         AccessRequestEntity.class,
                         AccessRequestEventEntity.class,
+                        AccessRequestNotificationOutboxEntity.class,
                         EntitlementEntity.class,
                         EntitlementAuditEventEntity.class),
                 Set.copyOf(provider.getEntities()));

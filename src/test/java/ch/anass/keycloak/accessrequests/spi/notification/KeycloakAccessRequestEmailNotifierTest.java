@@ -29,8 +29,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class KeycloakAccessRequestEmailNotifierTest {
@@ -40,69 +40,59 @@ class KeycloakAccessRequestEmailNotifierTest {
     void sendsEachLifecycleNotificationWithItsLocalizedSubjectAndTemplate(
             AccessRequestNotificationType type,
             String subjectKey,
-            String template) {
+            String template) throws Exception {
         KeycloakFixture fixture = KeycloakFixture.withUser("requester-1", true, "requester@example.test");
 
-        fixture.notifier().publish(fixture.notification(type, AccessRequestNotificationRecipientType.USER, "requester-1"));
+        assertEquals(
+                KeycloakAccessRequestEmailNotifier.DeliveryResult.SENT,
+                fixture.notifier().deliver(
+                        fixture.notification(type, AccessRequestNotificationRecipientType.USER, "requester-1"),
+                        "requester-1"));
 
         fixture.assertDelivery("requester-1", subjectKey, template);
         fixture.assertTemplateContext();
     }
 
     @Test
-    void sendsSubmittedNotificationsToEveryDeliverableApproverInTheConfiguredRealmRole() {
-        KeycloakFixture fixture = KeycloakFixture.withRoleMembers(
-                "finance-approver",
-                user("approver-1", true, "approver-1@example.test"),
-                user("approver-2", true, "approver-2@example.test"),
-                user("disabled-approver", false, "disabled@example.test"),
-                user("missing-email", true, null));
+    void discardsRecipientsThatNoLongerHaveAnEnabledEmailAddress() throws Exception {
+        KeycloakFixture fixture = KeycloakFixture.withUser("requester-1", false, "requester@example.test");
 
-        fixture.notifier().publish(fixture.notification(
-                AccessRequestNotificationType.REQUEST_SUBMITTED,
-                AccessRequestNotificationRecipientType.REALM_ROLE,
-                "finance-approver"));
-
-        assertEquals(List.of("approver-1", "approver-2"), fixture.deliveredRecipientIds());
-        fixture.assertDelivery("approver-1", "accessRequestSubmittedSubject", "access-request-submitted.ftl");
-        fixture.assertDelivery("approver-2", "accessRequestSubmittedSubject", "access-request-submitted.ftl");
+        assertEquals(
+                KeycloakAccessRequestEmailNotifier.DeliveryResult.DISCARDED,
+                fixture.notifier().deliver(fixture.notification(
+                        AccessRequestNotificationType.REQUEST_SUBMITTED,
+                        AccessRequestNotificationRecipientType.USER,
+                        "requester-1"), "requester-1"));
+        assertTrue(fixture.deliveries().isEmpty());
     }
 
     @Test
-    void ignoresUnknownRecipientsAndNotificationsFromAnotherRealm() {
+    void discardsUnknownRecipientsAndNotificationsFromAnotherRealm() throws Exception {
         KeycloakFixture fixture = KeycloakFixture.withUser("requester-1", true, "requester@example.test");
 
-        assertDoesNotThrow(() -> fixture.notifier().publish(fixture.notification(
+        assertEquals(KeycloakAccessRequestEmailNotifier.DeliveryResult.DISCARDED, fixture.notifier().deliver(fixture.notification(
                 AccessRequestNotificationType.REQUEST_APPROVED,
                 AccessRequestNotificationRecipientType.USER,
-                "unknown-user")));
-        assertDoesNotThrow(() -> fixture.notifier().publish(fixture.notification(
-                AccessRequestNotificationType.REQUEST_SUBMITTED,
-                AccessRequestNotificationRecipientType.REALM_ROLE,
-                "unknown-role")));
-        assertDoesNotThrow(() -> fixture.notifier().publish(fixture.notificationInRealm(
+                "unknown-user"), "unknown-user"));
+        assertEquals(KeycloakAccessRequestEmailNotifier.DeliveryResult.DISCARDED, fixture.notifier().deliver(fixture.notificationInRealm(
                 "another-realm",
                 AccessRequestNotificationType.REQUEST_APPROVED,
                 AccessRequestNotificationRecipientType.USER,
-                "requester-1")));
+                "requester-1"), "requester-1"));
 
         assertTrue(fixture.deliveries().isEmpty());
     }
 
     @Test
-    void isolatesEmailFailuresSoOneRecipientCannotBlockTheOthersOrTheRequestWorkflow() {
-        KeycloakFixture fixture = KeycloakFixture.withRoleMembers(
-                "finance-approver",
-                user("unreachable-approver", true, "unreachable@example.test"),
-                user("reachable-approver", true, "reachable@example.test"));
+    void propagatesEmailFailuresSoTheOutboxCanRetryDelivery() {
+        KeycloakFixture fixture = KeycloakFixture.withUser(
+                "unreachable-approver", true, "unreachable@example.test");
         fixture.failDeliveryTo("unreachable-approver");
 
-        assertDoesNotThrow(() -> fixture.notifier().publish(fixture.notification(
+        assertThrows(EmailException.class, () -> fixture.notifier().deliver(fixture.notification(
                 AccessRequestNotificationType.REQUEST_SUBMITTED,
-                AccessRequestNotificationRecipientType.REALM_ROLE,
-                "finance-approver")));
-
-        assertEquals(List.of("reachable-approver"), fixture.deliveredRecipientIds());
+                AccessRequestNotificationRecipientType.USER,
+                "unreachable-approver"), "unreachable-approver"));
     }
 
     private static Stream<Arguments> notificationTemplates() {

@@ -62,7 +62,7 @@ public class AccessRequestEventEntity {
         this.metadata = event.metadata();
     }
 
-    AccessRequestEvent toDomain() {
+    public AccessRequestEvent toDomain() {
         return AccessRequestEvent.rehydrate(
                 id,
                 requestId,

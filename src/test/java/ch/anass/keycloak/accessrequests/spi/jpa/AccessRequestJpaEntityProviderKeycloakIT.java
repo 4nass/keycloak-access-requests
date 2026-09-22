@@ -269,7 +269,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertTrue(tableExists(connection, "ar_access_request_history"));
             assertTrue(tableExists(connection, "ar_entitlement"));
             assertTrue(tableExists(connection, "ar_entitlement_history"));
-            assertEquals(5, providerChangeSetCount(connection));
+            assertTrue(tableExists(connection, "ar_notification_outbox"));
+            assertEquals(6, providerChangeSetCount(connection));
         }
     }
 

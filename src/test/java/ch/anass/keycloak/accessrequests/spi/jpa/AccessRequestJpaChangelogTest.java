@@ -96,12 +96,32 @@ class AccessRequestJpaChangelogTest {
                             "REQUESTABLE",
                             "VERSION"),
                     columnsOf(connection, "AR_ENTITLEMENT_HISTORY"));
+            assertEquals(
+                    Set.of(
+                            "ID",
+                            "DELIVERY_KEY",
+                            "EVENT_ID",
+                            "REQUEST_ID",
+                            "ENTITLEMENT_ID",
+                            "REALM_ID",
+                            "RECIPIENT_ID",
+                            "NOTIFICATION_TYPE",
+                            "STATE",
+                            "ATTEMPT_COUNT",
+                            "NEXT_ATTEMPT_TIMESTAMP",
+                            "LEASE_UNTIL_TIMESTAMP",
+                            "PROCESSOR_ID",
+                            "DELIVERED_TIMESTAMP",
+                            "VERSION"),
+                    columnsOf(connection, "AR_NOTIFICATION_OUTBOX"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
                     .contains("IDX_ACCESS_REQUEST_REQUESTER_CREATED"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
                     .contains("IDX_ACCESS_REQUEST_APPROVAL_QUEUE"));
             assertTrue(indexNamesOf(connection, "AR_ENTITLEMENT_HISTORY")
                     .contains("IDX_ENTITLEMENT_HISTORY_ENTITLEMENT_TIME"));
+            assertTrue(indexNamesOf(connection, "AR_NOTIFICATION_OUTBOX")
+                    .contains("IDX_NOTIFICATION_OUTBOX_DUE"));
         }
     }
 

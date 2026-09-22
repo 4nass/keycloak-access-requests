@@ -42,7 +42,7 @@ import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestHistoryR
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaEntitlementRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaEntitlementAuditEventPublisher;
-import ch.anass.keycloak.accessrequests.spi.notification.KeycloakAccessRequestEmailNotifier;
+import ch.anass.keycloak.accessrequests.spi.notification.KeycloakAccessRequestNotificationOutboxPublisher;
 import ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakEntitlementProvisioner;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ClientErrorException;
@@ -579,7 +579,8 @@ public final class AccessRequestRealmResource {
                                 authenticatedRequest.realm(), authenticatedRequest.user())),
                 new KeycloakAccessRequestTransaction(session),
                 List.of(new KeycloakEntitlementProvisioner(session, authenticatedRequest.realm())),
-                new KeycloakAccessRequestEmailNotifier(session, authenticatedRequest.realm()));
+                new KeycloakAccessRequestNotificationOutboxPublisher(
+                        session, authenticatedRequest.realm(), entityManager));
     }
 
     private ApprovalQueueService approvalQueueService(AuthenticatedRequest authenticatedRequest) {

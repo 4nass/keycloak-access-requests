@@ -510,7 +510,7 @@ class KeycloakAccessRequestEmailDeliveryIT {
     }
 
     private void assertDeliveredMessage(String recipient, String subject, String... expectedContent) throws Exception {
-        JsonNode message = waitForMessage(recipient, subject);
+        JsonNode message = waitForMessage(recipient, subject, expectedContent);
         assertEquals(subject, message.path("Subject").asText());
         assertEquals(FROM_ADDRESS, message.path("From").path("Address").asText());
         assertEquals(FROM_DISPLAY_NAME, message.path("From").path("Name").asText());
@@ -530,7 +530,7 @@ class KeycloakAccessRequestEmailDeliveryIT {
         }
     }
 
-    private JsonNode waitForMessage(String recipient, String subject) throws Exception {
+    private JsonNode waitForMessage(String recipient, String subject, String... expectedContent) throws Exception {
         Instant deadline = Instant.now().plus(DELIVERY_TIMEOUT);
         String latestMessages = "";
         while (Instant.now().isBefore(deadline)) {
@@ -548,7 +548,10 @@ class KeycloakAccessRequestEmailDeliveryIT {
                             HttpRequest.newBuilder(mailpitEndpoint("/api/v1/message/" + id)).GET().build(),
                             HttpResponse.BodyHandlers.ofString());
                     assertEquals(200, detail.statusCode());
-                    return JSON.readTree(detail.body());
+                    JsonNode message = JSON.readTree(detail.body());
+                    if (containsExpectedContent(message, expectedContent)) {
+                        return message;
+                    }
                 }
             }
             Thread.sleep(200);
@@ -556,6 +559,17 @@ class KeycloakAccessRequestEmailDeliveryIT {
         throw new AssertionError("No email for %s with subject '%s' was delivered within %s. Mailpit messages: %s"
                 .formatted(recipient, subject, DELIVERY_TIMEOUT, latestMessages)
                 + "\nKeycloak log tail:\n" + keycloakLogTail());
+    }
+
+    private static boolean containsExpectedContent(JsonNode message, String... expectedContent) {
+        String text = message.path("Text").asText();
+        String html = message.path("HTML").asText();
+        for (String expected : expectedContent) {
+            if (!text.contains(expected) || !html.contains(expected)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private String accessToken(KeycloakContainer keycloak, String clientId, String username, String password)

@@ -196,4 +196,59 @@
             <column name="ID"/>
         </createIndex>
     </changeSet>
+
+    <changeSet id="6" author="4nass">
+        <createTable tableName="AR_NOTIFICATION_OUTBOX">
+            <column name="ID" type="VARCHAR(36)">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="PK_NOTIFICATION_OUTBOX"/>
+            </column>
+            <column name="DELIVERY_KEY" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="EVENT_ID" type="VARCHAR(36)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="REQUEST_ID" type="VARCHAR(36)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="ENTITLEMENT_ID" type="VARCHAR(36)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="REALM_ID" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="RECIPIENT_ID" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="NOTIFICATION_TYPE" type="VARCHAR(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="STATE" type="VARCHAR(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="ATTEMPT_COUNT" type="INT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="NEXT_ATTEMPT_TIMESTAMP" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="LEASE_UNTIL_TIMESTAMP" type="BIGINT"/>
+            <column name="PROCESSOR_ID" type="VARCHAR(36)"/>
+            <column name="DELIVERED_TIMESTAMP" type="BIGINT"/>
+            <column name="VERSION" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addUniqueConstraint
+                tableName="AR_NOTIFICATION_OUTBOX"
+                columnNames="DELIVERY_KEY"
+                constraintName="UK_NOTIFICATION_OUTBOX_DELIVERY"/>
+
+        <createIndex indexName="IDX_NOTIFICATION_OUTBOX_DUE" tableName="AR_NOTIFICATION_OUTBOX">
+            <column name="STATE"/>
+            <column name="NEXT_ATTEMPT_TIMESTAMP"/>
+            <column name="LEASE_UNTIL_TIMESTAMP"/>
+        </createIndex>
+    </changeSet>
 </databaseChangeLog>
