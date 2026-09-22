@@ -1,6 +1,14 @@
 # Console themes
 
-The provider packages two Keycloak console themes under the shared theme name `access-requests`.
+The provider packages two optional Keycloak console themes under the shared theme name `access-requests`.
+
+## Choose a console integration
+
+The server provider and realm API work without selecting either bundled console theme. This is the recommended default for a realm that already owns an Account or Admin theme, or that exposes access requests through another portal.
+
+Keycloak allows one Account theme and one Admin Console theme per realm; it does not offer a stable mechanism for automatically composing a route into any third-party theme. The bundled themes are therefore complete reference integrations, not mandatory dependencies. Selecting one replaces the matching realm theme.
+
+Teams that keep their own theme can integrate the realm API and reproduce the relevant pages in their maintained theme. They should treat the bundled React applications as implementation references and keep server-side API authorization as the security boundary.
 
 ## Account Console
 
@@ -30,7 +38,7 @@ The Admin UI is visible only after the capability check succeeds. The server sti
 
 ## Enable a theme
 
-For the selected realm:
+For a realm that chooses the bundled reference UI:
 
 1. Open **Realm settings → Themes**.
 2. Choose `access-requests` as the **Account theme**, **Admin Console theme**, or both.

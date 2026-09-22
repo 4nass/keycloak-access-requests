@@ -25,7 +25,7 @@ The resulting artifact is:
 target/keycloak-access-requests.jar
 ```
 
-The Maven build also builds the Account and Admin Console assets, validates the packaged themes, and places every server and UI component in that one JAR.
+The Maven build also builds the optional Account and Admin Console assets, validates the packaged themes, and places every server and UI component in that one JAR.
 
 ## Deploy to a Keycloak distribution
 
@@ -68,19 +68,19 @@ The JAR registers a Keycloak JPA entity provider and its Liquibase changelog. On
 - `AR_ACCESS_REQUEST_HISTORY`
 - `AR_ENTITLEMENT`
 - `AR_ENTITLEMENT_HISTORY`
+- `AR_NOTIFICATION_OUTBOX`
 
 No separate migration command is required. Back up the Keycloak database before every upgrade, review the release notes, and validate the new image against a restored production-like database before rollout.
 
 ## Verify the installation
 
-After startup, confirm all of the following in one target realm:
+After startup, confirm the provider API in one target realm, then validate the optional integrations that the realm uses:
 
-1. **Realm settings → Themes** lists `access-requests` for both Account and Admin Console themes.
-2. The Admin Console shows **Configure → Access requests** for an authorized catalog manager.
-3. The Account Console shows the **Access requests** navigation group for a user.
-4. `GET /realms/{realm}/access-requests/catalog` returns `401` without a bearer token and a paged JSON response with a correctly configured token.
+1. `GET /realms/{realm}/access-requests/catalog` returns `401` without a bearer token and a paged JSON response with a correctly configured token.
+2. If using a bundled console theme, **Realm settings → Themes** lists `access-requests` and the expected Account or Admin pages load.
+3. If lifecycle e-mails are enabled, test the selected realm SMTP server and send one notification using the selected e-mail-theme integration.
 
-The complete setup for roles, audience, and theme localization is in [Realm configuration](configuration.md).
+The complete setup for roles, audience, e-mail delivery, and theme localization is in [Realm configuration](configuration.md).
 
 ## Upgrade procedure
 
@@ -89,7 +89,7 @@ The complete setup for roles, audience, and theme localization is in [Realm conf
 3. Build the replacement JAR with `mvn clean verify`.
 4. Replace the JAR in `providers/` or rebuild the container image.
 5. Run `kc.sh build` again.
-6. Start one canary instance and verify catalog administration, a request, approval, provisioning, and both console themes.
+6. Start one canary instance and verify catalog administration, a request, approval, provisioning, lifecycle e-mail delivery, and both console themes.
 7. Roll out only after the canary is healthy.
 
 Never replace a provider JAR in a running Keycloak instance. If a compatibility or migration issue occurs, restore the database and the previously tested provider image or JAR together.

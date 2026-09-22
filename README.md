@@ -2,7 +2,7 @@
 
 Keycloak Access Requests is a Keycloak provider for requesting, approving, and provisioning access to realm roles, client roles, and groups.
 
-It is delivered as one JAR containing the server provider, database migrations, Account Console theme, and Admin Console theme.
+It is delivered as one JAR containing the server provider, database migrations, and optional Account, Admin Console, and e-mail themes.
 
 ## Supported baseline
 
@@ -20,7 +20,7 @@ Build the provider with Java 21 and Maven 3.9 or newer:
 mvn --batch-mode --no-transfer-progress package
 ```
 
-Copy `target/keycloak-access-requests.jar` to the Keycloak `providers/` directory, run `kc.sh build`, then restart Keycloak. Select the `access-requests` Account and Admin Console themes in **Realm settings → Themes**.
+Copy `target/keycloak-access-requests.jar` to the Keycloak `providers/` directory, run `kc.sh build`, then restart Keycloak. The provider API works without replacing any realm theme. The bundled console and e-mail themes are optional reference integrations; configure SMTP and an e-mail template integration before enabling lifecycle e-mails.
 
 The complete deployment, configuration, and verification procedure is in [the installation guide](doc/installation.md).
 
