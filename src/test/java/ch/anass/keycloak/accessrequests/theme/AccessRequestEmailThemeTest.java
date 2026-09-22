@@ -72,7 +72,9 @@ class AccessRequestEmailThemeTest {
                 .flatMap(template -> Stream.of(
                         template.messagePrefix() + "Subject",
                         template.messagePrefix() + "Body",
-                        template.messagePrefix() + "BodyHtml"))
+                        template.messagePrefix() + "BodyHtml",
+                        "accessRequestResourceLabel",
+                        "accessRequestJustificationLabel"))
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
