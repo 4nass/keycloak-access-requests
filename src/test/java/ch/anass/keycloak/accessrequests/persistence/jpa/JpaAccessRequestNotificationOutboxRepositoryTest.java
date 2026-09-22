@@ -18,6 +18,12 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -94,10 +100,70 @@ class JpaAccessRequestNotificationOutboxRepositoryTest {
             entityManager.getTransaction().begin();
             JpaAccessRequestNotificationOutboxRepository outbox =
                     new JpaAccessRequestNotificationOutboxRepository(entityManager);
-            assertTrue(outbox.ownsActiveClaim(deliveryId, "processor-lease", queuedAt.plusSeconds(1)));
-            assertFalse(outbox.ownsActiveClaim(deliveryId, "another-processor", queuedAt.plusSeconds(1)));
-            assertFalse(outbox.ownsActiveClaim(deliveryId, "processor-lease", queuedAt.plus(Duration.ofMinutes(6))));
+            assertTrue(outbox.lockActiveClaim(deliveryId, "processor-lease", queuedAt.plusSeconds(1)));
             entityManager.getTransaction().commit();
+        }
+
+        try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
+            entityManager.getTransaction().begin();
+            JpaAccessRequestNotificationOutboxRepository outbox =
+                    new JpaAccessRequestNotificationOutboxRepository(entityManager);
+            assertFalse(outbox.lockActiveClaim(deliveryId, "another-processor", queuedAt.plusSeconds(1)));
+            assertFalse(outbox.lockActiveClaim(deliveryId, "processor-lease", queuedAt.plus(Duration.ofMinutes(6))));
+            entityManager.getTransaction().commit();
+        }
+    }
+
+    @Test
+    void preventsConcurrentTakeoverWhenTheLeaseExpiresDuringDelivery() throws Exception {
+        Instant queuedAt = Instant.parse("2026-09-22T10:00:00Z");
+        try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
+            entityManager.getTransaction().begin();
+            new JpaAccessRequestNotificationOutboxRepository(entityManager)
+                    .enqueue(notification(), AccessRequestNotificationRecipientType.USER, "requester-lock", queuedAt);
+            entityManager.getTransaction().commit();
+        }
+
+        String deliveryId;
+        try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
+            entityManager.getTransaction().begin();
+            deliveryId = new JpaAccessRequestNotificationOutboxRepository(entityManager)
+                    .claimDue(queuedAt, Duration.ofMinutes(5), "processor-lock", 1)
+                    .getFirst()
+                    .id();
+            entityManager.getTransaction().commit();
+        }
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        CountDownLatch takeoverStarted = new CountDownLatch(1);
+        try (EntityManager deliveryEntityManager = entityManagerFactory.createEntityManager()) {
+            deliveryEntityManager.getTransaction().begin();
+            JpaAccessRequestNotificationOutboxRepository deliveryOutbox =
+                    new JpaAccessRequestNotificationOutboxRepository(deliveryEntityManager);
+            assertTrue(deliveryOutbox.lockActiveClaim(deliveryId, "processor-lock", queuedAt.plusSeconds(1)));
+
+            Future<Boolean> takeover = executor.submit(() -> {
+                takeoverStarted.countDown();
+                try (EntityManager otherEntityManager = entityManagerFactory.createEntityManager()) {
+                    otherEntityManager.getTransaction().begin();
+                    boolean reclaimed = !new JpaAccessRequestNotificationOutboxRepository(otherEntityManager)
+                            .claimDue(queuedAt.plus(Duration.ofMinutes(6)), Duration.ofMinutes(5), "processor-next", 1)
+                            .isEmpty();
+                    otherEntityManager.getTransaction().commit();
+                    return reclaimed;
+                }
+            });
+
+            assertTrue(takeoverStarted.await(5, TimeUnit.SECONDS));
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    TimeoutException.class,
+                    () -> takeover.get(100, TimeUnit.MILLISECONDS),
+                    "A second worker must wait for the active delivery row lock.");
+            deliveryOutbox.markDelivered(deliveryId, "processor-lock", queuedAt.plusSeconds(2));
+            deliveryEntityManager.getTransaction().commit();
+            assertFalse(takeover.get(5, TimeUnit.SECONDS), "A completed delivery must not be claimed again.");
+        } finally {
+            executor.shutdownNow();
         }
     }
 

@@ -170,6 +170,14 @@ public class AccessRequestNotificationOutboxEntity {
         return entitlementId;
     }
 
+    public Long leaseUntilTimestamp() {
+        return leaseUntilTimestamp;
+    }
+
+    public String processorId() {
+        return processorId;
+    }
+
     public int attemptCount() {
         return attemptCount;
     }

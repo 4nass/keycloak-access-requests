@@ -106,7 +106,7 @@ public final class KeycloakAccessRequestNotificationOutboxDispatcher implements 
         JpaAccessRequestNotificationOutboxRepository outbox =
                 new JpaAccessRequestNotificationOutboxRepository(entityManager);
         try {
-            if (!outbox.ownsActiveClaim(claim.id(), claim.processorId(), Instant.now())) {
+            if (!outbox.lockActiveClaim(claim.id(), claim.processorId(), Instant.now())) {
                 LOG.debugf("Skipping stale access request notification claim %s.", claim.id());
                 return;
             }

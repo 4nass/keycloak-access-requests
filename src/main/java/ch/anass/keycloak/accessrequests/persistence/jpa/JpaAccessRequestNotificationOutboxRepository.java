@@ -3,6 +3,7 @@ package ch.anass.keycloak.accessrequests.persistence.jpa;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotification;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationRecipientType;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -231,23 +232,20 @@ public final class JpaAccessRequestNotificationOutboxRepository {
     }
 
     /**
-     * Checks that a worker still owns a committed, unexpired lease before it performs an external side effect.
+     * Verifies and locks a committed, unexpired claim until the caller's transaction completes. The row lock fences
+     * out a concurrent takeover even if the lease expires while the external side effect is in progress.
      */
-    public boolean ownsActiveClaim(String id, String processorId, Instant now) {
+    public boolean lockActiveClaim(String id, String processorId, Instant now) {
         Objects.requireNonNull(now, "now must not be null");
-        return entityManager.createQuery("""
-                        select count(entry)
-                          from AccessRequestNotificationOutboxEntity entry
-                         where entry.id = :id
-                           and entry.state = :processing
-                           and entry.processorId = :processorId
-                           and entry.leaseUntilTimestamp > :now
-                        """, Long.class)
-                .setParameter("id", id)
-                .setParameter("processing", AccessRequestNotificationOutboxState.PROCESSING)
-                .setParameter("processorId", processorId)
-                .setParameter("now", now.toEpochMilli())
-                .getSingleResult() == 1L;
+        AccessRequestNotificationOutboxEntity entry = entityManager.find(
+                AccessRequestNotificationOutboxEntity.class,
+                id,
+                LockModeType.PESSIMISTIC_WRITE);
+        return entry != null
+                && entry.state() == AccessRequestNotificationOutboxState.PROCESSING
+                && Objects.equals(entry.processorId(), processorId)
+                && entry.leaseUntilTimestamp() != null
+                && entry.leaseUntilTimestamp() > now.toEpochMilli();
     }
 
     public void markDiscarded(String id, String processorId, Instant discardedAt) {
