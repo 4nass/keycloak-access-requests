@@ -80,6 +80,11 @@ A Keycloak timer handles at most fifty rows per tick. Every row is leased, deliv
 
 SMTP itself cannot offer atomic exactly-once delivery with the database: a process failure after SMTP accepts a message but before the outbox acknowledgement can cause one retry. The provider consequently offers durable, at-least-once delivery with idempotent queueing rather than claiming exactly-once e-mail delivery.
 
+Failed rows are operable through the protected Admin API and the Admin Console: a paginated
+failure view, fixed state counters, and an atomic manual retry action. A retry only transitions a
+row that remains FAILED to PENDING; concurrent repeat actions return a conflict. The operational
+view uses recipient identifiers rather than e-mail addresses.
+
 ## Security model
 
 The realm resource has two different entry points:

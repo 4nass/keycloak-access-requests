@@ -41,20 +41,23 @@ export function AccessRequestsAdminPageNav() {
     const { realm, realmRepresentation } = useRealm();
     const api = useEntitlementsAdminApi();
     const navigate = useNavigate();
-    const [canManageCatalog, setCanManageCatalog] = useState(false);
+    const [capabilities, setCapabilities] = useState({
+        canManageCatalog: false,
+        canManageNotifications: false
+    });
 
     useEffect(() => {
         let active = true;
 
         void api.capabilities()
-            .then(({ canManageCatalog }) => {
+            .then((nextCapabilities) => {
                 if (active) {
-                    setCanManageCatalog(canManageCatalog);
+                    setCapabilities(nextCapabilities);
                 }
             })
             .catch(() => {
                 if (active) {
-                    setCanManageCatalog(false);
+                    setCapabilities({ canManageCatalog: false, canManageNotifications: false });
                 }
             });
 
@@ -110,7 +113,7 @@ export function AccessRequestsAdminPageNav() {
                             <KeycloakNavItem path="/events" title={t("events")} />
                         </NavGroup>
                     )}
-                    {(showConfigure || canManageCatalog) && (
+                    {(showConfigure || capabilities.canManageCatalog || capabilities.canManageNotifications) && (
                         <NavGroup aria-label={t("configure")} title={t("configure")}>
                             {showConfigure && (
                                 <>
@@ -124,7 +127,8 @@ export function AccessRequestsAdminPageNav() {
                                     {showWorkflows && <KeycloakNavItem path="/workflows" title={t("workflows")} />}
                                 </>
                             )}
-                            {canManageCatalog && <AccessRequestsNavItem />}
+                            {capabilities.canManageCatalog && <AccessRequestsNavItem />}
+                            {capabilities.canManageNotifications && <NotificationDeliveriesNavItem />}
                         </NavGroup>
                     )}
                 </Nav>
@@ -156,6 +160,17 @@ function AccessRequestsNavItem() {
     const { realm } = useRealm();
 
     return <NavigationItem path="/access-requests" realm={realm} title={t("accessRequestsAdminCatalog")} />;
+}
+
+function NotificationDeliveriesNavItem() {
+    const { t } = useTranslation();
+    const { realm } = useRealm();
+
+    return <NavigationItem
+        path="/access-requests/notification-deliveries"
+        realm={realm}
+        title={t("accessRequestsAdminNotificationDelivery")}
+    />;
 }
 
 function NavigationItem({ path, realm, title }: { path: string; realm: string; title: string }) {

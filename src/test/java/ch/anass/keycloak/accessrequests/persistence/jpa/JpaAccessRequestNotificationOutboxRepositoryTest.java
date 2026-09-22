@@ -134,6 +134,80 @@ class JpaAccessRequestNotificationOutboxRepositoryTest {
         }
     }
 
+    @Test
+    void listsAndSummarizesOnlyFailedDeliveriesInTheRequestedRealm() {
+        Instant queuedAt = Instant.parse("2026-09-22T10:00:00Z");
+        String failedDeliveryId;
+        try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
+            entityManager.getTransaction().begin();
+            JpaAccessRequestNotificationOutboxRepository outbox =
+                    new JpaAccessRequestNotificationOutboxRepository(entityManager);
+            outbox.enqueue(notification(), AccessRequestNotificationRecipientType.USER, "failed-recipient", queuedAt);
+            outbox.enqueue(notification(), AccessRequestNotificationRecipientType.USER, "pending-recipient", queuedAt);
+            AccessRequestNotificationOutboxEntity failed = outbox.claimDue(
+                    queuedAt, Duration.ofMinutes(5), "processor-1", 1).getFirst();
+            failedDeliveryId = failed.id();
+            outbox.markFailed(failedDeliveryId, "processor-1", queuedAt.plusSeconds(1), 1);
+            entityManager.getTransaction().commit();
+        }
+
+        try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
+            entityManager.getTransaction().begin();
+            JpaAccessRequestNotificationOutboxRepository outbox =
+                    new JpaAccessRequestNotificationOutboxRepository(entityManager);
+
+            JpaAccessRequestNotificationOutboxRepository.NotificationOutboxPage failed =
+                    outbox.findFailed("realm-1", 0, 20);
+            assertEquals(List.of(failedDeliveryId), failed.items().stream()
+                    .map(AccessRequestNotificationOutboxEntity::id)
+                    .toList());
+            assertEquals(1, failed.total());
+            assertEquals(queuedAt, failed.items().getFirst().lastAttemptAt());
+
+            assertEquals(
+                    new JpaAccessRequestNotificationOutboxRepository.NotificationOutboxSummary(1, 0, 0, 0, 1),
+                    outbox.summarize("realm-1"));
+            entityManager.getTransaction().commit();
+        }
+    }
+
+    @Test
+    void requeuesOnlyTerminalFailuresWithANewRetryBudget() {
+        Instant queuedAt = Instant.parse("2026-09-22T10:00:00Z");
+        String failedDeliveryId;
+        try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
+            entityManager.getTransaction().begin();
+            JpaAccessRequestNotificationOutboxRepository outbox =
+                    new JpaAccessRequestNotificationOutboxRepository(entityManager);
+            outbox.enqueue(notification(), AccessRequestNotificationRecipientType.USER, "requester-1", queuedAt);
+            AccessRequestNotificationOutboxEntity failed = outbox.claimDue(
+                    queuedAt, Duration.ofMinutes(5), "processor-1", 1).getFirst();
+            failedDeliveryId = failed.id();
+            outbox.markFailed(failedDeliveryId, "processor-1", queuedAt, 1);
+            entityManager.getTransaction().commit();
+        }
+
+        try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
+            entityManager.getTransaction().begin();
+            JpaAccessRequestNotificationOutboxRepository outbox =
+                    new JpaAccessRequestNotificationOutboxRepository(entityManager);
+            assertEquals(
+                    JpaAccessRequestNotificationOutboxRepository.RetryFailedResult.RETRIED,
+                    outbox.retryFailed("realm-1", failedDeliveryId, queuedAt.plusSeconds(10)));
+            assertTrue(outbox.findFailed("realm-1", 0, 20).items().isEmpty());
+            AccessRequestNotificationOutboxEntity retried = outbox.claimDue(
+                    queuedAt.plusSeconds(10), Duration.ofMinutes(5), "processor-2", 1).getFirst();
+            assertEquals(1, retried.attemptCount());
+            assertEquals(
+                    JpaAccessRequestNotificationOutboxRepository.RetryFailedResult.NOT_FAILED,
+                    outbox.retryFailed("realm-1", failedDeliveryId, queuedAt.plusSeconds(11)));
+            assertEquals(
+                    JpaAccessRequestNotificationOutboxRepository.RetryFailedResult.NOT_FOUND,
+                    outbox.retryFailed("another-realm", failedDeliveryId, queuedAt.plusSeconds(11)));
+            entityManager.getTransaction().commit();
+        }
+    }
+
     private static AccessRequestNotification notification() {
         Instant now = Instant.parse("2026-09-22T10:00:00Z");
         Entitlement entitlement = Entitlement.create(

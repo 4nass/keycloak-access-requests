@@ -110,6 +110,7 @@ class AccessRequestJpaChangelogTest {
                             "STATE",
                             "ATTEMPT_COUNT",
                             "NEXT_ATTEMPT_TIMESTAMP",
+                            "LAST_ATTEMPT_TIMESTAMP",
                             "LEASE_UNTIL_TIMESTAMP",
                             "PROCESSOR_ID",
                             "DELIVERED_TIMESTAMP",
@@ -123,6 +124,8 @@ class AccessRequestJpaChangelogTest {
                     .contains("IDX_ENTITLEMENT_HISTORY_ENTITLEMENT_TIME"));
             assertTrue(indexNamesOf(connection, "AR_NOTIFICATION_OUTBOX")
                     .contains("IDX_NOTIFICATION_OUTBOX_DUE"));
+            assertTrue(indexNamesOf(connection, "AR_NOTIFICATION_OUTBOX")
+                    .contains("IDX_NOTIFICATION_OUTBOX_REALM_STATE_ATTEMPT"));
         }
     }
 

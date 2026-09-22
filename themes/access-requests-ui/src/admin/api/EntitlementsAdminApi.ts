@@ -31,6 +31,33 @@ export type EntitlementUpdate = Pick<
 
 export type AdminCapabilities = {
     canManageCatalog: boolean;
+    canManageNotifications: boolean;
+};
+
+export type NotificationDelivery = {
+    id: string;
+    requestId: string;
+    entitlementId: string;
+    recipientId: string;
+    recipientType: "USER" | "REALM_ROLE";
+    notificationType: "REQUEST_SUBMITTED" | "REQUEST_APPROVED" | "REQUEST_REJECTED" | "PROVISIONING_FAILED";
+    attemptCount: number;
+    lastAttemptAt?: string;
+};
+
+export type NotificationDeliveryPage = {
+    items: NotificationDelivery[];
+    page: number;
+    size: number;
+    total: number;
+};
+
+export type NotificationDeliverySummary = {
+    pending: number;
+    processing: number;
+    delivered: number;
+    discarded: number;
+    failed: number;
 };
 
 export type KeycloakReference = {
@@ -43,9 +70,12 @@ export type KeycloakReference = {
 export type EntitlementsAdminApi = {
     capabilities(): Promise<AdminCapabilities>;
     list(query?: { page?: number; size?: number }): Promise<EntitlementPage>;
+    notificationDeliveries(query?: { page?: number; size?: number }): Promise<NotificationDeliveryPage>;
+    notificationDeliverySummary(): Promise<NotificationDeliverySummary>;
     references(type: Entitlement["resourceType"], query?: { search?: string; max?: number }): Promise<KeycloakReference[]>;
     create(submission: EntitlementCreation): Promise<Entitlement>;
     update(id: string, submission: EntitlementUpdate): Promise<Entitlement>;
+    retryNotificationDelivery(id: string): Promise<void>;
 };
 
 export type EntitlementsAdminApiError = Error & {
@@ -99,6 +129,9 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
             throw await apiError(response);
         }
 
+        if (response.status === 204) {
+            return undefined as T;
+        }
         return response.json() as Promise<T>;
     };
 
@@ -115,12 +148,18 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
     return {
         capabilities: () => request("/admin/capabilities"),
         list: (query) => request(`/admin/entitlements?${pageQuery(query)}`),
+        notificationDeliveries: (query) => request(`/admin/notification-deliveries?${pageQuery(query)}`),
+        notificationDeliverySummary: () => request("/admin/notification-deliveries/summary"),
         references: async (type, query) => {
             const response = await request<{ items: KeycloakReference[] }>(`/admin/references?${referenceQuery(type, query)}`);
             return response.items;
         },
         create: (submission) => request("/admin/entitlements", json("POST", submission)),
-        update: (id, submission) => request(`/admin/entitlements/${encodeURIComponent(id)}`, json("PUT", submission))
+        update: (id, submission) => request(`/admin/entitlements/${encodeURIComponent(id)}`, json("PUT", submission)),
+        retryNotificationDelivery: (id) => request(
+            `/admin/notification-deliveries/${encodeURIComponent(id)}/retry`,
+            { method: "POST" }
+        )
     };
 }
 

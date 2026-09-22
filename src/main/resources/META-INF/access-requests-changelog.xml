@@ -259,4 +259,17 @@
             </column>
         </addColumn>
     </changeSet>
+
+    <changeSet id="8" author="4nass">
+        <addColumn tableName="AR_NOTIFICATION_OUTBOX">
+            <column name="LAST_ATTEMPT_TIMESTAMP" type="BIGINT"/>
+        </addColumn>
+
+        <createIndex indexName="IDX_NOTIFICATION_OUTBOX_REALM_STATE_ATTEMPT" tableName="AR_NOTIFICATION_OUTBOX">
+            <column name="REALM_ID"/>
+            <column name="STATE"/>
+            <column name="LAST_ATTEMPT_TIMESTAMP" descending="true"/>
+            <column name="ID"/>
+        </createIndex>
+    </changeSet>
 </databaseChangeLog>

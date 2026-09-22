@@ -71,6 +71,9 @@ public class AccessRequestNotificationOutboxEntity {
     @Column(name = "NEXT_ATTEMPT_TIMESTAMP", nullable = false)
     private long nextAttemptTimestamp;
 
+    @Column(name = "LAST_ATTEMPT_TIMESTAMP")
+    private Long lastAttemptTimestamp;
+
     @Column(name = "LEASE_UNTIL_TIMESTAMP")
     private Long leaseUntilTimestamp;
 
@@ -173,6 +176,10 @@ public class AccessRequestNotificationOutboxEntity {
 
     public AccessRequestNotificationOutboxState state() {
         return state;
+    }
+
+    public Instant lastAttemptAt() {
+        return Instant.ofEpochMilli(lastAttemptTimestamp == null ? nextAttemptTimestamp : lastAttemptTimestamp);
     }
 
     public String deliveryKey() {

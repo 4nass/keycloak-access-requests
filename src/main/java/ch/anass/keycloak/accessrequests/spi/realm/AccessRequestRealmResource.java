@@ -40,6 +40,7 @@ import ch.anass.keycloak.accessrequests.core.service.UserDisabledException;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestEventPublisher;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestHistoryReader;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestRepository;
+import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestNotificationOutboxRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaEntitlementRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaEntitlementAuditEventPublisher;
 import ch.anass.keycloak.accessrequests.spi.notification.KeycloakAccessRequestNotificationOutboxPublisher;
@@ -275,7 +276,48 @@ public final class AccessRequestRealmResource {
     @Produces(MediaType.APPLICATION_JSON)
     public AdminCapabilitiesResponse adminCapabilities() {
         requireAccessRequestManager();
-        return new AdminCapabilitiesResponse(true);
+        return new AdminCapabilitiesResponse(true, true);
+    }
+
+    @GET
+    @Path("admin/notification-deliveries")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listFailedNotificationDeliveries(
+            @DefaultValue("0") @QueryParam("page") int page,
+            @DefaultValue("20") @QueryParam("size") int size) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        try {
+            return Response.ok(NotificationDeliveryListResponse.from(
+                    notificationOutboxRepository().findFailed(manager.realm().getId(), page, size))).build();
+        } catch (IllegalArgumentException exception) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_NOTIFICATION_DELIVERY_QUERY", exception.getMessage(), null);
+        }
+    }
+
+    @GET
+    @Path("admin/notification-deliveries/summary")
+    @Produces(MediaType.APPLICATION_JSON)
+    public NotificationDeliverySummaryResponse notificationDeliverySummary() {
+        AccessRequestManager manager = requireAccessRequestManager();
+        return NotificationDeliverySummaryResponse.from(
+                notificationOutboxRepository().summarize(manager.realm().getId()));
+    }
+
+    @POST
+    @Path("admin/notification-deliveries/{deliveryId}/retry")
+    public Response retryFailedNotificationDelivery(@PathParam("deliveryId") String deliveryId) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        JpaAccessRequestNotificationOutboxRepository.RetryFailedResult result = transaction().execute(() ->
+                notificationOutboxRepository().retryFailed(manager.realm().getId(), deliveryId, Instant.now()));
+        return switch (result) {
+            case RETRIED -> Response.noContent().build();
+            case NOT_FOUND -> error(Response.Status.NOT_FOUND, "NOTIFICATION_DELIVERY_NOT_FOUND", null, deliveryId);
+            case NOT_FAILED -> error(
+                    Response.Status.CONFLICT,
+                    "NOTIFICATION_DELIVERY_NOT_FAILED",
+                    "Notification delivery is no longer failed",
+                    deliveryId);
+        };
     }
 
     @GET
@@ -420,6 +462,14 @@ public final class AccessRequestRealmResource {
                 "Keycloak JPA connection provider must not be null")
                 .getEntityManager();
         return new JpaEntitlementRepository(entityManager);
+    }
+
+    private JpaAccessRequestNotificationOutboxRepository notificationOutboxRepository() {
+        var entityManager = Objects.requireNonNull(
+                session.getProvider(JpaConnectionProvider.class),
+                "Keycloak JPA connection provider must not be null")
+                .getEntityManager();
+        return new JpaAccessRequestNotificationOutboxRepository(entityManager);
     }
 
     private JpaEntitlementAuditEventPublisher entitlementAuditEventPublisher() {
@@ -898,7 +948,65 @@ public final class AccessRequestRealmResource {
     public record CapabilitiesResponse(boolean canApprove) {
     }
 
-    public record AdminCapabilitiesResponse(boolean canManageCatalog) {
+    public record AdminCapabilitiesResponse(boolean canManageCatalog, boolean canManageNotifications) {
+    }
+
+    public record NotificationDeliveryListResponse(
+            List<NotificationDeliveryResponse> items,
+            int page,
+            int size,
+            long total) {
+
+        private static NotificationDeliveryListResponse from(
+                JpaAccessRequestNotificationOutboxRepository.NotificationOutboxPage page) {
+            return new NotificationDeliveryListResponse(
+                    page.items().stream().map(NotificationDeliveryResponse::from).toList(),
+                    page.page(),
+                    page.size(),
+                    page.total());
+        }
+    }
+
+    public record NotificationDeliveryResponse(
+            String id,
+            String requestId,
+            String entitlementId,
+            String recipientId,
+            String recipientType,
+            String notificationType,
+            int attemptCount,
+            String lastAttemptAt) {
+
+        private static NotificationDeliveryResponse from(
+                ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestNotificationOutboxEntity entry) {
+            return new NotificationDeliveryResponse(
+                    entry.id(),
+                    entry.requestId(),
+                    entry.entitlementId(),
+                    entry.recipientId(),
+                    entry.recipientType().name(),
+                    entry.notificationType().name(),
+                    entry.attemptCount(),
+                    entry.lastAttemptAt() == null ? null : entry.lastAttemptAt().toString());
+        }
+    }
+
+    public record NotificationDeliverySummaryResponse(
+            long pending,
+            long processing,
+            long delivered,
+            long discarded,
+            long failed) {
+
+        private static NotificationDeliverySummaryResponse from(
+                JpaAccessRequestNotificationOutboxRepository.NotificationOutboxSummary summary) {
+            return new NotificationDeliverySummaryResponse(
+                    summary.pending(),
+                    summary.processing(),
+                    summary.delivered(),
+                    summary.discarded(),
+                    summary.failed());
+        }
     }
 
     public record KeycloakReferenceListResponse(List<KeycloakReferenceResponse> items) {

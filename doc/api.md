@@ -159,6 +159,32 @@ The selected resource must exist and match `resourceType`. The approver role mus
 
 The resource type and resource ID are intentionally absent: the target resource is immutable. The client must send the version returned by the most recent read. A concurrent modification returns `409 Conflict`; reload the entitlement before retrying. Setting `requestable=false` is the supported soft-disable operation.
 
+## Notification delivery administration endpoints
+
+The notification endpoints are realm-scoped and use the same Keycloak administrator and
+manage-access-requests authorization as catalog management.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | /admin/notification-deliveries | List failed lifecycle e-mail deliveries |
+| GET | /admin/notification-deliveries/summary | Return low-cardinality delivery counts by state |
+| POST | /admin/notification-deliveries/{deliveryId}/retry | Put one failed delivery back in the retry queue |
+
+The delivery list accepts the standard page and size parameters (default 0 and 20, maximum
+size 100) and returns only terminal FAILED rows. A row contains request, entitlement, recipient
+identifier, notification type, attempt count, and last-attempt time. It never returns a recipient
+e-mail address.
+
+The summary returns the fixed set of counters pending, processing, delivered, discarded, and
+failed. These are intentionally low-cardinality operational metrics: they are safe to render in
+the Admin Console or poll with an authenticated monitoring client. They are distinct from
+Keycloak's platform management metrics endpoint.
+
+The retry operation returns 204 No Content when it atomically requeues a row that remains FAILED.
+Its attempt budget is reset so the worker can make up to ten new attempts. It returns 404 Not Found
+for an ID outside the realm or absent from the outbox, and 409 Conflict when another worker or
+administrator has already changed its state.
+
 ## Error handling
 
 Authentication failures return `401 Unauthorized`; authorization failures return `403 Forbidden`; missing resources return `404 Not Found`; invalid submissions and queries return `400 Bad Request`; invalid state changes, duplicate resources, and concurrent updates return `409 Conflict`.

@@ -39,6 +39,7 @@ await i18n.init({
         en: {
             translation: {
                 accessRequestsAdminCatalog: "Access requests",
+                accessRequestsAdminNotificationDelivery: "Notification delivery",
                 configure: "Configure",
                 currentRealm: "Current realm"
             }
@@ -62,7 +63,7 @@ describe("Access Request Admin Console navigation", () => {
     });
 
     it("shows the catalog entry only after the server authorizes catalog management", async () => {
-        mocks.capabilities.mockResolvedValue({ canManageCatalog: true });
+        mocks.capabilities.mockResolvedValue({ canManageCatalog: true, canManageNotifications: true });
 
         renderNavigation();
 
@@ -71,6 +72,9 @@ describe("Access Request Admin Console navigation", () => {
         );
         expect(screen.getByRole("region", { name: "Configure" })).toContainElement(
             screen.getByRole("link", { name: "Access requests" })
+        );
+        expect(screen.getByRole("link", { name: "Notification delivery" })).toHaveAttribute(
+            "href", "/master/access-requests/notification-deliveries"
         );
     });
 

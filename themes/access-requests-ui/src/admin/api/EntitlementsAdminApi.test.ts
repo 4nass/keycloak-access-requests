@@ -43,9 +43,15 @@ const entitlement = {
 
 describe("Entitlements administration API client", () => {
     it("reads the server-authoritative catalog capability with the administrator token", async () => {
-        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ canManageCatalog: true }));
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+            canManageCatalog: true,
+            canManageNotifications: true
+        }));
 
-        await expect(createApi(fetchMock).capabilities()).resolves.toEqual({ canManageCatalog: true });
+        await expect(createApi(fetchMock).capabilities()).resolves.toEqual({
+            canManageCatalog: true,
+            canManageNotifications: true
+        });
         expect(request(fetchMock)).toEqual({
             url: "https://keycloak.example/realms/finance/access-requests/admin/capabilities",
             init: expect.objectContaining({
@@ -73,6 +79,57 @@ describe("Entitlements administration API client", () => {
             init: expect.objectContaining({
                 headers: expect.objectContaining({ authorization: "Bearer admin-console-token" })
             })
+        });
+    });
+
+    it("loads failed notification deliveries and their operational summary", async () => {
+        const failedDelivery = {
+            attemptCount: 10,
+            entitlementId: "finance-reader",
+            id: "delivery-1",
+            lastAttemptAt: "2026-09-22T10:00:00Z",
+            notificationType: "REQUEST_SUBMITTED" as const,
+            recipientId: "user-1",
+            recipientType: "USER" as const,
+            requestId: "request-1"
+        };
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(jsonResponse({
+                discarded: 2,
+                delivered: 8,
+                failed: 1,
+                pending: 3,
+                processing: 1
+            }))
+            .mockResolvedValueOnce(jsonResponse({ items: [failedDelivery], page: 1, size: 10, total: 11 }));
+        const api = createApi(fetchMock);
+
+        await expect(api.notificationDeliverySummary()).resolves.toMatchObject({ failed: 1, pending: 3 });
+        await expect(api.notificationDeliveries({ page: 1, size: 10 })).resolves.toEqual({
+            items: [failedDelivery],
+            page: 1,
+            size: 10,
+            total: 11
+        });
+        expect(request(fetchMock)).toEqual({
+            url: "https://keycloak.example/realms/finance/access-requests/admin/notification-deliveries/summary",
+            init: expect.objectContaining({
+                headers: expect.objectContaining({ authorization: "Bearer admin-console-token" })
+            })
+        });
+        const [listUrl] = fetchMock.mock.calls[1] as [RequestInfo | URL, RequestInit];
+        expect(String(listUrl)).toBe(
+            "https://keycloak.example/realms/finance/access-requests/admin/notification-deliveries?page=1&size=10"
+        );
+    });
+
+    it("requeues a failed notification delivery without expecting a JSON response body", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+
+        await expect(createApi(fetchMock).retryNotificationDelivery("delivery/1")).resolves.toBeUndefined();
+        expect(request(fetchMock)).toEqual({
+            url: "https://keycloak.example/realms/finance/access-requests/admin/notification-deliveries/delivery%2F1/retry",
+            init: expect.objectContaining({ method: "POST" })
         });
     });
 

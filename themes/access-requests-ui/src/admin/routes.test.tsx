@@ -3,13 +3,18 @@ import { describe, expect, it } from "vitest";
 import { routes } from "./routes";
 
 describe("Administration Console routes", () => {
-    it("registers the catalog as a first-class Admin Console route without declarative-ui", () => {
+    it("registers catalog and notification operations as first-class Admin Console routes without declarative-ui", () => {
         const children = routes[0].children ?? [];
         const catalogIndex = children.findIndex((route) => route.path === "/:realm/access-requests");
+        const notificationDeliveryIndex = children.findIndex(
+            (route) => route.path === "/:realm/access-requests/notification-deliveries"
+        );
         const notFoundIndex = children.findIndex((route) => route.path === "*");
 
         expect(catalogIndex).toBeGreaterThanOrEqual(0);
         expect(catalogIndex).toBeLessThan(notFoundIndex);
+        expect(notificationDeliveryIndex).toBeGreaterThanOrEqual(0);
+        expect(notificationDeliveryIndex).toBeLessThan(notFoundIndex);
         expect(children.some((route) => route.path === "/:realm/page-section/access-requests")).toBe(false);
     });
 });

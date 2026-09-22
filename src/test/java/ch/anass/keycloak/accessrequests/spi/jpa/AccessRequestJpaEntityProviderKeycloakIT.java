@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -146,6 +147,10 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertTrue(adminEntryPoint != null && adminEntryPoint.isObject(),
                     "The Vite manifest must declare the Admin Console entrypoint.");
             assertManifestReferences(provider, adminManifest, ADMIN_CONSOLE_RESOURCE_PATH, "src/admin/main.tsx", new HashSet<>());
+            assertTrue(manifestReferences(adminEntryPoint, "dynamicImports").containsAll(Set.of(
+                    "src/admin/pages/EntitlementCatalogRoute.tsx",
+                    "src/admin/pages/NotificationDeliveryRoute.tsx")),
+                    "The Admin Console entrypoint must lazy-load catalog and notification delivery routes.");
         }
     }
 
@@ -270,7 +275,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertTrue(tableExists(connection, "ar_entitlement"));
             assertTrue(tableExists(connection, "ar_entitlement_history"));
             assertTrue(tableExists(connection, "ar_notification_outbox"));
-            assertEquals(7, providerChangeSetCount(connection));
+            assertEquals(8, providerChangeSetCount(connection));
         }
     }
 
@@ -296,6 +301,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, globalAdministratorCapability.statusCode());
         assertTrue(globalAdministratorCapability.body().contains("\"canManageCatalog\":true"));
+        assertTrue(globalAdministratorCapability.body().contains("\"canManageNotifications\":true"));
 
         String delegatedClientId = "catalog-delegated-" + UUID.randomUUID();
         createDirectAccessClient(server, adminToken, delegatedClientId);
@@ -353,6 +359,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, delegatedManagerCapability.statusCode());
         assertTrue(delegatedManagerCapability.body().contains("\"canManageCatalog\":true"));
+        assertTrue(delegatedManagerCapability.body().contains("\"canManageNotifications\":true"));
+        assertNotificationDeliveryAdministration(server, managerToken);
         String targetRoleId = createRealmRole(server, adminToken, "catalog-target-" + UUID.randomUUID());
         String approverRoleId = createRealmRole(server, adminToken, "catalog-approver-" + UUID.randomUUID());
         ClientRole clientRole = createClientRole(server, adminToken, "catalog-client-target-" + UUID.randomUUID());
@@ -432,6 +440,86 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .build(),
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(403, crossRealmResponse.statusCode());
+    }
+
+    private void assertNotificationDeliveryAdministration(GenericContainer<?> server, String managerToken) throws Exception {
+        URI deliveryEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/notification-deliveries"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        URI summaryEndpoint = URI.create(deliveryEndpoint + "/summary");
+        String deliveryId = UUID.randomUUID().toString();
+        insertFailedNotificationDelivery(deliveryId);
+
+        HttpResponse<Void> unauthenticatedResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(deliveryEndpoint).GET().build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(401, unauthenticatedResponse.statusCode());
+
+        HttpResponse<String> failedDeliveries = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(deliveryEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, failedDeliveries.statusCode());
+        assertTrue(failedDeliveries.body().contains("\"id\":\"" + deliveryId + "\""));
+        assertTrue(failedDeliveries.body().contains("\"attemptCount\":10"));
+        assertFalse(failedDeliveries.body().contains("@"),
+                "Administrative delivery operations must not expose recipient e-mail addresses.");
+
+        HttpResponse<String> summary = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(summaryEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, summary.statusCode());
+        assertTrue(new ObjectMapper().readTree(summary.body()).path("failed").asInt() >= 1);
+
+        URI retryEndpoint = URI.create(deliveryEndpoint + "/" + deliveryId + "/retry");
+        HttpResponse<Void> retried = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(retryEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .POST(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(204, retried.statusCode());
+
+        HttpResponse<Void> retryConflict = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(retryEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .POST(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(409, retryConflict.statusCode());
+    }
+
+    private void insertFailedNotificationDelivery(String deliveryId) throws SQLException {
+        long now = Instant.now().toEpochMilli();
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement statement = connection.prepareStatement("""
+                     insert into AR_NOTIFICATION_OUTBOX (
+                         ID, DELIVERY_KEY, EVENT_ID, REQUEST_ID, ENTITLEMENT_ID, REALM_ID,
+                         RECIPIENT_ID, RECIPIENT_TYPE, NOTIFICATION_TYPE, STATE,
+                         ATTEMPT_COUNT, NEXT_ATTEMPT_TIMESTAMP, LAST_ATTEMPT_TIMESTAMP, VERSION)
+                     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     """)) {
+            statement.setString(1, deliveryId);
+            statement.setString(2, "manual-test-" + deliveryId);
+            statement.setString(3, UUID.randomUUID().toString());
+            statement.setString(4, UUID.randomUUID().toString());
+            statement.setString(5, UUID.randomUUID().toString());
+            statement.setString(6, "master");
+            statement.setString(7, "recipient-" + UUID.randomUUID());
+            statement.setString(8, "USER");
+            statement.setString(9, "REQUEST_SUBMITTED");
+            statement.setString(10, "FAILED");
+            statement.setInt(11, 10);
+            statement.setLong(12, now);
+            statement.setLong(13, now);
+            statement.setLong(14, 0);
+            assertEquals(1, statement.executeUpdate());
+        }
     }
 
     private void assertRealmEndpointExposed(GenericContainer<?> server) throws Exception {
