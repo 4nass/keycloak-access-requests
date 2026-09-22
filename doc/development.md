@@ -94,3 +94,11 @@ One extension release targets one Keycloak minor line. For an upgrade:
 6. Publish a release whose version identifies the validated Keycloak baseline.
 
 Never state compatibility with a new Keycloak patch or minor release merely because the Java compilation succeeds.
+
+## Publish a GitHub Release
+
+Update the Maven project version to the release version, run the full verification
+workflow, and create a matching version tag such as `v26.7.3`. The Release
+workflow checks that the tag matches the Maven version, runs `mvn clean verify`,
+and publishes both `keycloak-access-requests.jar` and
+`keycloak-access-requests-email-theme.zip` as GitHub Release assets.

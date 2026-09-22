@@ -22,7 +22,7 @@ E-mail delivery is configured independently for every realm. Deploying the provi
 2. Use Keycloak's **Test connection** and **Test authentication** actions where they are available, then send a test e-mail to a realm user.
 3. Choose one template integration:
    - for a quick start, select `access-requests` as the realm's **Email theme** in **Realm settings → Themes**;
-   - to preserve an existing customer e-mail theme, copy the access-request templates from `src/main/resources/theme/access-requests/email/html/` and `src/main/resources/theme/access-requests/email/text/`, plus the matching `messages/` bundles, into that selected theme; or
+   - to preserve an existing customer e-mail theme, download the **Email theme bundle** for the same provider version from the [GitHub Releases](https://github.com/4nass/keycloak-access-requests/releases) page and follow its README to copy the FTL templates and merge the matching `messages_*.properties` keys into that selected theme; or
    - make a customer e-mail theme inherit from `access-requests` when its existing inheritance chain permits it.
 4. Enable [localization](#localization) and select the supported locales when localized e-mails are required.
 

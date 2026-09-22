@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/**'
       - 'themes/access-requests-ui/**'
+      - '.github/workflows/**'
       - '*.xml'
       - 'pom.xml'
   pull_request:
@@ -38,9 +39,11 @@ jobs:
       - name: Build, unit test and integration test
         run: mvn --batch-mode --no-transfer-progress clean verify
 
-      - name: Upload provider JAR
+      - name: Upload provider JAR and e-mail theme bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: keycloak-access-requests
-          path: target/keycloak-access-requests.jar
+          path: |
+            target/keycloak-access-requests.jar
+            target/*-email-theme.zip
           if-no-files-found: error

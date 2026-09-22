@@ -25,7 +25,13 @@ The resulting artifact is:
 target/keycloak-access-requests.jar
 ```
 
-The Maven build also builds the optional Account and Admin Console assets, validates the packaged themes, and places every server and UI component in that one JAR.
+The Maven build also builds the optional Account and Admin Console assets, validates the packaged themes, and places every server and UI component in that one JAR. It creates a separate e-mail theme bundle:
+
+```text
+target/keycloak-access-requests-email-theme.zip
+```
+
+The bundle contains the complete `access-requests` e-mail theme and a README explaining how to install it or merge its FTL templates and message keys into an existing e-mail theme. The same ZIP and provider JAR are attached to each [GitHub Release](https://github.com/4nass/keycloak-access-requests/releases).
 
 ## Deploy to a Keycloak distribution
 
