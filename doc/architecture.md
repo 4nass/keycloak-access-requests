@@ -22,6 +22,7 @@ src/main/java/ch/anass/keycloak/accessrequests/
 ├── persistence/jpa/   # Entities, repositories, history writers, and transactions
 └── spi/
     ├── jpa/           # Keycloak JPA entity provider and Liquibase registration
+    ├── notification/  # Transactional email outbox and Keycloak timer delivery worker
     ├── provisioning/  # Keycloak role and group provisioning adapter
     └── realm/         # Realm REST resource and Keycloak security adapters
 
@@ -47,6 +48,7 @@ Core services and domain invariants
         │
         ├── JPA repositories and optimistic locking
         ├── immutable request and entitlement history
+        ├── transactional notification outbox
         └── Keycloak provisioner
         ▼
 Keycloak database, roles, and groups
@@ -69,6 +71,14 @@ Every entity is realm-scoped. Repository lookups include the realm ID, and cross
 The database enforces one pending request per requester and entitlement. Updates to requests and entitlements use optimistic locking through their version. A simultaneous duplicate or stale update becomes a controlled conflict instead of silently overwriting data.
 
 The JPA provider owns the Liquibase changelog. Its tables are deliberately prefixed `AR_` to keep the provider's schema objects recognizable in the shared Keycloak database.
+
+### Notification delivery
+
+Lifecycle e-mails are written as recipient-specific rows in `AR_NOTIFICATION_OUTBOX` in the same transaction as the request, decision, and audit event. The HTTP request therefore never calls SMTP, and a rolled-back business transaction leaves no delivery to send.
+
+A Keycloak timer leases due rows and sends them in the background. The lease and processor token prevent two cluster nodes from handling the same row concurrently. The unique delivery key (`event`, notification type, recipient) makes enqueueing idempotent; transient delivery failures are retried with backoff, then retained as `FAILED` after ten attempts for operational follow-up. A missing, disabled, or e-mail-less recipient is recorded as `DISCARDED`.
+
+SMTP itself cannot offer atomic exactly-once delivery with the database: a process failure after SMTP accepts a message but before the outbox acknowledgement can cause one retry. The provider consequently offers durable, at-least-once delivery with idempotent queueing rather than claiming exactly-once e-mail delivery.
 
 ## Security model
 

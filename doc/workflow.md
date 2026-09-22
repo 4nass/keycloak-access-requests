@@ -82,3 +82,9 @@ If the user already has the resource, the operation succeeds without duplicating
 The provider records immutable request events for creation, cancellation, approval, rejection, provisioning start, provisioning success, and provisioning failure. It also records entitlement creation and updates with a snapshot of the configured fields.
 
 These history records are for traceability. They do not replace Keycloak event logging, database backups, or an organization-wide audit retention policy.
+
+## Lifecycle notifications
+
+The provider queues localized e-mails when a request is submitted, approved, rejected, or cannot be provisioned. Recipient-specific queue entries are committed with the corresponding request and audit data; SMTP delivery happens asynchronously after commit. A temporary e-mail failure is retried automatically, while permanently undeliverable recipients are discarded without affecting the access-request workflow.
+
+The queue is idempotent per lifecycle event, notification type, and recipient. Delivery is durable and at least once: in the narrow failure window after an SMTP server accepts a message and before the database records it as delivered, a retry may create a duplicate e-mail.
