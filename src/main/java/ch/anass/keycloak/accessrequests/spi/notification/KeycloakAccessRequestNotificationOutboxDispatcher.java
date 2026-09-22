@@ -14,9 +14,11 @@ import jakarta.persistence.EntityManager;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.timer.ScheduledTask;
 
 import java.time.Duration;
@@ -39,6 +41,18 @@ public final class KeycloakAccessRequestNotificationOutboxDispatcher implements 
     private static final int BATCH_SIZE = 50;
     private static final int MAXIMUM_ATTEMPTS = 10;
 
+    private final IsolatedDeliveryRunner isolatedDeliveryRunner;
+
+    public KeycloakAccessRequestNotificationOutboxDispatcher() {
+        this(KeycloakAccessRequestNotificationOutboxDispatcher::deliverNext);
+    }
+
+    KeycloakAccessRequestNotificationOutboxDispatcher(IsolatedDeliveryRunner isolatedDeliveryRunner) {
+        this.isolatedDeliveryRunner = Objects.requireNonNull(
+                isolatedDeliveryRunner,
+                "isolatedDeliveryRunner must not be null");
+    }
+
     @Override
     public String getTaskName() {
         return TASK_NAME;
@@ -46,19 +60,35 @@ public final class KeycloakAccessRequestNotificationOutboxDispatcher implements 
 
     @Override
     public void run(KeycloakSession session) {
-        EntityManager entityManager = Objects.requireNonNull(
-                session.getProvider(JpaConnectionProvider.class),
-                "Keycloak JPA connection provider must not be null")
-                .getEntityManager();
-        JpaAccessRequestNotificationOutboxRepository outbox =
-                new JpaAccessRequestNotificationOutboxRepository(entityManager);
-        Instant now = Instant.now();
-        String processorId = UUID.randomUUID().toString();
-        List<AccessRequestNotificationOutboxEntity> entries =
-                outbox.claimDue(now, LEASE_DURATION, processorId, BATCH_SIZE);
-        for (AccessRequestNotificationOutboxEntity entry : entries) {
-            deliver(session, entityManager, outbox, entry, processorId, now);
+        KeycloakSessionFactory sessionFactory = Objects.requireNonNull(
+                session,
+                "session must not be null")
+                .getKeycloakSessionFactory();
+        for (int processed = 0; processed < BATCH_SIZE; processed++) {
+            if (!isolatedDeliveryRunner.run(sessionFactory)) {
+                return;
+            }
         }
+    }
+
+    private static boolean deliverNext(KeycloakSessionFactory sessionFactory) {
+        return KeycloakModelUtils.runJobInTransactionWithResult(sessionFactory, session -> {
+            EntityManager entityManager = Objects.requireNonNull(
+                    session.getProvider(JpaConnectionProvider.class),
+                    "Keycloak JPA connection provider must not be null")
+                    .getEntityManager();
+            JpaAccessRequestNotificationOutboxRepository outbox =
+                    new JpaAccessRequestNotificationOutboxRepository(entityManager);
+            Instant now = Instant.now();
+            String processorId = UUID.randomUUID().toString();
+            List<AccessRequestNotificationOutboxEntity> entries =
+                    outbox.claimDue(now, LEASE_DURATION, processorId, 1);
+            if (entries.isEmpty()) {
+                return false;
+            }
+            deliver(session, entityManager, outbox, entries.getFirst(), processorId, now);
+            return true;
+        });
     }
 
     private static void deliver(
@@ -138,5 +168,11 @@ public final class KeycloakAccessRequestNotificationOutboxDispatcher implements 
                 recipientIds,
                 queuedAt);
         return true;
+    }
+
+    @FunctionalInterface
+    interface IsolatedDeliveryRunner {
+
+        boolean run(KeycloakSessionFactory sessionFactory);
     }
 }
