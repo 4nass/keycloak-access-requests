@@ -9,6 +9,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import java.lang.reflect.Method;
@@ -19,14 +20,19 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Testcontainers(disabledWithoutDocker = true)
@@ -34,14 +40,23 @@ class KeycloakAccessRequestEmailDeliveryIT {
 
     private static final String ACCESS_REQUESTS_API_AUDIENCE = "access-requests-api";
     private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.3";
+    private static final String DEFAULT_POSTGRESQL_CONTAINER = "mirror.gcr.io/postgres:18";
     private static final String DEFAULT_MAILPIT_CONTAINER = "axllent/mailpit:v1.30.7";
+    private static final String DEFAULT_SMTP_STALL_CONTAINER = "busybox:1.36.1";
     private static final String FROM_ADDRESS = "no-reply@access-requests.test";
     private static final String FROM_DISPLAY_NAME = "Access requests";
     private static final String KEYCLOAK_VERSION = System.getProperty("keycloak.version", DEFAULT_KEYCLOAK_VERSION);
     private static final String KEYCLOAK_IMAGE = System.getProperty(
             "keycloak.image", "quay.io/keycloak/keycloak:" + KEYCLOAK_VERSION);
+    private static final String POSTGRESQL_CONTAINER = System.getProperty(
+            "postgresql.container", DEFAULT_POSTGRESQL_CONTAINER);
     private static final String MAILPIT_CONTAINER = System.getProperty("mailpit.container", DEFAULT_MAILPIT_CONTAINER);
+    private static final String SMTP_STALL_CONTAINER = System.getProperty(
+            "smtp.stall.container", DEFAULT_SMTP_STALL_CONTAINER);
+    private static final DockerImageName POSTGRESQL_IMAGE = DockerImageName.parse(POSTGRESQL_CONTAINER)
+            .asCompatibleSubstituteFor("postgres");
     private static final Duration DELIVERY_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration PROCESSING_TIMEOUT = Duration.ofSeconds(30);
     private static final int KEYCLOAK_LOG_TAIL_LENGTH = 8_000;
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
@@ -54,6 +69,25 @@ class KeycloakAccessRequestEmailDeliveryIT {
             .withNetwork(NETWORK)
             .withNetworkAliases("mailpit")
             .withExposedPorts(8025);
+
+    @Container
+    private static final GenericContainer<?> SMTP_STALL = new GenericContainer<>(
+                    DockerImageName.parse(SMTP_STALL_CONTAINER))
+            .withNetwork(NETWORK)
+            .withNetworkAliases("smtp-stall")
+            .withCommand(
+                    "sh",
+                    "-c",
+                    "while true; do { printf '220 smtp-stall\\r\\n'; sleep 30; } | nc -l -p 1025; done")
+            .withExposedPorts(1025);
+
+    @Container
+    private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(POSTGRESQL_IMAGE)
+            .withDatabaseName("keycloak")
+            .withUsername("keycloak")
+            .withPassword("keycloak")
+            .withNetwork(NETWORK)
+            .withNetworkAliases("postgres");
 
     @AfterAll
     static void closeNetwork() {
@@ -175,6 +209,91 @@ class KeycloakAccessRequestEmailDeliveryIT {
         }
     }
 
+    @Test
+    void retriesAnSmtpFailureOnceWithoutConcurrentDuplicateDeliveryAcrossKeycloakNodes() throws Exception {
+        try (KeycloakContainer firstNode = keycloakWithPostgres();
+             KeycloakContainer secondNode = keycloakWithPostgres()) {
+            firstNode.start();
+            configureAdminCliTokenBehavior(firstNode);
+
+            String adminToken = accessToken(firstNode, "admin-cli", "admin", "admin");
+            configureEmail(firstNode, adminToken, "smtp-stall");
+            String clientId = "smtp-retry-client-" + UUID.randomUUID();
+            createDirectAccessClient(firstNode, adminToken, clientId);
+            addAccessRequestsAudience(firstNode, adminToken, clientId);
+
+            TestUser approver = createUser(
+                    firstNode,
+                    adminToken,
+                    clientId,
+                    "smtp-retry-approver",
+                    "smtp-retry-approver-" + UUID.randomUUID() + "@example.test",
+                    "en");
+            String approverRoleName = "smtp-retry-approver-role-" + UUID.randomUUID();
+            String approverRoleId = createRealmRoleAndAssignToUser(
+                    firstNode,
+                    adminToken,
+                    approver.id(),
+                    approverRoleName);
+            String entitlementName = "SMTP retry entitlement " + UUID.randomUUID();
+            String entitlementId = createRequestableEntitlement(
+                    firstNode,
+                    adminToken,
+                    approverRoleId,
+                    entitlementName);
+
+            secondNode.start();
+
+            TestUser requester = createUser(
+                    firstNode,
+                    adminToken,
+                    clientId,
+                    "smtp-retry-requester",
+                    "smtp-retry-requester-" + UUID.randomUUID() + "@example.test",
+                    "en");
+            String justification = "Verify retry and lease behavior.";
+            String requestId = submit(firstNode, requester.token(), entitlementId, justification);
+
+            OutboxDelivery leasedDelivery = waitForOutboxDelivery(
+                    requestId,
+                    delivery -> delivery.state().equals("PROCESSING"),
+                    "a processing delivery leased by one Keycloak node");
+            assertEquals(1, leasedDelivery.attemptCount(),
+                    "Only one Keycloak node may claim the initial delivery attempt.");
+            assertNotNull(leasedDelivery.processorId(), "A leased delivery must identify its processor.");
+            assertNotNull(leasedDelivery.leaseUntilTimestamp(), "A leased delivery must have an expiry timestamp.");
+            assertTrue(leasedDelivery.leaseUntilTimestamp() > Instant.now().toEpochMilli(),
+                    "The lease must remain valid while SMTP is unavailable.");
+
+            SMTP_STALL.stop();
+
+            OutboxDelivery retryPending = waitForOutboxDelivery(
+                    requestId,
+                    delivery -> delivery.state().equals("PENDING") && delivery.attemptCount() == 1,
+                    "a single retry scheduled after the SMTP failure");
+            assertTrue(retryPending.processorId() == null,
+                    "A failed attempt must release its processor lease before retrying.");
+            assertTrue(retryPending.leaseUntilTimestamp() == null,
+                    "A failed attempt must release its lease before retrying.");
+
+            secondNode.stop();
+            configureEmail(firstNode, adminToken, "mailpit");
+
+            OutboxDelivery delivered = waitForOutboxDelivery(
+                    requestId,
+                    delivery -> delivery.state().equals("DELIVERED"),
+                    "a delivered retry after SMTP recovers");
+            assertEquals(2, delivered.attemptCount(),
+                    "The recovered delivery must use exactly one retry after the original failed attempt.");
+            assertNotNull(delivered.deliveredTimestamp(), "A successful retry must record its delivery time.");
+            assertExactlyOneDeliveredMessage(
+                    approver.email(),
+                    "New access request",
+                    justification,
+                    entitlementName);
+        }
+    }
+
     private KeycloakContainer keycloak() {
         return new KeycloakContainer(KEYCLOAK_IMAGE)
                 .withNetwork(NETWORK)
@@ -191,6 +310,14 @@ class KeycloakAccessRequestEmailDeliveryIT {
                     }
                 })
                 .withStartupTimeout(Duration.ofMinutes(3));
+    }
+
+    private KeycloakContainer keycloakWithPostgres() {
+        return keycloak()
+                .withEnv("KC_DB", "postgres")
+                .withEnv("KC_DB_URL", "jdbc:postgresql://postgres:5432/keycloak")
+                .withEnv("KC_DB_USERNAME", "keycloak")
+                .withEnv("KC_DB_PASSWORD", "keycloak");
     }
 
     private Path providerJar() {
@@ -210,6 +337,10 @@ class KeycloakAccessRequestEmailDeliveryIT {
     }
 
     private void configureEmail(KeycloakContainer keycloak, String adminToken) throws Exception {
+        configureEmail(keycloak, adminToken, "mailpit");
+    }
+
+    private void configureEmail(KeycloakContainer keycloak, String adminToken, String smtpHost) throws Exception {
         HttpResponse<Void> response = HTTP_CLIENT.send(
                 adminRequest(keycloak, "/admin/realms/master", adminToken)
                         .header("Content-Type", "application/json")
@@ -220,7 +351,7 @@ class KeycloakAccessRequestEmailDeliveryIT {
                                   "supportedLocales":["en","fr"],
                                   "defaultLocale":"en",
                                   "smtpServer":{
-                                    "host":"mailpit",
+                                    "host":"%s",
                                     "port":"1025",
                                     "from":"no-reply@access-requests.test",
                                     "fromDisplayName":"Access requests",
@@ -229,7 +360,7 @@ class KeycloakAccessRequestEmailDeliveryIT {
                                     "starttls":"false"
                                   }
                                 }
-                                """))
+                                """.formatted(smtpHost)))
                         .build(),
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(204, response.statusCode());
@@ -530,6 +661,16 @@ class KeycloakAccessRequestEmailDeliveryIT {
         }
     }
 
+    private void assertExactlyOneDeliveredMessage(String recipient, String subject, String... expectedContent)
+            throws Exception {
+        assertDeliveredMessage(recipient, subject, expectedContent);
+        Thread.sleep(1_000);
+        assertEquals(
+                1,
+                matchingDeliveredMessageCount(recipient, subject, expectedContent),
+                "A retried notification must be delivered only once.");
+    }
+
     private JsonNode waitForMessage(String recipient, String subject, String... expectedContent) throws Exception {
         Instant deadline = Instant.now().plus(DELIVERY_TIMEOUT);
         String latestMessages = "";
@@ -561,6 +702,31 @@ class KeycloakAccessRequestEmailDeliveryIT {
                 + "\nKeycloak log tail:\n" + keycloakLogTail());
     }
 
+    private int matchingDeliveredMessageCount(String recipient, String subject, String... expectedContent)
+            throws Exception {
+        HttpResponse<String> response = HTTP_CLIENT.send(
+                HttpRequest.newBuilder(mailpitEndpoint("/api/v1/messages?limit=100")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+
+        int matches = 0;
+        for (JsonNode summary : JSON.readTree(response.body()).path("messages")) {
+            if (!summary.toString().contains(recipient) || !summary.path("Subject").asText().equals(subject)) {
+                continue;
+            }
+            String id = summary.path("ID").asText();
+            assertTrue(!id.isBlank(), "Mailpit must return the identifier of each delivered email.");
+            HttpResponse<String> detail = HTTP_CLIENT.send(
+                    HttpRequest.newBuilder(mailpitEndpoint("/api/v1/message/" + id)).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, detail.statusCode());
+            if (containsExpectedContent(JSON.readTree(detail.body()), expectedContent)) {
+                matches++;
+            }
+        }
+        return matches;
+    }
+
     private static boolean containsExpectedContent(JsonNode message, String... expectedContent) {
         String text = message.path("Text").asText();
         String html = message.path("HTML").asText();
@@ -570,6 +736,55 @@ class KeycloakAccessRequestEmailDeliveryIT {
             }
         }
         return true;
+    }
+
+    private OutboxDelivery waitForOutboxDelivery(
+            String requestId,
+            Predicate<OutboxDelivery> condition,
+            String expectedState) throws Exception {
+        Instant deadline = Instant.now().plus(PROCESSING_TIMEOUT);
+        OutboxDelivery latest = null;
+        while (Instant.now().isBefore(deadline)) {
+            latest = outboxDelivery(requestId);
+            if (latest != null && condition.test(latest)) {
+                return latest;
+            }
+            Thread.sleep(100);
+        }
+        throw new AssertionError("Timed out waiting for " + expectedState + ". Last outbox row: " + latest
+                + "\nKeycloak log tail:\n" + keycloakLogTail());
+    }
+
+    private OutboxDelivery outboxDelivery(String requestId) throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var statement = connection.prepareStatement("""
+                     select STATE,
+                            ATTEMPT_COUNT,
+                            PROCESSOR_ID,
+                            LEASE_UNTIL_TIMESTAMP,
+                            DELIVERED_TIMESTAMP
+                       from AR_NOTIFICATION_OUTBOX
+                      where REQUEST_ID = ?
+                        and RECIPIENT_TYPE = 'USER'
+                        and NOTIFICATION_TYPE = 'REQUEST_SUBMITTED'
+                     """)) {
+            statement.setString(1, requestId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    return null;
+                }
+                OutboxDelivery delivery = new OutboxDelivery(
+                        result.getString(1),
+                        result.getInt(2),
+                        result.getString(3),
+                        (Long) result.getObject(4),
+                        (Long) result.getObject(5));
+                assertTrue(!result.next(),
+                        "One request with one approver must produce exactly one user notification delivery.");
+                return delivery;
+            }
+        }
     }
 
     private String accessToken(KeycloakContainer keycloak, String clientId, String username, String password)
@@ -689,5 +904,13 @@ class KeycloakAccessRequestEmailDeliveryIT {
     }
 
     private record EntitlementTarget(String entitlementId, String roleName) {
+    }
+
+    private record OutboxDelivery(
+            String state,
+            int attemptCount,
+            String processorId,
+            Long leaseUntilTimestamp,
+            Long deliveredTimestamp) {
     }
 }
