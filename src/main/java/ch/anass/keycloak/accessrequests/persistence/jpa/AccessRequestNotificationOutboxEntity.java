@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.persistence.jpa;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotification;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationRecipientType;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -53,6 +54,10 @@ public class AccessRequestNotificationOutboxEntity {
     private String recipientId;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "RECIPIENT_TYPE", nullable = false, length = 20)
+    private AccessRequestNotificationRecipientType recipientType;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "NOTIFICATION_TYPE", nullable = false, length = 50)
     private AccessRequestNotificationType notificationType;
 
@@ -84,6 +89,7 @@ public class AccessRequestNotificationOutboxEntity {
 
     private AccessRequestNotificationOutboxEntity(
             AccessRequestNotification notification,
+            AccessRequestNotificationRecipientType recipientType,
             String recipientId,
             Instant queuedAt) {
         this.id = UUID.randomUUID().toString();
@@ -92,22 +98,34 @@ public class AccessRequestNotificationOutboxEntity {
         this.entitlementId = notification.entitlement().id();
         this.realmId = notification.request().realmId();
         this.recipientId = requireText(recipientId, "recipientId");
+        this.recipientType = Objects.requireNonNull(recipientType, "recipientType must not be null");
         this.notificationType = notification.type();
-        this.deliveryKey = deliveryKey(eventId, notificationType, this.recipientId);
+        this.deliveryKey = deliveryKey(eventId, notificationType, this.recipientType, this.recipientId);
         this.state = AccessRequestNotificationOutboxState.PENDING;
         this.nextAttemptTimestamp = Objects.requireNonNull(queuedAt, "queuedAt must not be null").toEpochMilli();
     }
 
     static AccessRequestNotificationOutboxEntity queue(
             AccessRequestNotification notification,
+            AccessRequestNotificationRecipientType recipientType,
             String recipientId,
             Instant queuedAt) {
-        return new AccessRequestNotificationOutboxEntity(notification, recipientId, queuedAt);
+        return new AccessRequestNotificationOutboxEntity(notification, recipientType, recipientId, queuedAt);
     }
 
-    static String deliveryKey(String eventId, AccessRequestNotificationType notificationType, String recipientId) {
+    static String deliveryKey(
+            String eventId,
+            AccessRequestNotificationType notificationType,
+            AccessRequestNotificationRecipientType recipientType,
+            String recipientId) {
+        AccessRequestNotificationRecipientType requiredRecipientType =
+                Objects.requireNonNull(recipientType, "recipientType");
+        String recipientTypeDiscriminator = requiredRecipientType == AccessRequestNotificationRecipientType.USER
+                ? ""
+                : requiredRecipientType + ":";
         String value = requireText(eventId, "eventId") + ':'
                 + Objects.requireNonNull(notificationType, "notificationType") + ':'
+                + recipientTypeDiscriminator
                 + requireText(recipientId, "recipientId");
         try {
             return Base64.getUrlEncoder().withoutPadding().encodeToString(
@@ -139,6 +157,10 @@ public class AccessRequestNotificationOutboxEntity {
 
     public String recipientId() {
         return recipientId;
+    }
+
+    public AccessRequestNotificationRecipientType recipientType() {
+        return recipientType;
     }
 
     public AccessRequestNotificationType notificationType() {

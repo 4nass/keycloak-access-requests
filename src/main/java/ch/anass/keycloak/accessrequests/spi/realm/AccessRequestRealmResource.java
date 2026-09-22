@@ -580,7 +580,7 @@ public final class AccessRequestRealmResource {
                 new KeycloakAccessRequestTransaction(session),
                 List.of(new KeycloakEntitlementProvisioner(session, authenticatedRequest.realm())),
                 new KeycloakAccessRequestNotificationOutboxPublisher(
-                        session, authenticatedRequest.realm(), entityManager));
+                        authenticatedRequest.realm(), entityManager));
     }
 
     private ApprovalQueueService approvalQueueService(AuthenticatedRequest authenticatedRequest) {

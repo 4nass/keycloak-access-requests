@@ -251,4 +251,12 @@
             <column name="LEASE_UNTIL_TIMESTAMP"/>
         </createIndex>
     </changeSet>
+
+    <changeSet id="7" author="4nass">
+        <addColumn tableName="AR_NOTIFICATION_OUTBOX">
+            <column name="RECIPIENT_TYPE" type="VARCHAR(20)" defaultValue="USER">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
 </databaseChangeLog>

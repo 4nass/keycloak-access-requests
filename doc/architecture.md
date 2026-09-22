@@ -74,7 +74,7 @@ The JPA provider owns the Liquibase changelog. Its tables are deliberately prefi
 
 ### Notification delivery
 
-Lifecycle e-mails are written as recipient-specific rows in `AR_NOTIFICATION_OUTBOX` in the same transaction as the request, decision, and audit event. The HTTP request therefore never calls SMTP, and a rolled-back business transaction leaves no delivery to send.
+Lifecycle e-mails for a user are written as recipient-specific rows in `AR_NOTIFICATION_OUTBOX` in the same transaction as the request, decision, and audit event. A role-targeted notification is persisted as one role instruction; the timer expands its current eligible members only after that transaction commits. The HTTP request therefore never resolves a role membership or calls SMTP, and a rolled-back business transaction leaves no delivery to send.
 
 A Keycloak timer leases due rows and sends them in the background. The lease and processor token prevent two cluster nodes from handling the same row concurrently. The unique delivery key (`event`, notification type, recipient) makes enqueueing idempotent; transient delivery failures are retried with backoff, then retained as `FAILED` after ten attempts for operational follow-up. A missing, disabled, or e-mail-less recipient is recorded as `DISCARDED`.
 

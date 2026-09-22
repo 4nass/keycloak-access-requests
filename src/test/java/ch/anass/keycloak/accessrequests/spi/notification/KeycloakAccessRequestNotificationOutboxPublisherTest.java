@@ -15,19 +15,12 @@ import jakarta.persistence.Persistence;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.keycloak.email.EmailTemplateProvider;
-import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.RoleModel;
-import org.keycloak.models.UserModel;
-import org.keycloak.models.UserProvider;
 
 import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -49,14 +42,14 @@ class KeycloakAccessRequestNotificationOutboxPublisherTest {
     }
 
     @Test
-    void queuesDeliveriesInTheCurrentTransactionWithoutCallingTheEmailProvider() {
-        AtomicBoolean emailProviderRequested = new AtomicBoolean();
+    void queuesDeliveriesInTheCurrentTransactionWithoutResolvingRoleMembers() {
+        AtomicBoolean roleLookupRequested = new AtomicBoolean();
         try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
             entityManager.getTransaction().begin();
-            publisher(entityManager, emailProviderRequested, Map.of("requester-1", user("requester-1", true, "requester@test")), Map.of())
+            publisher(entityManager, roleLookupRequested)
                     .publish(notification(AccessRequestNotificationRecipientType.USER, "requester-1"));
 
-            assertFalse(emailProviderRequested.get());
+            assertFalse(roleLookupRequested.get());
             entityManager.getTransaction().rollback();
 
             Long queued = entityManager.createQuery(
@@ -67,56 +60,37 @@ class KeycloakAccessRequestNotificationOutboxPublisherTest {
     }
 
     @Test
-    void queuesOneDurableDeliveryForEachEligibleRoleMember() {
-        AtomicBoolean emailProviderRequested = new AtomicBoolean();
-        Map<String, UserModel> users = Map.of(
-                "approver-1", user("approver-1", true, "approver-1@test"),
-                "approver-2", user("approver-2", true, "approver-2@test"),
-                "disabled", user("disabled", false, "disabled@test"),
-                "without-email", user("without-email", true, null));
-        RoleModel role = role("approver-role");
+    void queuesOneRoleInstructionWithoutResolvingItsMembers() {
+        AtomicBoolean roleLookupRequested = new AtomicBoolean();
         try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
             entityManager.getTransaction().begin();
-            publisher(entityManager, emailProviderRequested, users, Map.of(role.getId(), List.copyOf(users.values())))
-                    .publish(notification(AccessRequestNotificationRecipientType.REALM_ROLE, role.getId()));
+            publisher(entityManager, roleLookupRequested)
+                    .publish(notification(AccessRequestNotificationRecipientType.REALM_ROLE, "approver-role"));
             entityManager.getTransaction().commit();
 
-            List<String> recipients = entityManager.createQuery(
-                            "select entry.recipientId from AccessRequestNotificationOutboxEntity entry order by entry.recipientId",
-                            String.class)
+            List<AccessRequestNotificationOutboxEntity> entries = entityManager.createQuery(
+                            "select entry from AccessRequestNotificationOutboxEntity entry",
+                            AccessRequestNotificationOutboxEntity.class)
                     .getResultList();
-            assertEquals(List.of("approver-1", "approver-2"), recipients);
-            assertFalse(emailProviderRequested.get());
+            assertEquals(1, entries.size());
+            assertEquals("approver-role", entries.getFirst().recipientId());
+            assertEquals(AccessRequestNotificationRecipientType.REALM_ROLE, entries.getFirst().recipientType());
+            assertFalse(roleLookupRequested.get());
         }
     }
 
     private KeycloakAccessRequestNotificationOutboxPublisher publisher(
             EntityManager entityManager,
-            AtomicBoolean emailProviderRequested,
-            Map<String, UserModel> users,
-            Map<String, List<UserModel>> roleMembers) {
+            AtomicBoolean roleLookupRequested) {
         RealmModel realm = proxy(RealmModel.class, (proxy, method, arguments) -> switch (method.getName()) {
             case "getId" -> REALM_ID;
-            case "getRoleById" -> role((String) arguments[0]);
-            default -> null;
-        });
-        UserProvider userProvider = proxy(UserProvider.class, (proxy, method, arguments) -> switch (method.getName()) {
-            case "getUserById" -> users.get(arguments[1]);
-            case "getRoleMembersStream" -> roleMembers.getOrDefault(
-                    ((RoleModel) arguments[1]).getId(), List.of()).stream();
-            default -> null;
-        });
-        KeycloakSession session = proxy(KeycloakSession.class, (proxy, method, arguments) -> switch (method.getName()) {
-            case "users" -> userProvider;
-            case "getProvider" -> {
-                if (arguments[0] == EmailTemplateProvider.class) {
-                    emailProviderRequested.set(true);
-                }
+            case "getRoleById" -> {
+                roleLookupRequested.set(true);
                 yield null;
             }
             default -> null;
         });
-        return new KeycloakAccessRequestNotificationOutboxPublisher(session, realm, entityManager);
+        return new KeycloakAccessRequestNotificationOutboxPublisher(realm, entityManager);
     }
 
     private static AccessRequestNotification notification(
@@ -150,20 +124,6 @@ class KeycloakAccessRequestNotificationOutboxPublisherTest {
                 request,
                 entitlement,
                 AccessRequestEvent.created(request, request.requesterId(), now));
-    }
-
-    private static RoleModel role(String id) {
-        return proxy(RoleModel.class, (proxy, method, arguments) ->
-                method.getName().equals("getId") ? id : null);
-    }
-
-    private static UserModel user(String id, boolean enabled, String email) {
-        return proxy(UserModel.class, (proxy, method, arguments) -> switch (method.getName()) {
-            case "getId" -> id;
-            case "isEnabled" -> enabled;
-            case "getEmail" -> email;
-            default -> null;
-        });
     }
 
     @SuppressWarnings("unchecked")

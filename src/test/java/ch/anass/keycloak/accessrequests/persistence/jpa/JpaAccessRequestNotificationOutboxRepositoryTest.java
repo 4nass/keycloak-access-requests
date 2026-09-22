@@ -42,7 +42,7 @@ class JpaAccessRequestNotificationOutboxRepositoryTest {
         try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
             entityManager.getTransaction().begin();
             new JpaAccessRequestNotificationOutboxRepository(entityManager)
-                    .enqueue(notification(), "requester-1", queuedAt);
+                    .enqueue(notification(), AccessRequestNotificationRecipientType.USER, "requester-1", queuedAt);
             entityManager.getTransaction().commit();
         }
 
@@ -75,7 +75,7 @@ class JpaAccessRequestNotificationOutboxRepositoryTest {
         try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
             entityManager.getTransaction().begin();
             new JpaAccessRequestNotificationOutboxRepository(entityManager)
-                    .enqueue(notification(), "requester-1", queuedAt);
+                    .enqueue(notification(), AccessRequestNotificationRecipientType.USER, "requester-1", queuedAt);
             entityManager.getTransaction().commit();
         }
 
@@ -100,6 +100,37 @@ class JpaAccessRequestNotificationOutboxRepositoryTest {
             assertEquals(deliveryKey, secondAttempt.deliveryKey());
             assertEquals(2, secondAttempt.attemptCount());
             entityManager.getTransaction().commit();
+        }
+    }
+
+    @Test
+    void doesNotQueueTheSameExpandedRoleDeliveryTwice() {
+        Instant queuedAt = Instant.parse("2026-09-22T10:00:00Z");
+        AccessRequestNotification notification = notification();
+        try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
+            entityManager.getTransaction().begin();
+            JpaAccessRequestNotificationOutboxRepository outbox =
+                    new JpaAccessRequestNotificationOutboxRepository(entityManager);
+            outbox.enqueueIfAbsent(
+                    notification,
+                    AccessRequestNotificationRecipientType.USER,
+                    List.of("approver-1"),
+                    queuedAt);
+            entityManager.getTransaction().commit();
+
+            entityManager.getTransaction().begin();
+            outbox.enqueueIfAbsent(
+                    notification,
+                    AccessRequestNotificationRecipientType.USER,
+                    List.of("approver-1"),
+                    queuedAt);
+            entityManager.getTransaction().commit();
+
+            Long queued = entityManager.createQuery(
+                            "select count(entry) from AccessRequestNotificationOutboxEntity entry",
+                            Long.class)
+                    .getSingleResult();
+            assertEquals(1L, queued);
         }
     }
 

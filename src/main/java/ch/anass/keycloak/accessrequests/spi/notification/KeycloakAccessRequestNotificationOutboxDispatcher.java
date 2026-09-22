@@ -15,13 +15,18 @@ import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.RoleModel;
+import org.keycloak.models.UserModel;
 import org.keycloak.timer.ScheduledTask;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /**
  * Delivers persisted notifications from a background Keycloak timer after their source transaction commits.
@@ -79,11 +84,19 @@ public final class KeycloakAccessRequestNotificationOutboxDispatcher implements 
             session.getContext().setRealm(realm);
             AccessRequestNotification notification = new AccessRequestNotification(
                     entry.notificationType(),
-                    AccessRequestNotificationRecipientType.USER,
+                    entry.recipientType(),
                     entry.recipientId(),
                     request,
                     entitlement,
                     eventEntity.toDomain());
+            if (entry.recipientType() == AccessRequestNotificationRecipientType.REALM_ROLE) {
+                if (queueRoleMemberDeliveries(session, realm, outbox, notification, now)) {
+                    outbox.markDelivered(entry.id(), processorId, now);
+                } else {
+                    outbox.markDiscarded(entry.id(), processorId, now);
+                }
+                return;
+            }
             KeycloakAccessRequestEmailNotifier.DeliveryResult result =
                     new KeycloakAccessRequestEmailNotifier(session, realm).deliver(notification, entry.recipientId());
             if (result == KeycloakAccessRequestEmailNotifier.DeliveryResult.SENT) {
@@ -99,5 +112,31 @@ public final class KeycloakAccessRequestNotificationOutboxDispatcher implements 
                     entry.requestId());
             outbox.markFailed(entry.id(), processorId, now, MAXIMUM_ATTEMPTS);
         }
+    }
+
+    private static boolean queueRoleMemberDeliveries(
+            KeycloakSession session,
+            RealmModel realm,
+            JpaAccessRequestNotificationOutboxRepository outbox,
+            AccessRequestNotification notification,
+            Instant queuedAt) {
+        RoleModel role = realm.getRoleById(notification.recipientId());
+        if (role == null) {
+            return false;
+        }
+
+        Set<String> recipientIds = new HashSet<>();
+        try (Stream<UserModel> roleMembers = session.users().getRoleMembersStream(realm, role)) {
+            roleMembers
+                    .filter(KeycloakAccessRequestEmailNotifier::isDeliverable)
+                    .map(UserModel::getId)
+                    .forEach(recipientIds::add);
+        }
+        outbox.enqueueIfAbsent(
+                notification,
+                AccessRequestNotificationRecipientType.USER,
+                recipientIds,
+                queuedAt);
+        return true;
     }
 }

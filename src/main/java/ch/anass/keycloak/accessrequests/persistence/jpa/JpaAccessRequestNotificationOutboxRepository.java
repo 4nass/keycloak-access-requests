@@ -1,18 +1,24 @@
 package ch.anass.keycloak.accessrequests.persistence.jpa;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotification;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationRecipientType;
 import jakarta.persistence.EntityManager;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Persistence operations for the transactional notification outbox.
  */
 public final class JpaAccessRequestNotificationOutboxRepository {
+
+    private static final int DELIVERY_KEY_LOOKUP_BATCH_SIZE = 500;
 
     private final EntityManager entityManager;
 
@@ -20,8 +26,49 @@ public final class JpaAccessRequestNotificationOutboxRepository {
         this.entityManager = Objects.requireNonNull(entityManager, "entityManager must not be null");
     }
 
-    public void enqueue(AccessRequestNotification notification, String recipientId, Instant queuedAt) {
-        entityManager.persist(AccessRequestNotificationOutboxEntity.queue(notification, recipientId, queuedAt));
+    public void enqueue(
+            AccessRequestNotification notification,
+            AccessRequestNotificationRecipientType recipientType,
+            String recipientId,
+            Instant queuedAt) {
+        entityManager.persist(AccessRequestNotificationOutboxEntity.queue(
+                notification, recipientType, recipientId, queuedAt));
+    }
+
+    /**
+     * Persists deliveries only when no worker has already expanded the same role instruction.
+     */
+    public void enqueueIfAbsent(
+            AccessRequestNotification notification,
+            AccessRequestNotificationRecipientType recipientType,
+            Collection<String> recipientIds,
+            Instant queuedAt) {
+        List<AccessRequestNotificationOutboxEntity> candidates = recipientIds.stream()
+                .map(recipientId -> AccessRequestNotificationOutboxEntity.queue(
+                        notification, recipientType, recipientId, queuedAt))
+                .toList();
+        if (candidates.isEmpty()) {
+            return;
+        }
+
+        Set<String> missingDeliveryKeys = new HashSet<>();
+        for (AccessRequestNotificationOutboxEntity candidate : candidates) {
+            missingDeliveryKeys.add(candidate.deliveryKey());
+        }
+        List<String> deliveryKeys = List.copyOf(missingDeliveryKeys);
+        for (int start = 0; start < deliveryKeys.size(); start += DELIVERY_KEY_LOOKUP_BATCH_SIZE) {
+            int end = Math.min(start + DELIVERY_KEY_LOOKUP_BATCH_SIZE, deliveryKeys.size());
+            missingDeliveryKeys.removeAll(entityManager.createQuery("""
+                            select entry.deliveryKey
+                              from AccessRequestNotificationOutboxEntity entry
+                             where entry.deliveryKey in :deliveryKeys
+                            """, String.class)
+                    .setParameter("deliveryKeys", deliveryKeys.subList(start, end))
+                    .getResultList());
+        }
+        candidates.stream()
+                .filter(candidate -> missingDeliveryKeys.contains(candidate.deliveryKey()))
+                .forEach(entityManager::persist);
     }
 
     /**
@@ -137,4 +184,5 @@ public final class JpaAccessRequestNotificationOutboxRepository {
     private static long retryDelaySeconds(int attemptCount) {
         return 1L << Math.min(attemptCount, 6);
     }
+
 }

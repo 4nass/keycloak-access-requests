@@ -105,6 +105,7 @@ class AccessRequestJpaChangelogTest {
                             "ENTITLEMENT_ID",
                             "REALM_ID",
                             "RECIPIENT_ID",
+                            "RECIPIENT_TYPE",
                             "NOTIFICATION_TYPE",
                             "STATE",
                             "ATTEMPT_COUNT",
