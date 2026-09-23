@@ -45,12 +45,14 @@ describe("Entitlements administration API client", () => {
     it("reads the server-authoritative catalog capability with the administrator token", async () => {
         const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
             canManageCatalog: true,
-            canManageNotifications: true
+            canManageNotifications: true,
+            canManageProvisioningFailures: true
         }));
 
         await expect(createApi(fetchMock).capabilities()).resolves.toEqual({
             canManageCatalog: true,
-            canManageNotifications: true
+            canManageNotifications: true,
+            canManageProvisioningFailures: true
         });
         expect(request(fetchMock)).toEqual({
             url: "https://keycloak.example/realms/finance/access-requests/admin/capabilities",
@@ -121,6 +123,80 @@ describe("Entitlements administration API client", () => {
         expect(String(listUrl)).toBe(
             "https://keycloak.example/realms/finance/access-requests/admin/notification-deliveries?page=1&size=10"
         );
+    });
+
+    it("loads paginated failed provisioning requests with only operational response fields", async () => {
+        const failedRequest = {
+            decisionStatus: "APPROVED" as const,
+            entitlementId: "finance-reader",
+            id: "request-1",
+            provisioningStatus: "FAILED" as const,
+            requesterId: "user-1",
+            resourceName: "Finance Reader",
+            resourceType: "CLIENT_ROLE" as const,
+            updatedAt: "2026-09-22T10:00:00Z"
+        };
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+            items: [failedRequest],
+            page: 1,
+            size: 10,
+            total: 11
+        }));
+
+        await expect(createApi(fetchMock).failedProvisioningRequests({ page: 1, size: 10 })).resolves.toEqual({
+            items: [failedRequest],
+            page: 1,
+            size: 10,
+            total: 11
+        });
+        expect(request(fetchMock)).toEqual({
+            url: "https://keycloak.example/realms/finance/access-requests/admin/provisioning-failures?page=1&size=10",
+            init: expect.objectContaining({
+                headers: expect.objectContaining({ authorization: "Bearer admin-console-token" })
+            })
+        });
+        expect(String(fetchMock.mock.calls[0][0])).not.toContain("failureReason");
+    });
+
+    it("retries a failed provisioning request using the request-scoped admin endpoint", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+            decisionStatus: "APPROVED",
+            entitlementId: "finance-reader",
+            id: "request-1",
+            provisioningStatus: "SUCCEEDED"
+        }));
+
+        await expect(createApi(fetchMock).retryFailedProvisioning("request/1")).resolves.toMatchObject({
+            decisionStatus: "APPROVED",
+            provisioningStatus: "SUCCEEDED"
+        });
+        expect(request(fetchMock)).toEqual({
+            url: "https://keycloak.example/realms/finance/access-requests/admin/requests/request%2F1/provisioning/retry",
+            init: expect.objectContaining({
+                headers: expect.objectContaining({ authorization: "Bearer admin-console-token" }),
+                method: "POST"
+            })
+        });
+    });
+
+    it.each([
+        [401, "accessRequestsAdminErrorUnauthorized"],
+        [403, "accessRequestsAdminErrorForbidden"],
+        [409, "accessRequestsAdminErrorConflict"]
+    ])("maps a %i failed-provisioning retry response to a safe translated error", async (status, messageKey) => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+            code: "INTERNAL_PROVISIONING_DETAIL",
+            message: "Sensitive provisioning internals must not reach the UI.",
+            requestId: "request-1"
+        }, status));
+
+        try {
+            await createApi(fetchMock).retryFailedProvisioning("request-1");
+            throw new Error("Expected the failed provisioning retry to reject.");
+        } catch (error) {
+            expect(error).toMatchObject({ requestId: "request-1", status });
+            expect(presentEntitlementsAdminError(error)).toEqual({ messageKey, requestId: "request-1" });
+        }
     });
 
     it("requeues a failed notification delivery without expecting a JSON response body", async () => {
