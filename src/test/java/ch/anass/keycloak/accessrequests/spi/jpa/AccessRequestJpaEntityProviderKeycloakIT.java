@@ -867,6 +867,15 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         createEnabledUser(server, adminToken, unauthorizedUsername, unauthorizedPassword);
         String unauthorizedToken = accessToken(server, clientId, unauthorizedUsername, unauthorizedPassword);
 
+        String managerUsername = "provisioning-retry-manager-" + UUID.randomUUID();
+        String managerPassword = "provisioning-retry-manager-password";
+        createEnabledUser(server, adminToken, managerUsername, managerPassword);
+        String managerToken = accessToken(server, clientId, managerUsername, managerPassword);
+        assignRealmManagementRoles(server, adminToken, subjectOf(managerToken), "view-realm");
+        ensureRealmRoleAndAssignToUser(
+                server, adminToken, subjectOf(managerToken), ACCESS_REQUEST_MANAGER_ROLE);
+        managerToken = accessToken(server, clientId, managerUsername, managerPassword);
+
         String provisionedRoleId = createRealmRole(
                 server, adminToken, "finance-reader-" + UUID.randomUUID());
         String entitlementId = UUID.randomUUID().toString();
@@ -954,6 +963,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 approvedRequestId, "APPROVED", "REQUEST_APPROVED", approverId, approvalComment);
         assertProvisioningAndAuditEvents(approvedRequestId, approverId);
         assertRealmRoleAssigned(server, adminToken, subjectOf(requesterToken), provisionedRoleId);
+        assertProvisioningRetryEndpoint(accessRequestsEndpoint, managerToken, approvedRequestId);
         assertClientRoleGroupAndFailureProvisioning(
                 server,
                 adminToken,
@@ -961,6 +971,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 requestsEndpoint,
                 requesterToken,
                 approverToken,
+                managerToken,
                 approverId,
                 approverRoleId);
 
@@ -998,6 +1009,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             URI requestsEndpoint,
             String requesterToken,
             String approverToken,
+            String managerToken,
             String approverId,
             String approverRoleId) throws Exception {
         String requesterId = subjectOf(requesterToken);
@@ -1053,6 +1065,90 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertDecisionAndAuditEvent(requestId, "APPROVED", "REQUEST_APPROVED", approverId, "Approved.");
         assertProvisioningResultAndAuditEvents(
                 requestId, "FAILED", "PROVISIONING_FAILED", approverId);
+
+        URI retryEndpoint = URI.create(accessRequestsEndpoint
+                + "/admin/requests/" + requestId + "/provisioning/retry");
+        HttpResponse<String> unauthorizedRetryResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(retryEndpoint)
+                        .header("Authorization", "Bearer " + approverToken)
+                        .POST(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, unauthorizedRetryResponse.statusCode());
+
+        HttpResponse<String> retriedResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(retryEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .POST(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, retriedResponse.statusCode());
+        assertTrue(retriedResponse.body().contains("\"decisionStatus\":\"APPROVED\""));
+        assertTrue(retriedResponse.body().contains("\"provisioningStatus\":\"FAILED\""));
+        assertProvisioningRetryAuditEvents(requestId, subjectOf(managerToken));
+
+        URI missingRetryEndpoint = URI.create(accessRequestsEndpoint
+                + "/admin/requests/missing-request/provisioning/retry");
+        HttpResponse<String> missingRetryResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(missingRetryEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .POST(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(404, missingRetryResponse.statusCode());
+        assertError(missingRetryResponse.body(), "REQUEST_NOT_FOUND", "missing-request");
+    }
+
+    private void assertProvisioningRetryEndpoint(
+            URI accessRequestsEndpoint,
+            String managerToken,
+            String alreadyProvisionedRequestId) throws Exception {
+        URI retryEndpoint = URI.create(accessRequestsEndpoint
+                + "/admin/requests/" + alreadyProvisionedRequestId + "/provisioning/retry");
+        HttpResponse<Void> unauthenticated = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(retryEndpoint)
+                        .POST(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(401, unauthenticated.statusCode());
+
+        HttpResponse<String> conflict = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(retryEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .POST(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, conflict.statusCode());
+        assertError(conflict.body(), "INVALID_PROVISIONING_RETRY", alreadyProvisionedRequestId);
+    }
+
+    private void assertProvisioningRetryAuditEvents(String requestId, String actorId) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement statement = connection.prepareStatement("""
+                     select EVENT_TYPE, ACTOR_ID
+                       from AR_ACCESS_REQUEST_HISTORY
+                      where REQUEST_ID = ?
+                     """)) {
+            statement.setString(1, requestId);
+            try (ResultSet result = statement.executeQuery()) {
+                int starts = 0;
+                int failures = 0;
+                boolean retryActorRecorded = false;
+                while (result.next()) {
+                    String eventType = result.getString("EVENT_TYPE");
+                    if ("PROVISIONING_STARTED".equals(eventType)) {
+                        starts++;
+                        retryActorRecorded |= actorId.equals(result.getString("ACTOR_ID"));
+                    } else if ("PROVISIONING_FAILED".equals(eventType)) {
+                        failures++;
+                    }
+                }
+                assertEquals(2, starts, "Retrying must record a second provisioning start event.");
+                assertEquals(2, failures, "A failed retry must retain a separate provisioning failure event.");
+                assertTrue(retryActorRecorded, "The retry audit event must identify the administrative actor.");
+            }
+        }
     }
 
     private void submitAndApprove(
