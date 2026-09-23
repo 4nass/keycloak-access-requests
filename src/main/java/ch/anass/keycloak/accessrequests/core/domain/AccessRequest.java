@@ -219,6 +219,17 @@ public final class AccessRequest {
         completeProvisioning(ProvisioningStatus.FAILED, completedAt);
     }
 
+    public void completeProvisioningRetry(ProvisioningStatus result, Instant completedAt) {
+        if (decisionStatus != DecisionStatus.APPROVED || provisioningStatus != ProvisioningStatus.FAILED) {
+            throw new InvalidProvisioningRetryException();
+        }
+        if (result != ProvisioningStatus.SUCCEEDED && result != ProvisioningStatus.FAILED) {
+            throw new IllegalArgumentException("A provisioning retry must finish as SUCCEEDED or FAILED.");
+        }
+        this.provisioningStatus = result;
+        this.updatedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
+    }
+
     public void reject(String approverId, String decisionComment) {
         reject(approverId, decisionComment, Instant.now());
     }

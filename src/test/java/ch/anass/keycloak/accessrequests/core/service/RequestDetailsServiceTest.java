@@ -83,6 +83,11 @@ class RequestDetailsServiceTest {
         }
 
         @Override
+        public Optional<AccessRequest> findByIdForUpdate(String realmId, String requestId) {
+            return findById(realmId, requestId);
+        }
+
+        @Override
         public AccessRequestPage findByRequester(AccessRequestQuery query) {
             throw new UnsupportedOperationException();
         }

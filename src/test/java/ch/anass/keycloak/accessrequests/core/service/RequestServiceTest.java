@@ -770,6 +770,11 @@ class RequestServiceTest {
         }
 
         @Override
+        public Optional<AccessRequest> findByIdForUpdate(String realmId, String requestId) {
+            return findById(realmId, requestId);
+        }
+
+        @Override
         public synchronized AccessRequestPage findByRequester(AccessRequestQuery query) {
             List<AccessRequest> matching = values.stream()
                     .filter(request -> request.realmId().equals(query.realmId()))

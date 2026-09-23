@@ -11,6 +11,7 @@ import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.DuplicatePendingRequestException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceException;
 import org.hibernate.exception.ConstraintViolationException;
 
@@ -30,6 +31,16 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
     @Override
     public Optional<AccessRequest> findById(String realmId, String requestId) {
         AccessRequestEntity entity = entityManager.find(AccessRequestEntity.class, requestId);
+        if (entity == null || !entity.realmId().equals(realmId)) {
+            return Optional.empty();
+        }
+        return Optional.of(entity.toDomain());
+    }
+
+    @Override
+    public Optional<AccessRequest> findByIdForUpdate(String realmId, String requestId) {
+        AccessRequestEntity entity = entityManager.find(
+                AccessRequestEntity.class, requestId, LockModeType.PESSIMISTIC_WRITE);
         if (entity == null || !entity.realmId().equals(realmId)) {
             return Optional.empty();
         }

@@ -4,8 +4,11 @@ import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
+import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.InvalidProvisioningRetryException;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.SelfApprovalException;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedApprovalException;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
@@ -215,6 +218,40 @@ public final class RequestService {
                     : AccessRequestEvent.provisioningFailed(
                             persisted, approverId, completedAt, result.failureReason());
             publish(provisioningEvent, persisted, entitlement);
+            return persisted;
+        });
+    }
+
+    public AccessRequest retryProvisioning(String realmId, String requestId, String actorId) {
+        return transaction.execute(() -> {
+            AccessRequest request = accessRequestRepository.findByIdForUpdate(realmId, requestId)
+                    .orElseThrow(() -> new RequestNotFoundException(requestId));
+            if (request.decisionStatus() != DecisionStatus.APPROVED
+                    || request.provisioningStatus() != ProvisioningStatus.FAILED) {
+                throw new InvalidProvisioningRetryException();
+            }
+
+            Entitlement entitlement = entitlementRepository.findByIdForUpdate(realmId, request.entitlementId())
+                    .orElseThrow(() -> new EntitlementNotFoundException(request.entitlementId()));
+            if (entitlement.resourceType() != request.resourceType()
+                    || !entitlement.resourceId().equals(request.resourceId())) {
+                throw new InvalidProvisioningRetryException();
+            }
+
+            Instant startedAt = Instant.now(clock);
+            publish(AccessRequestEvent.provisioningStarted(request, actorId, startedAt), request, entitlement);
+
+            ProvisioningResult result = provision(realmId, request.requesterId(), entitlement);
+            Instant completedAt = Instant.now(clock);
+            AccessRequest candidate = request.copy();
+            candidate.completeProvisioningRetry(
+                    result.isSuccessful() ? ProvisioningStatus.SUCCEEDED : ProvisioningStatus.FAILED,
+                    completedAt);
+            AccessRequest persisted = updateOrThrow(candidate, request.version());
+            AccessRequestEvent event = result.isSuccessful()
+                    ? AccessRequestEvent.provisioningSucceeded(persisted, actorId, completedAt)
+                    : AccessRequestEvent.provisioningFailed(persisted, actorId, completedAt, result.failureReason());
+            publish(event, persisted, entitlement);
             return persisted;
         });
     }

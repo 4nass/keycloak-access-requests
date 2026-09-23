@@ -13,6 +13,12 @@ public interface AccessRequestRepository {
 
     Optional<AccessRequest> findById(String realmId, String requestId);
 
+    /**
+     * Loads a request while holding a write lock until the surrounding transaction completes.
+     * Implementations must prevent concurrent provisioning retries for the same request.
+     */
+    Optional<AccessRequest> findByIdForUpdate(String realmId, String requestId);
+
     AccessRequestPage findByRequester(AccessRequestQuery query);
 
     ApprovalQueuePage findPendingForApprover(ApprovalQueueQuery query);

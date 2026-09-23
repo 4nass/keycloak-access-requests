@@ -177,6 +177,11 @@ class ApprovalQueueServiceTest {
         }
 
         @Override
+        public Optional<AccessRequest> findByIdForUpdate(String realmId, String requestId) {
+            throw new UnsupportedOperationException("Request reads are not used by this test double.");
+        }
+
+        @Override
         public AccessRequestPage findByRequester(AccessRequestQuery query) {
             throw new UnsupportedOperationException("Requester request reads are not used by this test double.");
         }

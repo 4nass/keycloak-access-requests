@@ -208,6 +208,63 @@ class RequestProvisioningTest {
         assertEquals(0, fixture.provisioner().grantAttempts());
     }
 
+    @Test
+    void allowsRetryAfterEntitlementIsUnpublishedButRejectsAChangedTarget() {
+        Fixture unpublishedFixture = fixture(
+                ResourceType.REALM_ROLE,
+                List.of(ProvisioningOutcome.FAILED, ProvisioningOutcome.SUCCEEDED));
+        unpublishedFixture.service().approve(
+                unpublishedFixture.request().realmId(),
+                unpublishedFixture.request().id(),
+                "approver-1",
+                "Approved.");
+        Entitlement unpublished = unpublishedFixture.entitlement().unpublish(CLOCK.instant());
+        RequestService retryService = provisioningEnabledService(
+                unpublished,
+                unpublishedFixture.requests(),
+                unpublishedFixture.events(),
+                unpublishedFixture.provisioner());
+
+        AccessRequest retried = retryService.retryProvisioning(
+                unpublishedFixture.request().realmId(), unpublishedFixture.request().id(), "realm-admin-1");
+
+        assertEquals(ProvisioningStatus.SUCCEEDED, retried.provisioningStatus());
+        assertEquals(2, unpublishedFixture.provisioner().grantAttempts());
+
+        Fixture changedTargetFixture = fixture(
+                ResourceType.REALM_ROLE,
+                List.of(ProvisioningOutcome.FAILED, ProvisioningOutcome.SUCCEEDED));
+        changedTargetFixture.service().approve(
+                changedTargetFixture.request().realmId(),
+                changedTargetFixture.request().id(),
+                "approver-1",
+                "Approved.");
+        Entitlement changedTarget = Entitlement.rehydrate(
+                changedTargetFixture.entitlement().id(),
+                changedTargetFixture.entitlement().realmId(),
+                changedTargetFixture.entitlement().resourceType(),
+                "different-resource",
+                changedTargetFixture.entitlement().displayName(),
+                changedTargetFixture.entitlement().description(),
+                changedTargetFixture.entitlement().riskLevel(),
+                changedTargetFixture.entitlement().approverRoleId(),
+                true,
+                changedTargetFixture.entitlement().createdAt(),
+                CLOCK.instant(),
+                changedTargetFixture.entitlement().version());
+        RequestService changedTargetService = provisioningEnabledService(
+                changedTarget,
+                changedTargetFixture.requests(),
+                changedTargetFixture.events(),
+                changedTargetFixture.provisioner());
+
+        assertThrows(InvalidProvisioningRetryException.class, () -> changedTargetService.retryProvisioning(
+                changedTargetFixture.request().realmId(),
+                changedTargetFixture.request().id(),
+                "realm-admin-1"));
+        assertEquals(1, changedTargetFixture.provisioner().grantAttempts());
+    }
+
     private static void assertRetryRejected(Fixture fixture) {
         assertThrows(InvalidProvisioningRetryException.class, () -> fixture.service().retryProvisioning(
                 fixture.request().realmId(), fixture.request().id(), "realm-admin-1"));
@@ -304,8 +361,17 @@ class RequestProvisioningTest {
             InMemoryAccessRequestRepository requests,
             RecordingEventPublisher events,
             RecordingProvisioner provisioner) {
+        return provisioningEnabledService(
+                new SingleEntitlementRepository(entitlement), requests, events, provisioner);
+    }
+
+    private static RequestService provisioningEnabledService(
+            EntitlementRepository entitlementRepository,
+            InMemoryAccessRequestRepository requests,
+            RecordingEventPublisher events,
+            RecordingProvisioner provisioner) {
         return new RequestService(
-                new SingleEntitlementRepository(entitlement),
+                entitlementRepository,
                 requests,
                 (EffectiveAccessChecker) (realmId, requesterId, currentEntitlement) -> false,
                 (UserStatusReader) (realmId, userId) -> true,
@@ -432,6 +498,11 @@ class RequestProvisioningTest {
                 return Optional.of(request.copy());
             }
             return Optional.empty();
+        }
+
+        @Override
+        public Optional<AccessRequest> findByIdForUpdate(String realmId, String requestId) {
+            return findById(realmId, requestId);
         }
 
         @Override

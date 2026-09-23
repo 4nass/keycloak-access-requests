@@ -41,6 +41,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -329,6 +330,56 @@ class JpaAccessRequestRepositoryTest {
     }
 
     @Test
+    void pessimisticRequestLockSerializesConcurrentProvisioningRetries() throws Exception {
+        AccessRequest request = transaction().execute(() -> new JpaAccessRequestRepository(entityManager)
+                .createIfNoPending(request("realm-retry-lock", "requester-1", "request-1"))
+                .orElseThrow());
+        CountDownLatch firstLockAcquired = new CountDownLatch(1);
+        CountDownLatch releaseFirstTransaction = new CountDownLatch(1);
+        CountDownLatch secondLockAttempted = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> first = executor.submit(() -> {
+                EntityManager manager = entityManagerFactory.createEntityManager();
+                try {
+                    new JpaAccessRequestTransaction(manager).execute(() -> {
+                        new JpaAccessRequestRepository(manager)
+                                .findByIdForUpdate("realm-retry-lock", request.id())
+                                .orElseThrow();
+                        firstLockAcquired.countDown();
+                        await(releaseFirstTransaction);
+                        return null;
+                    });
+                } finally {
+                    manager.close();
+                }
+            });
+            assertTrue(firstLockAcquired.await(10, TimeUnit.SECONDS));
+
+            Future<Optional<AccessRequest>> second = executor.submit(() -> {
+                EntityManager manager = entityManagerFactory.createEntityManager();
+                try {
+                    secondLockAttempted.countDown();
+                    return new JpaAccessRequestTransaction(manager).execute(() ->
+                            new JpaAccessRequestRepository(manager)
+                                    .findByIdForUpdate("realm-retry-lock", request.id()));
+                } finally {
+                    manager.close();
+                }
+            });
+            assertTrue(secondLockAttempted.await(10, TimeUnit.SECONDS));
+            assertThrows(TimeoutException.class, () -> second.get(250, TimeUnit.MILLISECONDS));
+
+            releaseFirstTransaction.countDown();
+            first.get(10, TimeUnit.SECONDS);
+            assertEquals(request.id(), second.get(10, TimeUnit.SECONDS).orElseThrow().id());
+        } finally {
+            releaseFirstTransaction.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void auditEventAndRequestCommitTogether() {
         RequestService service = service(new JpaAccessRequestEventPublisher(entityManager));
 
@@ -425,6 +476,18 @@ class JpaAccessRequestRepositoryTest {
                         return ProvisioningResult.succeeded();
                     }
                 }));
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for concurrent repository transaction.");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for concurrent repository transaction.",
+                    exception);
+        }
     }
 
     private AccessRequest request(String realmId, String requesterId, String requestId) {
