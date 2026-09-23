@@ -192,6 +192,11 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven.surefire.version}</version>
+                    <configuration>
+                        <systemPropertyVariables>
+                            <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                        </systemPropertyVariables>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -199,6 +204,7 @@
                     <version>${maven.failsafe.version}</version>
                     <configuration>
                         <systemPropertyVariables>
+                            <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
                             <org.jboss.logging.provider>log4j2</org.jboss.logging.provider>
                             <webdriver.remote.enableTracing>false</webdriver.remote.enableTracing>
                             <keycloak.version>${keycloak.version}</keycloak.version>
@@ -310,23 +316,53 @@
                         </configuration>
                     </execution>
                     <execution>
-                        <id>build-console-themes</id>
+                        <id>typecheck-console-themes</id>
                         <phase>generate-resources</phase>
                         <goals>
                             <goal>pnpm</goal>
                         </goals>
                         <configuration>
-                            <arguments>run build</arguments>
+                            <arguments>exec tsc --noEmit</arguments>
                         </configuration>
                     </execution>
                     <execution>
-                        <id>test-console-themes</id>
+                        <id>build-account-console-theme</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>pnpm</goal>
+                        </goals>
+                        <configuration>
+                            <arguments>exec vite build --mode account</arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>build-admin-console-theme</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>pnpm</goal>
+                        </goals>
+                        <configuration>
+                            <arguments>exec vite build --mode admin</arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>test-account-console-theme</id>
                         <phase>test</phase>
                         <goals>
                             <goal>pnpm</goal>
                         </goals>
                         <configuration>
-                            <arguments>run test</arguments>
+                            <arguments>exec vitest run --mode account</arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>test-admin-console-theme</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>pnpm</goal>
+                        </goals>
+                        <configuration>
+                            <arguments>exec vitest run --mode admin</arguments>
                         </configuration>
                     </execution>
                 </executions>

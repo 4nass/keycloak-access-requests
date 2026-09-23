@@ -13,6 +13,10 @@ export default defineConfig(({ mode }) => {
         },
         base: "",
         build: {
+            // Vite's raw minified chunk size is not the shipped transfer budget. The Admin
+            // theme intentionally includes Keycloak's complete Admin UI shell; the packaged
+            // Playwright suite enforces the real compressed/uncompressed browser transfer budget.
+            chunkSizeWarningLimit: consoleName === "admin" ? 3072 : 1024,
             outDir: `dist/${consoleName}`,
             manifest: true,
             sourcemap: true,

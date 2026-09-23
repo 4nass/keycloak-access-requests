@@ -509,7 +509,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             statement.setString(3, UUID.randomUUID().toString());
             statement.setString(4, UUID.randomUUID().toString());
             statement.setString(5, UUID.randomUUID().toString());
-            statement.setString(6, "master");
+            statement.setString(6, masterRealmId(connection));
             statement.setString(7, "recipient-" + UUID.randomUUID());
             statement.setString(8, "USER");
             statement.setString(9, "REQUEST_SUBMITTED");
