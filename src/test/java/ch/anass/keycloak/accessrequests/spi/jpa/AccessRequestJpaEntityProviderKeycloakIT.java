@@ -1065,6 +1065,13 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertDecisionAndAuditEvent(requestId, "APPROVED", "REQUEST_APPROVED", approverId, "Approved.");
         assertProvisioningResultAndAuditEvents(
                 requestId, "FAILED", "PROVISIONING_FAILED", approverId);
+        assertFailedProvisioningAdministration(
+                server,
+                accessRequestsEndpoint,
+                adminToken,
+                approverToken,
+                managerToken,
+                requestId);
 
         URI retryEndpoint = URI.create(accessRequestsEndpoint
                 + "/admin/requests/" + requestId + "/provisioning/retry");
@@ -1120,6 +1127,73 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(409, conflict.statusCode());
         assertError(conflict.body(), "INVALID_PROVISIONING_RETRY", alreadyProvisionedRequestId);
+    }
+
+    private void assertFailedProvisioningAdministration(
+            GenericContainer<?> server,
+            URI accessRequestsEndpoint,
+            String adminToken,
+            String unauthorizedToken,
+            String managerToken,
+            String failedRequestId) throws Exception {
+        URI endpoint = URI.create(accessRequestsEndpoint + "/admin/provisioning-failures");
+        HttpResponse<Void> unauthenticated = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(endpoint).GET().build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(401, unauthenticated.statusCode());
+
+        HttpResponse<Void> forbidden = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(endpoint)
+                        .header("Authorization", "Bearer " + unauthorizedToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(403, forbidden.statusCode());
+
+        URI pagedEndpoint = URI.create(endpoint + "?page=0&size=100");
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(pagedEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+        JsonNode page = new ObjectMapper().readTree(response.body());
+        assertEquals(0, page.path("page").asInt());
+        assertEquals(100, page.path("size").asInt());
+        assertTrue(page.path("total").asLong() >= 1);
+        boolean containsFailedRequest = false;
+        for (JsonNode item : page.path("items")) {
+            assertEquals("APPROVED", item.path("decisionStatus").asText());
+            assertEquals("FAILED", item.path("provisioningStatus").asText());
+            assertFalse(item.has("failureReason"), "Internal provisioning failure details must not be exposed.");
+            assertFalse(item.has("justification"), "The operational list must not expose requester justification.");
+            containsFailedRequest |= failedRequestId.equals(item.path("id").asText());
+        }
+        assertTrue(containsFailedRequest, "The realm's failed provisioning request must appear in the list.");
+        assertFalse(response.body().contains("The configured Keycloak role no longer exists."));
+
+        HttpResponse<String> invalidPage = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(endpoint + "?page=0&size=0"))
+                        .header("Authorization", "Bearer " + managerToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, invalidPage.statusCode());
+        assertError(invalidPage.body(), "INVALID_PROVISIONING_FAILURE_QUERY", null);
+
+        String otherRealm = "provisioning-failures-" + UUID.randomUUID();
+        createRealm(server, adminToken, otherRealm);
+        URI otherRealmEndpoint = URI.create("http://%s:%d/realms/%s/access-requests/admin/provisioning-failures"
+                .formatted(server.getHost(), server.getMappedPort(8080), otherRealm));
+        HttpResponse<String> realmScoped = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(otherRealmEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, realmScoped.statusCode());
+        assertEquals(0, new ObjectMapper().readTree(realmScoped.body()).path("total").asInt());
     }
 
     private void assertProvisioningRetryAuditEvents(String requestId, String actorId) throws SQLException {
