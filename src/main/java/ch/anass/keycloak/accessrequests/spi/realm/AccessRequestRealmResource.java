@@ -277,7 +277,7 @@ public final class AccessRequestRealmResource {
     @Produces(MediaType.APPLICATION_JSON)
     public AdminCapabilitiesResponse adminCapabilities() {
         requireAccessRequestManager();
-        return new AdminCapabilitiesResponse(true, true);
+        return new AdminCapabilitiesResponse(true, true, true);
     }
 
     @GET
@@ -996,7 +996,10 @@ public final class AccessRequestRealmResource {
     public record CapabilitiesResponse(boolean canApprove) {
     }
 
-    public record AdminCapabilitiesResponse(boolean canManageCatalog, boolean canManageNotifications) {
+    public record AdminCapabilitiesResponse(
+            boolean canManageCatalog,
+            boolean canManageNotifications,
+            boolean canManageProvisioningFailures) {
     }
 
     public record NotificationDeliveryListResponse(

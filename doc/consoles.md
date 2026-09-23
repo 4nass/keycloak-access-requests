@@ -32,6 +32,11 @@ The Admin Console owns entitlement configuration. **Configure → Access request
 - metadata, risk, approver-role, and requestable-state updates;
 - optimistic-lock feedback when another administrator changed the same entitlement.
 
+**Configure → Failed provisioning** lists approved requests whose Keycloak grant failed. A manager
+can review the request, requester, entitlement, resource, and failure time, then confirm a manual
+retry. The page reports whether that retry succeeded or failed again. **Configure → Email
+notifications** handles failed lifecycle e-mail deliveries separately.
+
 The theme extends `keycloak.v2` and integrates a React application built from Keycloak's public Admin UI package. It follows the native Keycloak layout, navigation behavior, localization, PatternFly components, light/dark mode, and keyboard patterns.
 
 The Admin UI is visible only after the capability check succeeds. The server still enforces Keycloak administrator access and `manage-access-requests` for non-realm administrators.

@@ -59,6 +59,7 @@ const expectedMessageKeys = [
     "accessRequestsAdminFailedProvisioningRetry",
     "accessRequestsAdminFailedProvisioningRetryDescription",
     "accessRequestsAdminFailedProvisioningRetrySuccess",
+    "accessRequestsAdminFailedProvisioningRetryStillFailed",
     "accessRequestsAdminFailedProvisioningStatus",
     "accessRequestsAdminInactive",
     "accessRequestsAdminLoadError",
@@ -122,6 +123,8 @@ const featureSourcePaths = [
     "main.tsx",
     "pages/EntitlementCatalogPage.tsx",
     "pages/EntitlementCatalogRoute.tsx",
+    "pages/FailedProvisioningPage.tsx",
+    "pages/FailedProvisioningRoute.tsx",
     "pages/NotificationDeliveryPage.tsx",
     "pages/NotificationDeliveryRoute.tsx",
     "routes.tsx"

@@ -75,7 +75,7 @@ After an approval, the provider performs one synchronous, idempotent Keycloak op
 - grant a client role; or
 - join a group.
 
-If the user already has the resource, the operation succeeds without duplicating it. If the target user, role, or group no longer exists, provisioning fails and the request history records the failure. The provider does not yet retry failed provisioning automatically or revoke access after approval.
+If the user already has the resource, the operation succeeds without duplicating it. If the target user, role, or group no longer exists, provisioning fails and the request history records the failure. A manager can retry a failed approved request from the Admin Console or protected API. Failed provisioning is not retried automatically, and approval does not create a revocation workflow.
 
 ## Audit history
 

@@ -41,6 +41,7 @@ await i18n.init({
                 accessRequestsAdminFailedProvisioningRetry: "Retry provisioning",
                 accessRequestsAdminFailedProvisioningRetryDescription: "Retry granting the approved entitlement.",
                 accessRequestsAdminFailedProvisioningRetrySuccess: "Provisioning retry completed.",
+                accessRequestsAdminFailedProvisioningRetryStillFailed: "Provisioning failed again.",
                 accessRequestsAdminFailedProvisioningStatus: "Provisioning status",
                 accessRequestsAdminProvisioningFailed: "Provisioning failed",
                 accessRequestsAdminNotAvailable: "Not available",
@@ -166,6 +167,24 @@ describe("FailedProvisioningPage", () => {
 
         expect(await within(dialog).findByText("The request changed or is no longer eligible for retry.")).toBeInTheDocument();
         expect(within(dialog).queryByText("Sensitive provisioning internals.")).not.toBeInTheDocument();
+    });
+
+    it("does not report success when provisioning fails again", async () => {
+        mocks.api.retryFailedProvisioning.mockResolvedValue({
+            decisionStatus: "APPROVED",
+            entitlementId: "finance-reader",
+            id: "request-1",
+            provisioningStatus: "FAILED"
+        });
+
+        renderPage();
+        fireEvent.click(await screen.findByRole("button", { name: "Retry provisioning" }));
+        const dialog = await screen.findByRole("dialog", { name: "Retry provisioning" });
+        fireEvent.click(within(dialog).getByRole("button", { name: "Retry provisioning" }));
+
+        expect(await screen.findByText("Provisioning failed again.")).toBeInTheDocument();
+        expect(screen.queryByText("Provisioning retry completed.")).not.toBeInTheDocument();
+        await waitFor(() => expect(mocks.api.failedProvisioningRequests).toHaveBeenCalledTimes(2));
     });
 
     it("preserves the page data and shows a refresh error if reloading fails after a successful retry", async () => {

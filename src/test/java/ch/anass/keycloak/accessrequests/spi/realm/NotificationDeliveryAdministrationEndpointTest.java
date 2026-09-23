@@ -75,7 +75,7 @@ class NotificationDeliveryAdministrationEndpointTest {
     @Test
     void advertisesNotificationOperationsAlongsideCatalogManagement() {
         assertArrayEquals(
-                new String[]{"canManageCatalog", "canManageNotifications"},
+                new String[]{"canManageCatalog", "canManageNotifications", "canManageProvisioningFailures"},
                 Arrays.stream(AccessRequestRealmResource.AdminCapabilitiesResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));

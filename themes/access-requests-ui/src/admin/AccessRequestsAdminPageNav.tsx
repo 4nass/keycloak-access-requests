@@ -43,7 +43,8 @@ export function AccessRequestsAdminPageNav() {
     const navigate = useNavigate();
     const [capabilities, setCapabilities] = useState({
         canManageCatalog: false,
-        canManageNotifications: false
+        canManageNotifications: false,
+        canManageProvisioningFailures: false
     });
 
     useEffect(() => {
@@ -57,7 +58,11 @@ export function AccessRequestsAdminPageNav() {
             })
             .catch(() => {
                 if (active) {
-                    setCapabilities({ canManageCatalog: false, canManageNotifications: false });
+                    setCapabilities({
+                        canManageCatalog: false,
+                        canManageNotifications: false,
+                        canManageProvisioningFailures: false
+                    });
                 }
             });
 
@@ -113,7 +118,8 @@ export function AccessRequestsAdminPageNav() {
                             <KeycloakNavItem path="/events" title={t("events")} />
                         </NavGroup>
                     )}
-                    {(showConfigure || capabilities.canManageCatalog || capabilities.canManageNotifications) && (
+                    {(showConfigure || capabilities.canManageCatalog || capabilities.canManageNotifications
+                        || capabilities.canManageProvisioningFailures) && (
                         <NavGroup aria-label={t("configure")} title={t("configure")}>
                             {showConfigure && (
                                 <>
@@ -129,6 +135,7 @@ export function AccessRequestsAdminPageNav() {
                             )}
                             {capabilities.canManageCatalog && <AccessRequestsNavItem />}
                             {capabilities.canManageNotifications && <NotificationDeliveriesNavItem />}
+                            {capabilities.canManageProvisioningFailures && <FailedProvisioningNavItem />}
                         </NavGroup>
                     )}
                 </Nav>
@@ -170,6 +177,17 @@ function NotificationDeliveriesNavItem() {
         path="/access-requests/notification-deliveries"
         realm={realm}
         title={t("accessRequestsAdminNotificationDelivery")}
+    />;
+}
+
+function FailedProvisioningNavItem() {
+    const { t } = useTranslation();
+    const { realm } = useRealm();
+
+    return <NavigationItem
+        path="/access-requests/provisioning-failures"
+        realm={realm}
+        title={t("accessRequestsAdminFailedProvisioning")}
     />;
 }
 

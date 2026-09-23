@@ -185,6 +185,26 @@ Its attempt budget is reset so the worker can make up to ten new attempts. It re
 for an ID outside the realm or absent from the outbox, and 409 Conflict when another worker or
 administrator has already changed its state.
 
+## Failed provisioning administration endpoints
+
+These realm-scoped endpoints require the same administrator access and `manage-access-requests`
+authorization as catalog management.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/admin/provisioning-failures` | List approved requests with failed provisioning |
+| `POST` | `/admin/requests/{requestId}/provisioning/retry` | Retry the approved Keycloak grant |
+
+The list accepts `page` and `size` (defaults 0 and 20, maximum size 100) and returns the usual
+`items`, `page`, `size`, and `total` envelope. Items contain request, requester, entitlement,
+resource, status, and update-time metadata. They do not expose justification or internal
+provisioning failures. Invalid pagination returns `400 Bad Request`.
+
+Retry returns `200 OK` with the resulting request and provisioning status, which can still be
+`FAILED` when the grant fails again. Missing requests return `404 Not Found`; requests that are
+no longer approved with failed provisioning, or concurrently changed requests, return
+`409 Conflict`.
+
 ## Error handling
 
 Authentication failures return `401 Unauthorized`; authorization failures return `403 Forbidden`; missing resources return `404 Not Found`; invalid submissions and queries return `400 Bad Request`; invalid state changes, duplicate resources, and concurrent updates return `409 Conflict`.

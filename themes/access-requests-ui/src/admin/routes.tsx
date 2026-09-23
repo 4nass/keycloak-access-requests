@@ -16,6 +16,12 @@ const NotificationDeliveryRoute = lazy(async () => {
     return { default: module.NotificationDeliveryRoute };
 });
 
+const FailedProvisioningRoute = lazy(async () => {
+    const module = await import("./pages/FailedProvisioningRoute");
+
+    return { default: module.FailedProvisioningRoute };
+});
+
 type AdminRoute = RouteObject & {
     handle?: {
         access: "anyone";
@@ -43,6 +49,15 @@ const notificationDeliveryRoute: AdminRoute = {
     }
 };
 
+const failedProvisioningRoute: AdminRoute = {
+    path: "/:realm/access-requests/provisioning-failures",
+    element: <FailedProvisioningRoute />,
+    handle: {
+        access: "anyone",
+        breadcrumb: (translate) => translate("accessRequestsAdminFailedProvisioning")
+    }
+};
+
 const notFoundRoute = keycloakRoutes.filter((route) => route.path === "*");
 const standardRoutes = keycloakRoutes.filter((route) => route.path !== "*");
 
@@ -50,6 +65,6 @@ export const routes: RouteObject[] = [
     {
         path: "/",
         element: <AccessRequestsAdminApp />,
-        children: [entitlementCatalogRoute, notificationDeliveryRoute, ...standardRoutes, ...notFoundRoute]
+        children: [entitlementCatalogRoute, notificationDeliveryRoute, failedProvisioningRoute, ...standardRoutes, ...notFoundRoute]
     }
 ];

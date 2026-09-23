@@ -32,6 +32,32 @@ export type EntitlementUpdate = Pick<
 export type AdminCapabilities = {
     canManageCatalog: boolean;
     canManageNotifications: boolean;
+    canManageProvisioningFailures: boolean;
+};
+
+export type FailedProvisioningRequest = {
+    id: string;
+    requesterId: string;
+    entitlementId: string;
+    resourceType: Entitlement["resourceType"];
+    resourceName: string;
+    decisionStatus: "APPROVED";
+    provisioningStatus: "FAILED";
+    updatedAt: string;
+};
+
+export type FailedProvisioningRequestPage = {
+    items: FailedProvisioningRequest[];
+    page: number;
+    size: number;
+    total: number;
+};
+
+export type ProvisioningRetryResult = {
+    id: string;
+    entitlementId: string;
+    decisionStatus: "APPROVED";
+    provisioningStatus: "SUCCEEDED" | "FAILED";
 };
 
 export type NotificationDelivery = {
@@ -72,6 +98,8 @@ export type EntitlementsAdminApi = {
     list(query?: { page?: number; size?: number }): Promise<EntitlementPage>;
     notificationDeliveries(query?: { page?: number; size?: number }): Promise<NotificationDeliveryPage>;
     notificationDeliverySummary(): Promise<NotificationDeliverySummary>;
+    failedProvisioningRequests(query?: { page?: number; size?: number }): Promise<FailedProvisioningRequestPage>;
+    retryFailedProvisioning(id: string): Promise<ProvisioningRetryResult>;
     references(type: Entitlement["resourceType"], query?: { search?: string; max?: number }): Promise<KeycloakReference[]>;
     create(submission: EntitlementCreation): Promise<Entitlement>;
     update(id: string, submission: EntitlementUpdate): Promise<Entitlement>;
@@ -150,6 +178,11 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
         list: (query) => request(`/admin/entitlements?${pageQuery(query)}`),
         notificationDeliveries: (query) => request(`/admin/notification-deliveries?${pageQuery(query)}`),
         notificationDeliverySummary: () => request("/admin/notification-deliveries/summary"),
+        failedProvisioningRequests: (query) => request(`/admin/provisioning-failures?${pageQuery(query)}`),
+        retryFailedProvisioning: (id) => request(
+            `/admin/requests/${encodeURIComponent(id)}/provisioning/retry`,
+            { method: "POST" }
+        ),
         references: async (type, query) => {
             const response = await request<{ items: KeycloakReference[] }>(`/admin/references?${referenceQuery(type, query)}`);
             return response.items;
@@ -181,6 +214,9 @@ async function apiError(response: Response): Promise<EntitlementsAdminApiError> 
 }
 
 export function presentEntitlementsAdminError(error: unknown): EntitlementsAdminErrorPresentation {
+    if (error instanceof TypeError) {
+        return { messageKey: "accessRequestsAdminErrorUnavailable" };
+    }
     if (!isEntitlementsAdminApiError(error)) {
         return { messageKey: "accessRequestsAdminErrorUnexpected" };
     }

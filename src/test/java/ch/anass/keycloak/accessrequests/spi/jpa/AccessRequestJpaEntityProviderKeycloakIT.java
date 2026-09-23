@@ -302,6 +302,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(200, globalAdministratorCapability.statusCode());
         assertTrue(globalAdministratorCapability.body().contains("\"canManageCatalog\":true"));
         assertTrue(globalAdministratorCapability.body().contains("\"canManageNotifications\":true"));
+        assertTrue(globalAdministratorCapability.body().contains("\"canManageProvisioningFailures\":true"));
 
         String delegatedClientId = "catalog-delegated-" + UUID.randomUUID();
         createDirectAccessClient(server, adminToken, delegatedClientId);
@@ -360,6 +361,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(200, delegatedManagerCapability.statusCode());
         assertTrue(delegatedManagerCapability.body().contains("\"canManageCatalog\":true"));
         assertTrue(delegatedManagerCapability.body().contains("\"canManageNotifications\":true"));
+        assertTrue(delegatedManagerCapability.body().contains("\"canManageProvisioningFailures\":true"));
         assertNotificationDeliveryAdministration(server, managerToken);
         String targetRoleId = createRealmRole(server, adminToken, "catalog-target-" + UUID.randomUUID());
         String approverRoleId = createRealmRole(server, adminToken, "catalog-approver-" + UUID.randomUUID());

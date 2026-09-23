@@ -158,6 +158,12 @@ class AccessRequestAdminConsoleBrowserIT {
                     assertEntitlementWasPersisted(keycloak, fixture.globalAdminToken(), displayName);
                 }
 
+                openFailedProvisioning(driver);
+                assertPageHeading(driver, "Failed provisioning");
+                waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                        "//h2[normalize-space()='There are no failed provisioning requests.']")));
+                assertApiRequestStatus(driver, "/access-requests/admin/provisioning-failures", 200);
+
                 assertPackagedAssetsLoaded(driver);
                 assertNoJavaScriptErrors(driver);
             } finally {
@@ -178,6 +184,9 @@ class AccessRequestAdminConsoleBrowserIT {
                 assertTrue(driver.findElements(By.xpath("//button[normalize-space()='Create entitlement']")).isEmpty(),
                         "An administrator without manage-access-requests must not see catalog write controls.");
                 assertApiRequestStatus(driver, "/access-requests/admin/capabilities", 403);
+                driver.navigate().to(adminConsoleUri() + "#/master/access-requests/provisioning-failures");
+                assertPageHeading(driver, "You do not have permission to manage access requests in this realm.");
+                assertTrue(driver.findElements(By.xpath("//button[normalize-space()='Retry provisioning']")).isEmpty());
                 assertNoJavaScriptErrors(driver);
             } finally {
                 driver.quit();
@@ -265,6 +274,13 @@ class AccessRequestAdminConsoleBrowserIT {
 
     private void openAccessRequestsDirectly(WebDriver driver) {
         driver.navigate().to(adminConsoleUri() + "#/master/access-requests");
+    }
+
+    private void openFailedProvisioning(WebDriver driver) {
+        By failedProvisioning = By.xpath("//a[normalize-space()='Failed provisioning']");
+        WebElement link = waitFor(driver).until(ExpectedConditions.elementToBeClickable(failedProvisioning));
+        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", link);
+        link.click();
     }
 
     private void assertPageHeading(WebDriver driver, String heading) {

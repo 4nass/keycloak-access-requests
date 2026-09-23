@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
@@ -25,7 +25,7 @@ describe("FailedProvisioningRoute", () => {
 
         expect(await screen.findByRole("heading", { name: "accessRequestsAdminFailedProvisioning" })).toBeVisible();
         expect(api.capabilities).toHaveBeenCalledOnce();
-        expect(api.failedProvisioningRequests).toHaveBeenCalledWith({ page: 0, size: 20 });
+        await waitFor(() => expect(api.failedProvisioningRequests).toHaveBeenCalledWith({ page: 0, size: 20 }));
     });
 
     it("fails closed when the server denies provisioning-failure management", async () => {
