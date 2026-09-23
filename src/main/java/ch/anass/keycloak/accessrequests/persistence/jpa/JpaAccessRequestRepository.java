@@ -7,6 +7,7 @@ import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueEntry;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.DuplicatePendingRequestException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
@@ -15,12 +16,16 @@ import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceException;
 import org.hibernate.exception.ConstraintViolationException;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
 public final class JpaAccessRequestRepository implements AccessRequestRepository {
+
+    private static final int FAILED_PROVISIONING_MAX_PAGE_SIZE = 100;
+    private static final int FAILED_PROVISIONING_MAX_OFFSET = 10_000;
 
     private final EntityManager entityManager;
 
@@ -87,6 +92,94 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
                         (RiskLevel) row[1]))
                 .toList();
         return new ApprovalQueuePage(items, query.page(), query.size(), total);
+    }
+
+    /**
+     * Lists approved requests whose entitlement provisioning failed, scoped to one realm.
+     */
+    public FailedProvisioningPage findFailedProvisioning(String realmId, int page, int size) {
+        if (realmId == null || realmId.isBlank()) {
+            throw new IllegalArgumentException("realmId must not be blank");
+        }
+        if (page < 0) {
+            throw new IllegalArgumentException("page must not be negative");
+        }
+        if (size < 1 || size > FAILED_PROVISIONING_MAX_PAGE_SIZE) {
+            throw new IllegalArgumentException(
+                    "size must be between 1 and " + FAILED_PROVISIONING_MAX_PAGE_SIZE);
+        }
+        final int offset;
+        try {
+            offset = Math.multiplyExact(page, size);
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException("page and size are too large", exception);
+        }
+        if (offset > FAILED_PROVISIONING_MAX_OFFSET) {
+            throw new IllegalArgumentException(
+                    "page and size exceed the maximum offset of " + FAILED_PROVISIONING_MAX_OFFSET);
+        }
+
+        long total = entityManager.createQuery("""
+                        select count(request)
+                          from AccessRequestEntity request
+                         where request.realmId = :realmId
+                           and request.decisionStatus = :decisionStatus
+                           and request.provisioningStatus = :provisioningStatus
+                        """, Long.class)
+                .setParameter("realmId", realmId)
+                .setParameter("decisionStatus", DecisionStatus.APPROVED)
+                .setParameter("provisioningStatus", ProvisioningStatus.FAILED)
+                .getSingleResult();
+        List<FailedProvisioningRequest> items = entityManager.createQuery("""
+                        select request.id,
+                               request.requesterId,
+                               request.entitlementId,
+                               request.resourceType,
+                               request.resourceNameSnapshot,
+                               request.decisionStatus,
+                               request.provisioningStatus,
+                               request.updatedTimestamp
+                          from AccessRequestEntity request
+                         where request.realmId = :realmId
+                           and request.decisionStatus = :decisionStatus
+                           and request.provisioningStatus = :provisioningStatus
+                         order by request.updatedTimestamp desc, request.id asc
+                        """, Object[].class)
+                .setParameter("realmId", realmId)
+                .setParameter("decisionStatus", DecisionStatus.APPROVED)
+                .setParameter("provisioningStatus", ProvisioningStatus.FAILED)
+                .setFirstResult(offset)
+                .setMaxResults(size)
+                .getResultList()
+                .stream()
+                .map(row -> new FailedProvisioningRequest(
+                        (String) row[0],
+                        (String) row[1],
+                        (String) row[2],
+                        (ResourceType) row[3],
+                        (String) row[4],
+                        (DecisionStatus) row[5],
+                        (ProvisioningStatus) row[6],
+                        Instant.ofEpochMilli((Long) row[7])))
+                .toList();
+        return new FailedProvisioningPage(items, page, size, total);
+    }
+
+    public record FailedProvisioningPage(List<FailedProvisioningRequest> items, int page, int size, long total) {
+        public FailedProvisioningPage {
+            items = List.copyOf(items);
+        }
+    }
+
+    public record FailedProvisioningRequest(
+            String id,
+            String requesterId,
+            String entitlementId,
+            ResourceType resourceType,
+            String resourceName,
+            DecisionStatus decisionStatus,
+            ProvisioningStatus provisioningStatus,
+            Instant updatedAt) {
     }
 
     private static String approvalQueueFromAndWhere() {

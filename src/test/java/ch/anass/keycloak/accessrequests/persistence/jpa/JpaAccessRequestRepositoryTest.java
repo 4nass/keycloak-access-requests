@@ -232,6 +232,52 @@ class JpaAccessRequestRepositoryTest {
     }
 
     @Test
+    void pagesOnlyFailedProvisioningRequestsWithinTheRealmAndReturnsOnlyOperationalFields() {
+        JpaAccessRequestRepository repository = new JpaAccessRequestRepository(entityManager);
+        AccessRequest olderFailure = failedRequest(
+                "realm-provisioning", "requester-1", "failed-1", Instant.parse("2026-09-20T10:00:00Z"));
+        AccessRequest newerFailure = failedRequest(
+                "realm-provisioning", "requester-2", "failed-2", Instant.parse("2026-09-21T10:00:00Z"));
+        AccessRequest succeeded = request("realm-provisioning", "requester-3", "succeeded");
+        succeeded.approve("approver-1", "Approved.");
+        succeeded.markProvisioningSucceeded(Instant.parse("2026-09-22T10:00:00Z"));
+        AccessRequest otherRealmFailure = failedRequest(
+                "realm-other", "requester-4", "other-realm-failure", Instant.parse("2026-09-23T10:00:00Z"));
+
+        transaction().execute(() -> {
+            repository.createIfNoPending(olderFailure).orElseThrow();
+            repository.createIfNoPending(newerFailure).orElseThrow();
+            repository.createIfNoPending(succeeded).orElseThrow();
+            repository.createIfNoPending(otherRealmFailure).orElseThrow();
+            return null;
+        });
+
+        JpaAccessRequestRepository.FailedProvisioningPage firstPage =
+                repository.findFailedProvisioning("realm-provisioning", 0, 1);
+        JpaAccessRequestRepository.FailedProvisioningPage secondPage =
+                repository.findFailedProvisioning("realm-provisioning", 1, 1);
+
+        assertEquals(2, firstPage.total());
+        assertEquals(2, secondPage.total());
+        assertEquals("failed-2", firstPage.items().get(0).id());
+        assertEquals("failed-1", secondPage.items().get(0).id());
+        assertEquals(DecisionStatus.APPROVED, firstPage.items().get(0).decisionStatus());
+        assertEquals(ProvisioningStatus.FAILED, firstPage.items().get(0).provisioningStatus());
+        assertEquals("Resource", firstPage.items().get(0).resourceName());
+        assertEquals(0, repository.findFailedProvisioning("realm-empty", 0, 20).total());
+        assertThrows(IllegalArgumentException.class, () -> repository.findFailedProvisioning("realm", 0, 0));
+        assertThrows(IllegalArgumentException.class, () -> repository.findFailedProvisioning("realm", 0, 101));
+        assertThrows(IllegalArgumentException.class, () -> repository.findFailedProvisioning("realm", -1, 20));
+    }
+
+    private AccessRequest failedRequest(String realmId, String requesterId, String requestId, Instant completedAt) {
+        AccessRequest request = request(realmId, requesterId, requestId);
+        request.approve("approver-1", "Approved.", completedAt.minusSeconds(60));
+        request.markProvisioningFailed(completedAt);
+        return request;
+    }
+
+    @Test
     void pagesOnlyPendingRequestsWithinTheApproversEntitlementScope() {
         JpaAccessRequestRepository repository = new JpaAccessRequestRepository(entityManager);
         AccessRequest eligibleOld = requestAt("realm-queue", "requester-1", "eligible-old", "finance", 1);

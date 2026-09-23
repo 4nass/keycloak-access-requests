@@ -296,6 +296,31 @@ public final class AccessRequestRealmResource {
     }
 
     @GET
+    @Path("admin/provisioning-failures")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listFailedProvisioningRequests(
+            @DefaultValue("0") @QueryParam("page") int page,
+            @DefaultValue("20") @QueryParam("size") int size) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        var entityManager = Objects.requireNonNull(
+                session.getProvider(JpaConnectionProvider.class),
+                "Keycloak JPA connection provider must not be null")
+                .getEntityManager();
+        try {
+            JpaAccessRequestRepository.FailedProvisioningPage failedRequests =
+                    new JpaAccessRequestRepository(entityManager)
+                            .findFailedProvisioning(manager.realm().getId(), page, size);
+            return Response.ok(FailedProvisioningRequestListResponse.from(failedRequests)).build();
+        } catch (IllegalArgumentException exception) {
+            return error(
+                    Response.Status.BAD_REQUEST,
+                    "INVALID_PROVISIONING_FAILURE_QUERY",
+                    exception.getMessage(),
+                    null);
+        }
+    }
+
+    @GET
     @Path("admin/notification-deliveries/summary")
     @Produces(MediaType.APPLICATION_JSON)
     public NotificationDeliverySummaryResponse notificationDeliverySummary() {
@@ -987,6 +1012,46 @@ public final class AccessRequestRealmResource {
                     page.page(),
                     page.size(),
                     page.total());
+        }
+    }
+
+    public record FailedProvisioningRequestListResponse(
+            List<FailedProvisioningRequestResponse> items,
+            int page,
+            int size,
+            long total) {
+
+        private static FailedProvisioningRequestListResponse from(
+                JpaAccessRequestRepository.FailedProvisioningPage page) {
+            return new FailedProvisioningRequestListResponse(
+                    page.items().stream().map(FailedProvisioningRequestResponse::from).toList(),
+                    page.page(),
+                    page.size(),
+                    page.total());
+        }
+    }
+
+    public record FailedProvisioningRequestResponse(
+            String id,
+            String requesterId,
+            String entitlementId,
+            ResourceType resourceType,
+            String resourceName,
+            DecisionStatus decisionStatus,
+            ProvisioningStatus provisioningStatus,
+            String updatedAt) {
+
+        private static FailedProvisioningRequestResponse from(
+                JpaAccessRequestRepository.FailedProvisioningRequest request) {
+            return new FailedProvisioningRequestResponse(
+                    request.id(),
+                    request.requesterId(),
+                    request.entitlementId(),
+                    request.resourceType(),
+                    request.resourceName(),
+                    request.decisionStatus(),
+                    request.provisioningStatus(),
+                    request.updatedAt().toString());
         }
     }
 
