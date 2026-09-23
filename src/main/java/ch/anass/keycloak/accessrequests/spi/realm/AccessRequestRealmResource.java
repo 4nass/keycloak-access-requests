@@ -14,6 +14,7 @@ import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.EntitlementAuditEvent;
 import ch.anass.keycloak.accessrequests.core.domain.EntitlementPage;
 import ch.anass.keycloak.accessrequests.core.domain.EntitlementQuery;
+import ch.anass.keycloak.accessrequests.core.domain.InvalidProvisioningRetryException;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidRequestStateException;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
@@ -320,6 +321,26 @@ public final class AccessRequestRealmResource {
         };
     }
 
+    @POST
+    @Path("admin/requests/{requestId}/provisioning/retry")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response retryFailedProvisioning(@PathParam("requestId") String requestId) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        try {
+            AccessRequest retried = requestService(manager.realm(), manager.user()).retryProvisioning(
+                    manager.realm().getId(), requestId, manager.user().getId());
+            return Response.ok(RequestResponse.from(retried)).build();
+        } catch (RequestNotFoundException exception) {
+            return error(Response.Status.NOT_FOUND, "REQUEST_NOT_FOUND", exception.getMessage(), requestId);
+        } catch (EntitlementNotFoundException exception) {
+            return error(Response.Status.NOT_FOUND, "ENTITLEMENT_NOT_FOUND", exception.getMessage(), requestId);
+        } catch (InvalidProvisioningRetryException exception) {
+            return error(Response.Status.CONFLICT, "INVALID_PROVISIONING_RETRY", exception.getMessage(), requestId);
+        } catch (ConcurrentRequestModificationException exception) {
+            return error(Response.Status.CONFLICT, "CONCURRENT_MODIFICATION", exception.getMessage(), requestId);
+        }
+    }
+
     @GET
     @Path("admin/references")
     @Produces(MediaType.APPLICATION_JSON)
@@ -610,6 +631,10 @@ public final class AccessRequestRealmResource {
     }
 
     private RequestService requestService(AuthenticatedRequest authenticatedRequest) {
+        return requestService(authenticatedRequest.realm(), authenticatedRequest.user());
+    }
+
+    private RequestService requestService(RealmModel realm, UserModel user) {
         var entityManager = Objects.requireNonNull(
                 session.getProvider(JpaConnectionProvider.class),
                 "Keycloak JPA connection provider must not be null")
@@ -618,19 +643,17 @@ public final class AccessRequestRealmResource {
         return new RequestService(
                 entitlementRepository,
                 new JpaAccessRequestRepository(entityManager),
-                new KeycloakEffectiveAccessChecker(
-                        session, authenticatedRequest.realm(), authenticatedRequest.user()),
-                new KeycloakUserStatusReader(authenticatedRequest.realm(), authenticatedRequest.user()),
+                new KeycloakEffectiveAccessChecker(session, realm, user),
+                new KeycloakUserStatusReader(realm, user),
                 REQUEST_POLICY,
                 new JpaAccessRequestEventPublisher(entityManager),
                 new EntitlementScopedApprovalAuthorizer(
                         entitlementRepository,
-                        new KeycloakRoleMembershipReader(
-                                authenticatedRequest.realm(), authenticatedRequest.user())),
+                        new KeycloakRoleMembershipReader(realm, user)),
                 new KeycloakAccessRequestTransaction(session),
-                List.of(new KeycloakEntitlementProvisioner(session, authenticatedRequest.realm())),
+                List.of(new KeycloakEntitlementProvisioner(session, realm)),
                 new KeycloakAccessRequestNotificationOutboxPublisher(
-                        authenticatedRequest.realm(), entityManager));
+                        realm, entityManager));
     }
 
     private ApprovalQueueService approvalQueueService(AuthenticatedRequest authenticatedRequest) {
