@@ -10,6 +10,7 @@ import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.InvalidProvisioningRetryException;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidRequestStateException;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
@@ -112,6 +113,107 @@ class RequestProvisioningTest {
     }
 
     @Test
+    void retriesOnlyTheProvisioningOfAnApprovedFailedRequestAndPreservesItsDecision() {
+        Fixture fixture = fixture(
+                ResourceType.CLIENT_ROLE,
+                List.of(ProvisioningOutcome.FAILED, ProvisioningOutcome.SUCCEEDED));
+        AccessRequest originallyApproved = fixture.service().approve(
+                fixture.request().realmId(), fixture.request().id(), "approver-1", "Approved for the project.");
+
+        AccessRequest retried = fixture.service().retryProvisioning(
+                fixture.request().realmId(), fixture.request().id(), "realm-admin-1");
+
+        assertEquals(DecisionStatus.APPROVED, retried.decisionStatus());
+        assertEquals(ProvisioningStatus.SUCCEEDED, retried.provisioningStatus());
+        assertEquals(originallyApproved.approverId(), retried.approverId());
+        assertEquals(originallyApproved.decisionComment(), retried.decisionComment());
+        assertEquals(originallyApproved.decidedAt(), retried.decidedAt());
+        assertEquals(2, fixture.provisioner().grantAttempts());
+        assertEquals(List.of(
+                        "REQUEST_APPROVED",
+                        "PROVISIONING_STARTED",
+                        "PROVISIONING_FAILED",
+                        "PROVISIONING_STARTED",
+                        "PROVISIONING_SUCCEEDED"),
+                fixture.eventTypes());
+        assertEquals(ProvisioningStatus.SUCCEEDED, fixture.persistedRequest().provisioningStatus());
+    }
+
+    @Test
+    void keepsAnApprovedRequestFailedWhenAnExplicitRetryAlsoFails() {
+        Fixture fixture = fixture(
+                ResourceType.REALM_ROLE,
+                List.of(ProvisioningOutcome.FAILED, ProvisioningOutcome.FAILED));
+        AccessRequest originallyApproved = fixture.service().approve(
+                fixture.request().realmId(), fixture.request().id(), "approver-1", "Approved.");
+
+        AccessRequest retried = fixture.service().retryProvisioning(
+                fixture.request().realmId(), fixture.request().id(), "realm-admin-1");
+
+        assertEquals(DecisionStatus.APPROVED, retried.decisionStatus());
+        assertEquals(ProvisioningStatus.FAILED, retried.provisioningStatus());
+        assertEquals(originallyApproved.decidedAt(), retried.decidedAt());
+        assertEquals(2, fixture.provisioner().grantAttempts());
+        assertEquals(List.of(
+                        "REQUEST_APPROVED",
+                        "PROVISIONING_STARTED",
+                        "PROVISIONING_FAILED",
+                        "PROVISIONING_STARTED",
+                        "PROVISIONING_FAILED"),
+                fixture.eventTypes());
+        assertEquals(ProvisioningStatus.FAILED, fixture.persistedRequest().provisioningStatus());
+    }
+
+    @Test
+    void rejectsRetryWhenProvisioningHasNotFailed() {
+        Fixture pending = fixture(ResourceType.REALM_ROLE, ProvisioningOutcome.SUCCEEDED);
+        assertRetryRejected(pending);
+        assertEquals(0, pending.provisioner().grantAttempts());
+
+        Fixture alreadyProvisioned = fixture(ResourceType.CLIENT_ROLE, ProvisioningOutcome.SUCCEEDED);
+        alreadyProvisioned.service().approve(
+                alreadyProvisioned.request().realmId(),
+                alreadyProvisioned.request().id(),
+                "approver-1",
+                "Approved.");
+
+        assertRetryRejected(alreadyProvisioned);
+        assertEquals(1, alreadyProvisioned.provisioner().grantAttempts());
+    }
+
+    @Test
+    void rejectsRetryForRejectedAndCanceledRequests() {
+        Fixture rejected = fixture(ResourceType.REALM_ROLE, ProvisioningOutcome.SUCCEEDED);
+        rejected.service().reject(
+                rejected.request().realmId(), rejected.request().id(), "approver-1", "Not required.");
+
+        assertRetryRejected(rejected);
+        assertEquals(0, rejected.provisioner().grantAttempts());
+
+        Fixture canceled = fixture(ResourceType.GROUP, ProvisioningOutcome.SUCCEEDED);
+        canceled.service().cancel(canceled.request().realmId(), canceled.request().id(), canceled.request().requesterId());
+
+        assertRetryRejected(canceled);
+        assertEquals(0, canceled.provisioner().grantAttempts());
+    }
+
+    @Test
+    void doesNotFindARequestOutsideItsRealmOrWhenItDoesNotExist() {
+        Fixture fixture = fixture(ResourceType.REALM_ROLE, ProvisioningOutcome.FAILED);
+
+        assertThrows(RequestNotFoundException.class, () -> fixture.service().retryProvisioning(
+                "another-realm", fixture.request().id(), "realm-admin-1"));
+        assertThrows(RequestNotFoundException.class, () -> fixture.service().retryProvisioning(
+                fixture.request().realmId(), "missing-request", "realm-admin-1"));
+        assertEquals(0, fixture.provisioner().grantAttempts());
+    }
+
+    private static void assertRetryRejected(Fixture fixture) {
+        assertThrows(InvalidProvisioningRetryException.class, () -> fixture.service().retryProvisioning(
+                fixture.request().realmId(), fixture.request().id(), "realm-admin-1"));
+    }
+
+    @Test
     void revalidatesTheEntitlementUnderTheProvisioningTransactionLock() {
         Fixture fixture = fixture(ResourceType.REALM_ROLE, ProvisioningOutcome.SUCCEEDED);
         Entitlement unpublished = fixture.entitlement().unpublish(CLOCK.instant());
@@ -165,6 +267,10 @@ class RequestProvisioningTest {
     }
 
     private static Fixture fixture(ResourceType resourceType, ProvisioningOutcome outcome) {
+        return fixture(resourceType, List.of(outcome));
+    }
+
+    private static Fixture fixture(ResourceType resourceType, List<ProvisioningOutcome> outcomes) {
         Entitlement entitlement = Entitlement.create(
                         "entitlement-1",
                         "realm-1",
@@ -188,7 +294,7 @@ class RequestProvisioningTest {
                 Instant.parse("2026-09-01T10:05:00Z"));
         InMemoryAccessRequestRepository requests = new InMemoryAccessRequestRepository(request);
         RecordingEventPublisher events = new RecordingEventPublisher();
-        RecordingProvisioner provisioner = new RecordingProvisioner(outcome);
+        RecordingProvisioner provisioner = new RecordingProvisioner(outcomes);
         RequestService service = provisioningEnabledService(entitlement, requests, events, provisioner);
         return new Fixture(service, entitlement, request, requests, events, provisioner);
     }
@@ -240,14 +346,14 @@ class RequestProvisioningTest {
 
     private static final class RecordingProvisioner implements EntitlementProvisioner {
 
-        private final ProvisioningOutcome outcome;
+        private final List<ProvisioningOutcome> outcomes;
         private int grantAttempts;
         private String realmId;
         private String requesterId;
         private Entitlement entitlement;
 
-        private RecordingProvisioner(ProvisioningOutcome outcome) {
-            this.outcome = outcome;
+        private RecordingProvisioner(List<ProvisioningOutcome> outcomes) {
+            this.outcomes = List.copyOf(outcomes);
         }
 
         @Override
@@ -261,6 +367,7 @@ class RequestProvisioningTest {
             this.realmId = realmId;
             this.requesterId = requesterId;
             this.entitlement = entitlement;
+            ProvisioningOutcome outcome = outcomes.get(Math.min(grantAttempts - 1, outcomes.size() - 1));
             return switch (outcome) {
                 case SUCCEEDED -> ProvisioningResult.succeeded();
                 case FAILED -> ProvisioningResult.failed("The target resource could not be resolved.");
