@@ -192,18 +192,40 @@ authorization as catalog management.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/admin/provisioning-failures` | List approved requests with failed provisioning |
+| `GET` | `/admin/provisioning-failures?state=OPEN\|CLOSED&page=0&size=20` | List open failures (default) or closed failures, including closure date, actor, and reason in the archive; requires `manage-access-requests` |
 | `POST` | `/admin/requests/{requestId}/provisioning/retry` | Retry the approved Keycloak grant |
+| `POST` | `/admin/requests/{requestId}/provisioning/close` | Close an unrecoverable failure without granting access |
 
 The list accepts `page` and `size` (defaults 0 and 20, maximum size 100) and returns the usual
 `items`, `page`, `size`, and `total` envelope. Items contain request, requester, entitlement,
-resource, status, and update-time metadata. They do not expose justification or internal
-provisioning failures. Invalid pagination returns `400 Bad Request`.
+resource, status, update-time metadata, and the safe `failureCode` from the latest failed
+attempt. New failures are ordered by the request version, not by their random event IDs.
+Legacy or unrecognized diagnostics use `UNKNOWN`; tied legacy events without a version also
+use `UNKNOWN` when their order cannot be established. The raw failure reason and requester
+justification are not exposed. Invalid pagination returns `400 Bad Request`.
+
+`failureCode` is one of `REQUESTER_MISSING`, `RESOURCE_MISSING`, `RESOURCE_TYPE_MISMATCH`,
+`REALM_MISMATCH`, `PROVIDER_UNAVAILABLE`, `UNEXPECTED_FAILURE`, or `UNKNOWN`. It is intended for
+localized operational guidance, not for reconstructing technical exception messages. The
+existing `updatedAt` field is the time of the most recent failed attempt.
 
 Retry returns `200 OK` with the resulting request and provisioning status, which can still be
 `FAILED` when the grant fails again. Missing requests return `404 Not Found`; requests that are
 no longer approved with failed provisioning, or concurrently changed requests, return
 `409 Conflict`.
+
+Closure accepts `{"reason":"..."}` with a mandatory 10–1000 character operational reason and
+returns `200 OK` with the closure time, actor, and reason. It requires `manage-access-requests`.
+Only an approved request with an open provisioning failure can be closed. The action leaves the
+approval and failed provisioning state unchanged, records an immutable history event, removes
+the request from the active failure queue, and permanently blocks retry. There is no hard delete.
+Invalid reasons return `400`, missing or cross-realm requests `404`, and already closed or
+concurrently changed requests `409`. The requester detail history exposes the closure event,
+but not its internal reason. Requester list and detail responses expose `provisioningClosedAt`
+so the Account Console can distinguish a closed failure from one still awaiting repair.
+Closure e-mail is queued for the requester and the entitlement's
+current approver role when the entitlement still exists; delivery to a deleted requester is
+discarded. The reason is not included in e-mail.
 
 ## Error handling
 

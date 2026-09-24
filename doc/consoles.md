@@ -32,9 +32,44 @@ The Admin Console owns entitlement configuration. **Configure → Access request
 - metadata, risk, approver-role, and requestable-state updates;
 - optimistic-lock feedback when another administrator changed the same entitlement.
 
-**Configure → Failed provisioning** lists approved requests whose Keycloak grant failed. A manager
+**Configure → Failed provisioning** lists approved requests whose Keycloak grant failed. It shows a
+localized, safe cause and guidance without exposing technical failure details. A manager
 can review the request, requester, entitlement, resource, and failure time, then confirm a manual
-retry. The page reports whether that retry succeeded or failed again. **Configure → Email
+retry. The page reports whether that retry succeeded or failed again.
+
+For unrecoverable cases, a manager can close the failed provisioning item with a mandatory
+operational reason. Closure grants no access, removes the item from the active failure list,
+prevents further retry, and preserves the audit trail. The requester and current entitlement
+approvers are notified by e-mail when deliverable; deleted users cannot receive mail.
+The **Closed failures** tab keeps the closure date, manager ID, and reason available to realm
+managers. Archived cases are read-only and do not appear in the active retry queue.
+
+### Recover from a deleted role or group
+
+Do not change Keycloak database IDs to repair a failed request. A resource recreated through
+Keycloak receives a new ID, even if it has the same name. The entitlement and approved request
+retain the old ID; retrying that approval must not grant the replacement resource.
+
+1. In Keycloak, recreate the role or group and note its new ID.
+2. In **Failed provisioning**, close the old failure with a reason explaining the replacement.
+   Confirm that it appears under **Closed failures**; the original request and history remain
+   available, and closure does not grant access.
+3. In **Access requests**, set the old entitlement to not requestable. Its resource ID cannot be
+   edited. Create and publish a new entitlement targeting the new Keycloak ID.
+4. Ask the requester to submit a new request. An approver must approve that new request before
+   Keycloak grants the replacement resource. Verify the new grant and retain the closed case for audit.
+
+If the requester was permanently deleted, close the old failure with that reason; do not create
+or approve a replacement request for a different user as a recovery shortcut. For a transient
+grant error where the same user and resource IDs still exist, investigate the cause and use
+**Retry provisioning** after it is resolved.
+
+For an `UNEXPECTED_FAILURE`, use the request, realm, requester, and entitlement IDs shown in the
+console to correlate the Keycloak server log entry. The service logs the request ID and full
+exception; the Keycloak grant adapter logs the requester ID and full exception. Exception details
+remain in server logs, not in the realm API or console.
+
+**Configure → Email
 notifications** handles failed lifecycle e-mail deliveries separately.
 
 The theme extends `keycloak.v2` and integrates a React application built from Keycloak's public Admin UI package. It follows the native Keycloak layout, navigation behavior, localization, PatternFly components, light/dark mode, and keyboard patterns.
