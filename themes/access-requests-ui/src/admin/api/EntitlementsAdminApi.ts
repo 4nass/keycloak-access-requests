@@ -61,7 +61,13 @@ export type AdminAuditRequestDetails = {
     provisioningClosedAt: string | null;
     justification: string;
     decision: { approverId: string; comment: string; decidedAt: string } | null;
-    history: { type: AdminAuditEventType; actorId: string; occurredAt: string }[];
+    history: {
+        type: AdminAuditEventType;
+        actorId: string;
+        occurredAt: string;
+        failureCode: ProvisioningFailureCode | null;
+        closureReason: string | null;
+    }[];
 };
 
 export type EntitlementCreation = Pick<

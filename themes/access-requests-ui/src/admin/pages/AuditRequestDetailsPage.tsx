@@ -10,6 +10,7 @@ import { Link, useParams } from "react-router-dom";
 import { presentEntitlementsAdminError, type AdminAuditRequestDetails } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
 import { auditEventTypes } from "./auditEventTypes";
+import { failureCodeKey } from "./failureCodePresentation";
 
 export function AuditRequestDetailsPage() {
     const { t, i18n } = useTranslation();
@@ -79,7 +80,13 @@ export function AuditRequestDetailsPage() {
                         <DataListItemRow><DataListItemCells dataListCells={[
                             <DataListCell key="type">{t(auditEventTypes[event.type])}</DataListCell>,
                             <DataListCell key="date">{formatDate(event.occurredAt)}</DataListCell>,
-                            <DataListCell key="actor">{t("accessRequestsAdminEventsActor")}: {event.actorId}</DataListCell>
+                            <DataListCell key="actor">{t("accessRequestsAdminEventsActor")}: {event.actorId}</DataListCell>,
+                            ...(event.failureCode ? [<DataListCell key="failure-code">
+                                {t("accessRequestsAdminFailureCause")}: {t(failureCodeKey(event.failureCode))}
+                            </DataListCell>] : []),
+                            ...(event.closureReason ? [<DataListCell key="closure-reason">
+                                {t("accessRequestsAdminFailedProvisioningCloseReason")}: {event.closureReason}
+                            </DataListCell>] : [])
                         ]} /></DataListItemRow>
                     </DataListItem>)}
                 </DataList>

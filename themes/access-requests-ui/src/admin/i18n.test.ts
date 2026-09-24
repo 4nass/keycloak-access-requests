@@ -178,6 +178,7 @@ const featureSourcePaths = [
     "pages/AuditRequestDetailsRoute.tsx",
     "pages/AuthorizedAuditPage.tsx",
     "pages/auditEventTypes.ts",
+    "pages/failureCodePresentation.ts",
     "pages/FailedProvisioningPage.tsx",
     "pages/FailedProvisioningRoute.tsx",
     "pages/NotificationDeliveryPage.tsx",

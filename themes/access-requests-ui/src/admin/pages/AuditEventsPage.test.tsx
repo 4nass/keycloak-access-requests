@@ -90,7 +90,8 @@ describe("Administrative request detail", () => {
             id: "request-1", requesterId: "requester-1", entitlementId: "entitlement-1", resourceName: "Finance",
             decisionStatus: "APPROVED", provisioningStatus: "SUCCEEDED", provisioningClosedAt: null,
             createdAt: "2026-09-24T10:00:00Z", justification: "I need access.",
-            decision: null, history: [{ type: "REQUEST_APPROVED", actorId: "approver-1", occurredAt: "2026-09-24T10:01:00Z" }]
+            decision: null, history: [{ type: "REQUEST_APPROVED", actorId: "approver-1",
+                occurredAt: "2026-09-24T10:01:00Z", failureCode: null, closureReason: null }]
         });
         render(<MemoryRouter initialEntries={["/master/access-requests/requests/request-1"]}>
             <Routes><Route path="/:realm/access-requests/requests/:requestId" element={<AuditRequestDetailsPage />} /></Routes>
@@ -103,5 +104,29 @@ describe("Administrative request detail", () => {
         expect(screen.getByText("accessRequestsAdminProvisioningSucceeded")).toBeVisible();
         expect(screen.getByText("accessRequestsAdminEventsActor: approver-1")).toBeVisible();
         expect(api.auditRequest).toHaveBeenCalledWith("request-1");
+    });
+
+    it("shows each safe failure code and the closure reason without technical diagnostics", async () => {
+        api.auditRequest.mockReset().mockResolvedValue({
+            id: "request-2", requesterId: "requester-2", entitlementId: "entitlement-2", resourceName: "Finance",
+            decisionStatus: "APPROVED", provisioningStatus: "FAILED", provisioningClosedAt: "2026-09-24T10:05:00Z",
+            createdAt: "2026-09-24T10:00:00Z", justification: "I need access.", decision: null,
+            history: [
+                { type: "PROVISIONING_FAILED", actorId: "approver-1", occurredAt: "2026-09-24T10:01:00Z",
+                    failureCode: "RESOURCE_MISSING", closureReason: null },
+                { type: "PROVISIONING_FAILED", actorId: "manager-1", occurredAt: "2026-09-24T10:03:00Z",
+                    failureCode: "PROVIDER_UNAVAILABLE", closureReason: null },
+                { type: "PROVISIONING_CLOSED", actorId: "manager-1", occurredAt: "2026-09-24T10:05:00Z",
+                    failureCode: null, closureReason: "The role was permanently removed." }
+            ]
+        });
+        render(<MemoryRouter initialEntries={["/master/access-requests/requests/request-2"]}>
+            <Routes><Route path="/:realm/access-requests/requests/:requestId" element={<AuditRequestDetailsPage />} /></Routes>
+        </MemoryRouter>);
+
+        expect(await screen.findByText(/accessRequestsAdminFailureResourceMissing/)).toBeVisible();
+        expect(screen.getByText(/accessRequestsAdminFailureProviderUnavailable/)).toBeVisible();
+        expect(screen.getByText(/The role was permanently removed/)).toBeVisible();
+        expect(screen.queryByText(/password=secret|Internal JDBC/)).not.toBeInTheDocument();
     });
 });

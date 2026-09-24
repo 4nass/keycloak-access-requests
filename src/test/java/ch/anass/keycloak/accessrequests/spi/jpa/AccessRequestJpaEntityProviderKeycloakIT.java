@@ -1345,6 +1345,29 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(200, closedResponse.statusCode());
         assertTrue(closedResponse.body().contains("\"closedBy\":\"" + subjectOf(managerToken) + "\""));
 
+        URI auditDetailEndpoint = URI.create(accessRequestsEndpoint + "/admin/requests/" + requestId);
+        HttpResponse<String> auditDetail = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(auditDetailEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, auditDetail.statusCode(), auditDetail.body());
+        JsonNode auditHistory = new ObjectMapper().readTree(auditDetail.body()).path("history");
+        List<JsonNode> failedAttempts = java.util.stream.StreamSupport.stream(auditHistory.spliterator(), false)
+                .filter(event -> "PROVISIONING_FAILED".equals(event.path("type").asText()))
+                .toList();
+        assertTrue(failedAttempts.size() >= 2);
+        assertTrue(failedAttempts.stream().allMatch(event -> "RESOURCE_MISSING".equals(
+                event.path("failureCode").asText())));
+        assertTrue(failedAttempts.stream().noneMatch(event -> event.hasNonNull("closureReason")));
+        assertTrue(java.util.stream.StreamSupport.stream(auditHistory.spliterator(), false)
+                .anyMatch(event -> "PROVISIONING_CLOSED".equals(event.path("type").asText())
+                        && "The Keycloak role was permanently removed.".equals(
+                                event.path("closureReason").asText())
+                        && subjectOf(managerToken).equals(event.path("actorId").asText())));
+        assertTrue(java.util.stream.StreamSupport.stream(auditHistory.spliterator(), false)
+                .noneMatch(event -> event.has("comment") || event.has("metadata")));
+        assertFalse(auditDetail.body().contains("The configured Keycloak role no longer exists."));
+
         HttpResponse<String> closedQueue = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(URI.create(accessRequestsEndpoint + "/admin/provisioning-failures"))
                         .header("Authorization", "Bearer " + managerToken)

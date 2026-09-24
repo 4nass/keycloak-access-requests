@@ -1,5 +1,8 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningFailureCode;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -12,12 +15,14 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AccessRequestAuditEventsEndpointTest {
@@ -83,10 +88,43 @@ class AccessRequestAuditEventsEndpointTest {
         assertEquals(java.util.List.of("id", "requesterId", "entitlementId", "resourceType", "resourceName",
                 "decisionStatus", "provisioningStatus", "createdAt", "provisioningClosedAt", "justification",
                 "decision", "history"), fields(responseType("AdminRequestDetailResponse")));
-        assertEquals(java.util.List.of("type", "actorId", "occurredAt"),
+        assertEquals(java.util.List.of("type", "actorId", "occurredAt", "failureCode", "closureReason"),
                 fields(responseType("AdminRequestHistoryEntryResponse")));
         assertTrue(!fields(responseType("RequestDetailResponse")).contains("requesterId"));
         assertTrue(!fields(responseType("RequestHistoryEntryResponse")).contains("actorId"));
+    }
+
+    @Test
+    void exposesOnlySafeFailureCodesAndClosureReasonsInAdministrativeHistory() {
+        Instant occurredAt = Instant.parse("2026-09-24T10:00:00Z");
+        var failure = AccessRequestRealmResource.AdminRequestHistoryEntryResponse.from(
+                AccessRequestEvent.rehydrate("failed", "request", "realm",
+                        AccessRequestEventType.PROVISIONING_FAILED, "approver", occurredAt,
+                        "Internal JDBC password=secret", "RESOURCE_MISSING", 2L));
+        assertEquals(ProvisioningFailureCode.RESOURCE_MISSING, failure.failureCode());
+        assertNull(failure.closureReason());
+
+        var unrecognized = AccessRequestRealmResource.AdminRequestHistoryEntryResponse.from(
+                AccessRequestEvent.rehydrate("unknown", "request", "realm",
+                        AccessRequestEventType.PROVISIONING_FAILED, "approver", occurredAt,
+                        "Internal exception", "password=secret", 3L));
+        assertEquals(ProvisioningFailureCode.UNKNOWN, unrecognized.failureCode());
+
+        var closure = AccessRequestRealmResource.AdminRequestHistoryEntryResponse.from(
+                AccessRequestEvent.rehydrate("closed", "request", "realm",
+                        AccessRequestEventType.PROVISIONING_CLOSED, "manager", occurredAt,
+                        "The role was permanently removed.", "unexpected metadata", 4L));
+        assertNull(closure.failureCode());
+        assertEquals("The role was permanently removed.", closure.closureReason());
+
+        var approval = AccessRequestRealmResource.AdminRequestHistoryEntryResponse.from(
+                AccessRequestEvent.rehydrate("approved", "request", "realm",
+                        AccessRequestEventType.REQUEST_APPROVED, "approver", occurredAt,
+                        "Decision comment", "RESOURCE_MISSING", 1L));
+        assertNull(approval.failureCode());
+        assertNull(approval.closureReason());
+        assertTrue(!fields(AccessRequestRealmResource.AdminRequestHistoryEntryResponse.class).contains("comment"));
+        assertTrue(!fields(AccessRequestRealmResource.AdminRequestHistoryEntryResponse.class).contains("metadata"));
     }
 
     private static String defaultValue(Method handler, String name) {

@@ -40,10 +40,10 @@ import { useTranslation } from "react-i18next";
 import {
     presentEntitlementsAdminError,
     type FailedProvisioningRequest,
-    type FailedProvisioningRequestPage,
-    type ProvisioningFailureCode
+    type FailedProvisioningRequestPage
 } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
+import { failureCodeKey } from "./failureCodePresentation";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50].map((value) => ({ title: String(value), value }));
 
@@ -470,19 +470,6 @@ function resourceTypeKey(type: FailedProvisioningRequest["resourceType"]) {
         CLIENT_ROLE: "accessRequestsAdminResourceTypeClientRole",
         GROUP: "accessRequestsAdminResourceTypeGroup"
     }[type];
-}
-
-function failureCodeKey(code: ProvisioningFailureCode) {
-    const keys: Record<ProvisioningFailureCode, string> = {
-        REQUESTER_MISSING: "accessRequestsAdminFailureRequesterMissing",
-        RESOURCE_MISSING: "accessRequestsAdminFailureResourceMissing",
-        RESOURCE_TYPE_MISMATCH: "accessRequestsAdminFailureResourceTypeMismatch",
-        REALM_MISMATCH: "accessRequestsAdminFailureRealmMismatch",
-        PROVIDER_UNAVAILABLE: "accessRequestsAdminFailureProviderUnavailable",
-        UNEXPECTED_FAILURE: "accessRequestsAdminFailureUnexpected",
-        UNKNOWN: "accessRequestsAdminFailureUnknown"
-    };
-    return keys[code] ?? keys.UNKNOWN;
 }
 
 function formatDate(value: string, locale: string, translate: (key: string) => string) {

@@ -1135,12 +1135,19 @@ public final class AccessRequestRealmResource {
         }
     }
 
-    public record AdminRequestHistoryEntryResponse(String type, String actorId, String occurredAt) {
+    public record AdminRequestHistoryEntryResponse(
+            String type, String actorId, String occurredAt,
+            ProvisioningFailureCode failureCode, String closureReason) {
 
-        private static AdminRequestHistoryEntryResponse from(
+        static AdminRequestHistoryEntryResponse from(
                 ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent event) {
+            ProvisioningFailureCode failureCode = event.type() == AccessRequestEventType.PROVISIONING_FAILED
+                    ? ProvisioningFailureCode.fromStoredValue(event.metadata()) : null;
+            String closureReason = event.type() == AccessRequestEventType.PROVISIONING_CLOSED
+                    ? event.comment() : null;
             return new AdminRequestHistoryEntryResponse(
-                    event.type().name(), event.actorId(), event.occurredAt().toString());
+                    event.type().name(), event.actorId(), event.occurredAt().toString(),
+                    failureCode, closureReason);
         }
     }
 
