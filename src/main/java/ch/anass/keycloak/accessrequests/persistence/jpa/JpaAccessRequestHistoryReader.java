@@ -4,9 +4,13 @@ import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestHistoryReader;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.TypedQuery;
 
+import java.time.Instant;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 public final class JpaAccessRequestHistoryReader implements AccessRequestHistoryReader {
@@ -39,6 +43,81 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
                         .thenComparingInt(JpaAccessRequestHistoryReader::phaseOrder)
                         .thenComparing(AccessRequestEvent::id))
                 .toList();
+    }
+
+    public AuditEventPage findAll(String realmId, Instant from, Instant to, AccessRequestEventType type,
+            String actorId, String requestId, int page, int size) {
+        if (realmId == null || realmId.isBlank()) {
+            throw new IllegalArgumentException("realmId must be provided");
+        }
+        if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("page and size must define a bounded audit query");
+        }
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new IllegalArgumentException("from must not be after to");
+        }
+
+        StringBuilder conditions = new StringBuilder(" where entity.realmId = :realmId");
+        Map<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("realmId", realmId);
+        if (from != null) {
+            conditions.append(" and entity.occurredAt >= :from");
+            parameters.put("from", from.toEpochMilli());
+        }
+        if (to != null) {
+            conditions.append(" and entity.occurredAt <= :to");
+            parameters.put("to", to.toEpochMilli());
+        }
+        if (type != null) {
+            conditions.append(" and entity.type = :type");
+            parameters.put("type", type);
+        }
+        if (actorId != null && !actorId.isBlank()) {
+            conditions.append(" and entity.actorId = :actorId");
+            parameters.put("actorId", actorId);
+        }
+        if (requestId != null && !requestId.isBlank()) {
+            conditions.append(" and entity.requestId = :requestId");
+            parameters.put("requestId", requestId);
+        }
+
+        TypedQuery<Long> count = entityManager.createQuery(
+                "select count(entity) from AccessRequestEventEntity entity" + conditions, Long.class);
+        parameters.forEach(count::setParameter);
+        long total = count.getSingleResult();
+
+        TypedQuery<AccessRequestEventEntity> query = entityManager.createQuery("""
+                        select entity from AccessRequestEventEntity entity
+                        """ + conditions + "\n" + """
+                        order by entity.occurredAt desc,
+                                 coalesce(entity.requestVersion, -1) desc,
+                                 case
+                                     when entity.type = :closed then 4
+                                     when entity.type = :started and entity.requestVersion is not null then 3
+                                     when entity.type in (:success, :failure) and entity.requestVersion is null then 3
+                                     when entity.type in (:success, :failure, :started) then 2
+                                     when entity.type in (:approved, :rejected, :canceled) then 1
+                                     else 0
+                                 end desc,
+                                 entity.id desc
+                        """, AccessRequestEventEntity.class);
+        parameters.forEach(query::setParameter);
+        query.setParameter("closed", AccessRequestEventType.PROVISIONING_CLOSED);
+        query.setParameter("started", AccessRequestEventType.PROVISIONING_STARTED);
+        query.setParameter("success", AccessRequestEventType.PROVISIONING_SUCCEEDED);
+        query.setParameter("failure", AccessRequestEventType.PROVISIONING_FAILED);
+        query.setParameter("approved", AccessRequestEventType.REQUEST_APPROVED);
+        query.setParameter("rejected", AccessRequestEventType.REQUEST_REJECTED);
+        query.setParameter("canceled", AccessRequestEventType.REQUEST_CANCELED);
+        List<AccessRequestEvent> items = query.setFirstResult(page * size)
+                .setMaxResults(size).getResultList().stream().map(AccessRequestEventEntity::toDomain).toList();
+        return new AuditEventPage(items, page, size, total);
+    }
+
+    public record AuditEventPage(List<AccessRequestEvent> items, int page, int size, long total) {
+        public AuditEventPage {
+            items = List.copyOf(items);
+        }
     }
 
     private static int phaseOrder(AccessRequestEvent event) {

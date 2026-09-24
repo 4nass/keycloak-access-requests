@@ -296,4 +296,21 @@
             <column name="REQUEST_VERSION" type="BIGINT"/>
         </addColumn>
     </changeSet>
+    <changeSet id="12" author="4nass">
+        <createIndex indexName="IDX_ACCESS_REQUEST_HISTORY_REALM_TIME" tableName="AR_ACCESS_REQUEST_HISTORY">
+            <column name="REALM_ID"/>
+            <column name="EVENT_TIMESTAMP" descending="true"/>
+            <column name="ID" descending="true"/>
+        </createIndex>
+        <createIndex indexName="IDX_ACCESS_REQUEST_HISTORY_TYPE_TIME" tableName="AR_ACCESS_REQUEST_HISTORY">
+            <column name="REALM_ID"/>
+            <column name="EVENT_TYPE"/>
+            <column name="EVENT_TIMESTAMP" descending="true"/>
+        </createIndex>
+        <createIndex indexName="IDX_ACCESS_REQUEST_HISTORY_ACTOR_TIME" tableName="AR_ACCESS_REQUEST_HISTORY">
+            <column name="REALM_ID"/>
+            <column name="ACTOR_ID"/>
+            <column name="EVENT_TIMESTAMP" descending="true"/>
+        </createIndex>
+    </changeSet>
 </databaseChangeLog>

@@ -126,6 +126,11 @@ class AccessRequestJpaChangelogTest {
                     .contains("IDX_ACCESS_REQUEST_APPROVAL_QUEUE"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST_HISTORY")
                     .contains("IDX_ACCESS_REQUEST_HISTORY_FAILURE"));
+            assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST_HISTORY")
+                    .containsAll(java.util.List.of(
+                            "IDX_ACCESS_REQUEST_HISTORY_REALM_TIME",
+                            "IDX_ACCESS_REQUEST_HISTORY_TYPE_TIME",
+                            "IDX_ACCESS_REQUEST_HISTORY_ACTOR_TIME")));
             assertTrue(indexNamesOf(connection, "AR_ENTITLEMENT_HISTORY")
                     .contains("IDX_ENTITLEMENT_HISTORY_ENTITLEMENT_TIME"));
             assertTrue(indexNamesOf(connection, "AR_NOTIFICATION_OUTBOX")

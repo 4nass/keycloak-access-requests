@@ -1,6 +1,5 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -43,7 +42,7 @@ class AccessRequestAuditEventsEndpointTest {
         assertEquals(Map.of(
                 "from", String.class,
                 "to", String.class,
-                "type", AccessRequestEventType.class,
+                "type", String.class,
                 "actorId", String.class,
                 "requestId", String.class,
                 "page", int.class,

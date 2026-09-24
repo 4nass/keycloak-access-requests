@@ -91,6 +91,12 @@ class AccessRequestAdminConsoleBrowserIT {
             configureAdminCliTokenBehavior(keycloak);
             AdminConsoleFixture admin = configureAdminConsole(keycloak);
             PendingProvisioningFixture pending = createDeletedRoleFailure(keycloak, admin.globalAdminToken());
+            HttpResponse<String> auditResponse = HTTP_CLIENT.send(
+                    adminRequest(keycloak, "/realms/master/access-requests/admin/events?requestId="
+                            + pending.request().requestId(), admin.globalAdminToken()).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, auditResponse.statusCode(), auditResponse.body());
+            assertTrue(auditResponse.body().contains(pending.request().requestId()), auditResponse.body());
 
             try (GenericContainer<?> chrome = chrome()) {
                 chrome.start();
@@ -104,18 +110,22 @@ class AccessRequestAdminConsoleBrowserIT {
                             By.xpath("//*[@role='tab' and normalize-space()='Events']")));
                     eventsTab.click();
                     assertPageHeading(driver, "Events");
-                    waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
-                            By.xpath("//*[contains(text(), '" + pending.request().requestId() + "')]")));
+                    By requestLink = By.xpath("//a[contains(@href, '/access-requests/requests/"
+                            + pending.request().requestId() + "')]");
+                    waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(requestLink));
                     assertTrue(driver.getCurrentUrl().contains("/master/access-requests/events"));
 
-                    WebElement requestFilter = driver.findElement(By.getId("audit-request-id"));
+                    WebElement requestFilter = driver.findElement(By.id("audit-request-id"));
                     requestFilter.sendKeys(pending.request().requestId());
-                    waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
-                            By.xpath("//*[contains(text(), '" + pending.request().requestId() + "')]")));
+                    waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(requestLink));
                     assertTrue(driver.findElement(By.tagName("body")).getText().contains("Approved"));
-                    assertTrue(driver.findElements(By.xpath("//a[contains(@href, '/access-requests/requests/"
-                            + pending.request().requestId() + "')]")).size() >= 1,
+                    assertTrue(driver.findElements(requestLink).size() >= 1,
                             "An audit row must link to the request detail.");
+                    driver.findElements(requestLink).getFirst().click();
+                    waitFor(driver).until(ExpectedConditions.urlContains(
+                            "/master/access-requests/requests/" + pending.request().requestId()));
+                    waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                            By.xpath("//h2[normalize-space()='History']")));
                     assertNoJavaScriptErrors(driver);
                 } finally {
                     driver.quit();

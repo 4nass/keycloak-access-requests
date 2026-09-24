@@ -19,6 +19,49 @@ export type EntitlementPage = {
     total: number;
 };
 
+export type AdminAuditEventType =
+    | "REQUEST_CREATED" | "REQUEST_CANCELED" | "REQUEST_APPROVED" | "REQUEST_REJECTED"
+    | "PROVISIONING_STARTED" | "PROVISIONING_SUCCEEDED" | "PROVISIONING_FAILED"
+    | "PROVISIONING_CLOSED";
+
+export type AdminAuditEvent = {
+    id: string;
+    requestId: string;
+    type: AdminAuditEventType;
+    actorId: string;
+    occurredAt: string;
+};
+
+export type AdminAuditEventPage = {
+    items: AdminAuditEvent[];
+    page: number;
+    size: number;
+    total: number;
+};
+
+export type AdminAuditEventQuery = {
+    from?: string;
+    to?: string;
+    type?: AdminAuditEventType;
+    actorId?: string;
+    requestId?: string;
+    page?: number;
+    size?: number;
+};
+
+export type AdminAuditRequestDetails = {
+    id: string;
+    entitlementId: string;
+    resourceType: Entitlement["resourceType"];
+    resourceName: string;
+    decisionStatus: string;
+    provisioningStatus: string;
+    createdAt: string;
+    justification: string;
+    decision: { approverId: string; comment: string; decidedAt: string } | null;
+    history: { type: AdminAuditEventType; occurredAt: string }[];
+};
+
 export type EntitlementCreation = Pick<
     Entitlement,
     "resourceType" | "resourceId" | "displayName" | "description" | "riskLevel" | "approverRoleId"
@@ -118,6 +161,8 @@ export type KeycloakReference = {
 export type EntitlementsAdminApi = {
     capabilities(): Promise<AdminCapabilities>;
     list(query?: { page?: number; size?: number }): Promise<EntitlementPage>;
+    auditEvents(query?: AdminAuditEventQuery): Promise<AdminAuditEventPage>;
+    auditRequest(id: string): Promise<AdminAuditRequestDetails>;
     notificationDeliveries(query?: { page?: number; size?: number }): Promise<NotificationDeliveryPage>;
     notificationDeliverySummary(): Promise<NotificationDeliverySummary>;
     failedProvisioningRequests(query?: { page?: number; size?: number; state?: "OPEN" | "CLOSED" }): Promise<FailedProvisioningRequestPage>;
@@ -190,6 +235,15 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
         page: String(query.page ?? 0),
         size: String(query.size ?? 20)
     });
+    const auditQuery = (query: AdminAuditEventQuery = {}) => {
+        const parameters = pageQuery(query);
+        for (const key of ["from", "to", "type", "actorId", "requestId"] as const) {
+            if (query[key]) {
+                parameters.set(key, query[key]);
+            }
+        }
+        return parameters;
+    };
     const referenceQuery = (type: Entitlement["resourceType"], query: { search?: string; max?: number } = {}) => new URLSearchParams({
         type,
         search: query.search ?? "",
@@ -199,6 +253,8 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
     return {
         capabilities: () => request("/admin/capabilities"),
         list: (query) => request(`/admin/entitlements?${pageQuery(query)}`),
+        auditEvents: (query) => request(`/admin/events?${auditQuery(query)}`),
+        auditRequest: (id) => request(`/admin/requests/${encodeURIComponent(id)}`),
         notificationDeliveries: (query) => request(`/admin/notification-deliveries?${pageQuery(query)}`),
         notificationDeliverySummary: () => request("/admin/notification-deliveries/summary"),
         failedProvisioningRequests: (query) => request(

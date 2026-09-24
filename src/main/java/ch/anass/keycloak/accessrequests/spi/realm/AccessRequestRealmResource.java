@@ -5,6 +5,8 @@ import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.CatalogResult;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestDetails;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueEntry;
@@ -169,6 +171,8 @@ public final class AccessRequestRealmResource {
                 Entitlement createdEntitlement = entitlementRepository().create(created);
                 entitlementAuditEventPublisher().publish(
                         EntitlementAuditEvent.created(createdEntitlement, manager.user().getId()));
+                new KeycloakEntitlementAdminEventPublisher(session, manager.realm(), manager.auth())
+                        .created(createdEntitlement);
                 return createdEntitlement;
             });
             return Response.status(Response.Status.CREATED).entity(EntitlementResponse.from(persisted)).build();
@@ -212,7 +216,7 @@ public final class AccessRequestRealmResource {
                     ? updated.publish(updatedAt)
                     : updated.unpublish(updatedAt);
             return Response.ok(EntitlementResponse.from(
-                    persistEntitlementUpdate(updated, validatedSubmission.version(), manager.user().getId()))).build();
+                    persistEntitlementUpdate(updated, validatedSubmission.version(), manager))).build();
         } catch (ConcurrentEntitlementModificationException exception) {
             return error(Response.Status.CONFLICT, "CONCURRENT_ENTITLEMENT_MODIFICATION", exception.getMessage(), null);
         }
@@ -280,6 +284,48 @@ public final class AccessRequestRealmResource {
     public AdminCapabilitiesResponse adminCapabilities() {
         requireAccessRequestManager();
         return new AdminCapabilitiesResponse(true, true, true);
+    }
+
+    @GET
+    @Path("admin/events")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listAuditEvents(
+            @QueryParam("from") String from,
+            @QueryParam("to") String to,
+            @QueryParam("type") String type,
+            @QueryParam("actorId") String actorId,
+            @QueryParam("requestId") String requestId,
+            @DefaultValue("0") @QueryParam("page") int page,
+            @DefaultValue("20") @QueryParam("size") int size) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        try {
+            var entityManager = Objects.requireNonNull(session.getProvider(JpaConnectionProvider.class))
+                    .getEntityManager();
+            var result = new JpaAccessRequestHistoryReader(entityManager).findAll(
+                    manager.realm().getId(), parseInstant(from, "from"), parseInstant(to, "to"),
+                    parseEnum(AccessRequestEventType.class, type, "type"), actorId, requestId, page, size);
+            return Response.ok(AuditEventListResponse.from(result)).build();
+        } catch (IllegalArgumentException exception) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_AUDIT_EVENT_QUERY", exception.getMessage(), null);
+        }
+    }
+
+    @GET
+    @Path("admin/requests/{requestId}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response administrativeRequestDetails(@PathParam("requestId") String requestId) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        var entityManager = Objects.requireNonNull(session.getProvider(JpaConnectionProvider.class))
+                .getEntityManager();
+        AccessRequest request = new JpaAccessRequestRepository(entityManager)
+                .findById(manager.realm().getId(), requestId)
+                .orElse(null);
+        if (request == null) {
+            return error(Response.Status.NOT_FOUND, "REQUEST_NOT_FOUND", null, requestId);
+        }
+        var history = new JpaAccessRequestHistoryReader(entityManager)
+                .findByRequestId(manager.realm().getId(), requestId);
+        return Response.ok(RequestDetailResponse.from(new AccessRequestDetails(request, history))).build();
     }
 
     @GET
@@ -530,7 +576,7 @@ public final class AccessRequestRealmResource {
                     && !accessRequestManagerAuthorizer.canManage(targetRealm, adminAuth.getUser())) {
                 throw new ForbiddenException();
             }
-            return new AccessRequestManager(targetRealm, adminAuth.getUser());
+            return new AccessRequestManager(targetRealm, adminAuth.getUser(), adminAuth);
         } finally {
             session.getContext().setRealm(targetRealm);
         }
@@ -667,12 +713,16 @@ public final class AccessRequestRealmResource {
                 .orElseThrow(() -> new NotFoundException("Entitlement not found: " + entitlementId));
     }
 
-    private Entitlement persistEntitlementUpdate(Entitlement entitlement, long expectedVersion, String actorId) {
+    private Entitlement persistEntitlementUpdate(Entitlement entitlement, long expectedVersion,
+            AccessRequestManager manager) {
         return transaction().execute(() -> {
             Entitlement persisted = entitlementRepository()
                     .updateIfVersionMatches(entitlement, expectedVersion)
                     .orElseThrow(() -> new ConcurrentEntitlementModificationException(entitlement.id()));
-            entitlementAuditEventPublisher().publish(EntitlementAuditEvent.updated(persisted, actorId));
+            entitlementAuditEventPublisher().publish(
+                    EntitlementAuditEvent.updated(persisted, manager.user().getId()));
+            new KeycloakEntitlementAdminEventPublisher(session, manager.realm(), manager.auth())
+                    .updated(persisted);
             return persisted;
         });
     }
@@ -1055,6 +1105,21 @@ public final class AccessRequestRealmResource {
             boolean canManageProvisioningFailures) {
     }
 
+    public record AuditEventListResponse(List<AuditEventResponse> items, int page, int size, long total) {
+        private static AuditEventListResponse from(JpaAccessRequestHistoryReader.AuditEventPage result) {
+            return new AuditEventListResponse(result.items().stream().map(AuditEventResponse::from).toList(),
+                    result.page(), result.size(), result.total());
+        }
+    }
+
+    public record AuditEventResponse(String id, String requestId, String type, String actorId,
+            String occurredAt) {
+        private static AuditEventResponse from(AccessRequestEvent event) {
+            return new AuditEventResponse(event.id(), event.requestId(), event.type().name(),
+                    event.actorId(), event.occurredAt().toString());
+        }
+    }
+
     public record NotificationDeliveryListResponse(
             List<NotificationDeliveryResponse> items,
             int page,
@@ -1197,6 +1262,6 @@ public final class AccessRequestRealmResource {
     private record AuthenticatedRequest(RealmModel realm, UserModel user) {
     }
 
-    private record AccessRequestManager(RealmModel realm, UserModel user) {
+    private record AccessRequestManager(RealmModel realm, UserModel user, AdminAuth auth) {
     }
 }

@@ -159,6 +159,29 @@ The selected resource must exist and match `resourceType`. The approver role mus
 
 The resource type and resource ID are intentionally absent: the target resource is immutable. The client must send the version returned by the most recent read. A concurrent modification returns `409 Conflict`; reload the entitlement before retrying. Setting `requestable=false` is the supported soft-disable operation.
 
+Successful catalog creates and updates also emit Keycloak Admin Events with resource type
+`ACCESS_REQUEST_ENTITLEMENT` and resource path `access-requests/entitlements/{id}`. The event
+details contain the new `requestable`, `riskLevel`, and `approverRoleId` values, but not the full
+entitlement representation. A soft-disable is an `UPDATE` event, not `DELETE`. Keycloak stores
+these events only when Admin Events are enabled for the realm; the extension's own catalog
+history is persisted regardless of that setting.
+
+## Access request audit endpoints
+
+These endpoints use the same realm-scoped administrator authorization as catalog management.
+They read the existing request history; they do not duplicate it into Keycloak user events.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/admin/events` | Search access request lifecycle events |
+| `GET` | `/admin/requests/{requestId}` | Read a request and its history |
+
+`GET /admin/events` accepts `from` and `to` as inclusive ISO-8601 instants, `type` as a
+request event type, exact `actorId` and `requestId` filters, and `page`/`size` pagination.
+Results are newest first and contain only event ID, request ID, type, actor ID, and timestamp.
+Comments and other history metadata are not exposed in the list. Invalid filters return `400`.
+The detail endpoint returns `404` when the request does not exist in the selected realm.
+
 ## Notification delivery administration endpoints
 
 The notification endpoints are realm-scoped and use the same Keycloak administrator and

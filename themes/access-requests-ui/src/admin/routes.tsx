@@ -22,6 +22,16 @@ const FailedProvisioningRoute = lazy(async () => {
     return { default: module.FailedProvisioningRoute };
 });
 
+const AuditEventsRoute = lazy(async () => {
+    const module = await import("./pages/AuditEventsRoute");
+    return { default: module.AuditEventsRoute };
+});
+
+const AuditRequestDetailsRoute = lazy(async () => {
+    const module = await import("./pages/AuditRequestDetailsRoute");
+    return { default: module.AuditRequestDetailsRoute };
+});
+
 type AdminRoute = RouteObject & {
     handle?: {
         access: "anyone";
@@ -58,6 +68,24 @@ const failedProvisioningRoute: AdminRoute = {
     }
 };
 
+const auditEventsRoute: AdminRoute = {
+    path: "/:realm/access-requests/events",
+    element: <AuditEventsRoute />,
+    handle: {
+        access: "anyone",
+        breadcrumb: (translate) => translate("accessRequestsAdminEvents")
+    }
+};
+
+const auditRequestDetailsRoute: AdminRoute = {
+    path: "/:realm/access-requests/requests/:requestId",
+    element: <AuditRequestDetailsRoute />,
+    handle: {
+        access: "anyone",
+        breadcrumb: (translate) => translate("accessRequestsAdminEventsRequest")
+    }
+};
+
 const notFoundRoute = keycloakRoutes.filter((route) => route.path === "*");
 const standardRoutes = keycloakRoutes.filter((route) => route.path !== "*");
 
@@ -65,6 +93,7 @@ export const routes: RouteObject[] = [
     {
         path: "/",
         element: <AccessRequestsAdminApp />,
-        children: [entitlementCatalogRoute, notificationDeliveryRoute, failedProvisioningRoute, ...standardRoutes, ...notFoundRoute]
+        children: [entitlementCatalogRoute, auditEventsRoute, auditRequestDetailsRoute,
+            notificationDeliveryRoute, failedProvisioningRoute, ...standardRoutes, ...notFoundRoute]
     }
 ];

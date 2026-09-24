@@ -282,7 +282,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertTrue(tableExists(connection, "ar_entitlement"));
             assertTrue(tableExists(connection, "ar_entitlement_history"));
             assertTrue(tableExists(connection, "ar_notification_outbox"));
-            assertEquals(11, providerChangeSetCount(connection));
+            assertEquals(12, providerChangeSetCount(connection));
         }
     }
 
@@ -619,6 +619,14 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .header("Authorization", "Bearer " + adminToken)
                         .GET().build(), HttpResponse.BodyHandlers.discarding());
         assertEquals(400, invalid.statusCode());
+        for (String query : List.of("type=NOT_AN_EVENT", "from=not-a-date",
+                "from=2026-09-25T00:00:00Z&to=2026-09-24T00:00:00Z")) {
+            HttpResponse<Void> invalidFilter = HttpClient.newHttpClient().send(
+                    HttpRequest.newBuilder(URI.create(endpoint + "?" + query))
+                            .header("Authorization", "Bearer " + adminToken)
+                            .GET().build(), HttpResponse.BodyHandlers.discarding());
+            assertEquals(400, invalidFilter.statusCode(), query);
+        }
 
         String otherRealm = "audit-other-realm-" + UUID.randomUUID();
         createRealm(server, adminToken, otherRealm);
@@ -629,6 +637,12 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .GET().build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(200, isolated.statusCode());
         assertEquals(0, new ObjectMapper().readTree(isolated.body()).path("total").asInt());
+        HttpResponse<Void> isolatedDetail = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://%s:%d/realms/%s/access-requests/admin/requests/%s"
+                                .formatted(server.getHost(), server.getMappedPort(8080), otherRealm, requestId)))
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.discarding());
+        assertEquals(404, isolatedDetail.statusCode());
     }
 
     private void assertNotificationDeliveryAdministration(GenericContainer<?> server, String managerToken) throws Exception {

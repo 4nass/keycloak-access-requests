@@ -1,0 +1,82 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const api = vi.hoisted(() => ({ auditEvents: vi.fn(), auditRequest: vi.fn(), capabilities: vi.fn() }));
+vi.mock("../api/useEntitlementsAdminApi", () => ({ useEntitlementsAdminApi: () => api }));
+
+import { AuditEventsPage } from "./AuditEventsPage";
+import { AuditEventsRoute } from "./AuditEventsRoute";
+import { AuditRequestDetailsPage } from "./AuditRequestDetailsPage";
+
+const event = {
+    id: "event-1", requestId: "request-1", actorId: "approver-1",
+    type: "REQUEST_APPROVED", occurredAt: "2026-09-24T10:00:00Z"
+};
+
+function renderPage(component = <AuditEventsPage />) {
+    return render(<MemoryRouter initialEntries={["/master/access-requests/events"]}>
+        <Routes><Route path="/:realm/access-requests/events" element={component} /></Routes>
+    </MemoryRouter>);
+}
+
+describe("Access request audit page", () => {
+    beforeEach(() => {
+        api.auditEvents.mockReset().mockResolvedValue({ items: [event], page: 0, size: 20, total: 1 });
+        api.capabilities.mockReset().mockResolvedValue({ canManageCatalog: true });
+    });
+
+    it("filters, paginates and links to the realm-scoped request detail", async () => {
+        const user = userEvent.setup();
+        api.auditEvents.mockResolvedValue({ items: [event], page: 0, size: 20, total: 25 });
+        renderPage();
+
+        expect(await screen.findByText("accessRequestsAdminEventRequestApproved")).toBeVisible();
+        expect(screen.getByRole("link", { name: /request-1/ })).toHaveAttribute(
+            "href", "/master/access-requests/requests/request-1"
+        );
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminEventsRequest" }), "request-1");
+        await waitFor(() => expect(api.auditEvents).toHaveBeenLastCalledWith(expect.objectContaining({ requestId: "request-1" })));
+        await user.click(screen.getAllByRole("button", { name: /next page/i })[0]);
+        await waitFor(() => expect(api.auditEvents).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 })));
+    });
+
+    it("keeps the previous result visible when a refresh fails", async () => {
+        api.auditEvents.mockResolvedValueOnce({ items: [event], page: 0, size: 20, total: 1 })
+            .mockRejectedValueOnce(Object.assign(new Error("secret backend failure"), { code: "HTTP_503", status: 503 }));
+        renderPage();
+
+        expect(await screen.findByText("accessRequestsAdminEventRequestApproved")).toBeVisible();
+        fireEvent.change(screen.getByRole("textbox", { name: "accessRequestsAdminEventsActor" }),
+            { target: { value: "approver-1" } });
+        expect(await screen.findByText("accessRequestsAdminErrorUnavailable")).toBeVisible();
+        expect(screen.getByRole("link", { name: /request-1/ })).toBeVisible();
+        expect(screen.queryByText("secret backend failure")).not.toBeInTheDocument();
+    });
+
+    it("does not fetch history when the server denies catalog management", async () => {
+        api.capabilities.mockResolvedValue({ canManageCatalog: false });
+        renderPage(<AuditEventsRoute />);
+
+        expect(await screen.findByRole("heading", { name: "accessRequestsAdminErrorForbidden" })).toBeVisible();
+        expect(api.auditEvents).not.toHaveBeenCalled();
+    });
+});
+
+describe("Administrative request detail", () => {
+    it("renders request history without raw event metadata", async () => {
+        api.auditRequest.mockReset().mockResolvedValue({
+            id: "request-1", entitlementId: "entitlement-1", resourceName: "Finance",
+            createdAt: "2026-09-24T10:00:00Z", justification: "I need access.",
+            decision: null, history: [{ type: "REQUEST_APPROVED", occurredAt: "2026-09-24T10:01:00Z" }]
+        });
+        render(<MemoryRouter initialEntries={["/master/access-requests/requests/request-1"]}>
+            <Routes><Route path="/:realm/access-requests/requests/:requestId" element={<AuditRequestDetailsPage />} /></Routes>
+        </MemoryRouter>);
+
+        expect(await screen.findByText("entitlement-1")).toBeVisible();
+        expect(screen.getByText("accessRequestsAdminEventRequestApproved")).toBeVisible();
+        expect(api.auditRequest).toHaveBeenCalledWith("request-1");
+    });
+});

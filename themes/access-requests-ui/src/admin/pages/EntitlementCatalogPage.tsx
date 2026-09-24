@@ -46,6 +46,7 @@ import {
     type KeycloakReference
 } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
+import { AccessRequestsAdminTabs } from "./AccessRequestsAdminTabs";
 
 type FormValues = EntitlementCreation & {
     requestable: boolean;
@@ -182,6 +183,7 @@ export function EntitlementCatalogPage() {
                 </TextContent>
             </PageSection>
             <PageSection>
+                <AccessRequestsAdminTabs active="catalog" />
                 {actionNotice && (
                     <Alert isInline title={actionNotice} variant="success" className="pf-v5-u-mb-lg" />
                 )}

@@ -12,7 +12,14 @@ The bundled `access-requests` Account and Admin themes are complete reference in
 2. Select `access-requests` as the **Account theme**, **Admin Console theme**, or both.
 3. Save the realm.
 
-Selecting either theme replaces that realm's corresponding theme; it does not compose automatically with an existing customer theme. The Account theme exposes request and approval pages. The Admin theme exposes catalog administration only; it does not replace the server-side authorization checks.
+Selecting either theme replaces that realm's corresponding theme; it does not compose automatically with an existing customer theme. The Account theme exposes request and approval pages. The Admin theme exposes catalog administration, request events, notification delivery, and failed-provisioning operations; it does not replace the server-side authorization checks.
+
+The **Access requests → Events** sub-tab searches the extension's existing request history, with
+date, type, actor, and request filters and a link to each request's details. To also record catalog
+changes in Keycloak's native Admin Events, enable **Save events** under **Realm settings → Events →
+Admin events** for each realm. The extension emits `ACCESS_REQUEST_ENTITLEMENT` create/update
+events only when this setting is enabled. It does not copy request lifecycle events into the
+native event store.
 
 ## Configure lifecycle e-mail delivery
 
