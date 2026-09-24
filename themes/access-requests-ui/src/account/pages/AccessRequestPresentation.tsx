@@ -16,6 +16,7 @@ const decisionStatuses: Record<string, Presentation> = {
 };
 
 const historyEvents: Record<string, Presentation> = {
+    PROVISIONING_CLOSED: { color: "grey", key: "accessRequestsHistoryProvisioningClosed" },
     PROVISIONING_FAILED: { color: "red", key: "accessRequestsHistoryProvisioningFailed" },
     PROVISIONING_STARTED: { color: "blue", key: "accessRequestsHistoryProvisioningStarted" },
     PROVISIONING_SUCCEEDED: { color: "green", key: "accessRequestsHistoryProvisioningSucceeded" },

@@ -43,6 +43,7 @@ export type RequestSummary = {
     decisionStatus: string;
     provisioningStatus: string;
     createdAt: string;
+    provisioningClosedAt?: string | null;
 };
 
 export type RequestDetails = RequestSummary & {

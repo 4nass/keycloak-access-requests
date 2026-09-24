@@ -113,6 +113,7 @@ describe("Access Request account console pages", () => {
             "accessRequestsFirstPage",
             "accessRequestsHistory",
             "accessRequestsHistoryProvisioningFailed",
+            "accessRequestsHistoryProvisioningClosed",
             "accessRequestsHistoryProvisioningStarted",
             "accessRequestsHistoryProvisioningSucceeded",
             "accessRequestsHistoryRequestApproved",
@@ -261,7 +262,7 @@ describe("Access Request account console pages", () => {
                 title: "My Requests"
             },
             {
-                description: "Review and decide requests for the access you manage.",
+                description: "Review requests you can approve or reject.",
                 page: <ApprovalsPage onApprove={vi.fn()} onReject={vi.fn()} requests={[]} />,
                 title: "Approvals"
             }
@@ -286,13 +287,13 @@ describe("Access Request account console pages", () => {
                 page: <RequestAccessPage entries={[]} onRequest={vi.fn()} />
             },
             {
-                description: "Request access to an application, role, or group and it will appear here.",
+                description: "Request access through a realm role, client role, or group; your request will appear here.",
                 emptyState: "No requests yet",
                 listLabel: "My Requests",
                 page: <MyRequestsPage onCancel={vi.fn()} requests={[]} />
             },
             {
-                description: "New requests for the access you manage will appear here.",
+                description: "New requests awaiting your decision will appear here.",
                 emptyState: "No approvals pending",
                 listLabel: "Approvals",
                 page: <ApprovalsPage onApprove={vi.fn()} onReject={vi.fn()} requests={[]} />
@@ -573,6 +574,31 @@ describe("Access Request account console pages", () => {
         expect(within(details).getByText("Request approved")).toBeVisible();
         expect(within(details).getByText("Access granted")).toBeVisible();
         expect(within(approvedRequest).queryByRole("button", { name: "Cancel request" })).not.toBeInTheDocument();
+    });
+
+    it("shows a closed failed grant without suggesting that access was granted", async () => {
+        const user = userEvent.setup();
+        renderAccessRequestUi(<MyRequestsPage
+            onCancel={vi.fn()}
+            requests={[{
+                id: "request-closed",
+                entitlementName: "Finance Reader",
+                resourceType: "REALM_ROLE",
+                decisionStatus: "APPROVED",
+                provisioningStatus: "FAILED",
+                provisioningClosedAt: "2026-09-23T10:00:00Z",
+                requestedAt: "2026-09-22T10:00:00Z",
+                justification: "Need finance read access.",
+                history: [{ type: "PROVISIONING_CLOSED", occurredAt: "2026-09-23T10:00:00Z" }]
+            }]}
+        />);
+
+        const item = screen.getByRole("listitem", { name: "Finance Reader" });
+        expect(within(item).getByText("Provisioning closed without access")).toBeVisible();
+        expect(within(item).queryByText("Succeeded")).not.toBeInTheDocument();
+        await user.click(within(item).getByRole("button", { name: "View details" }));
+        expect(within(screen.getByRole("dialog")).getAllByText("Provisioning closed without access").length)
+            .toBeGreaterThan(0);
     });
 
     it("loads request details on demand instead of showing summary placeholders", async () => {

@@ -48,6 +48,7 @@ export type AccessRequest = {
     resourceType: string;
     decisionStatus: string;
     provisioningStatus: string;
+    provisioningClosedAt?: string | null;
     requestedAt: string;
     justification: string;
     decision?: RequestDecision;
@@ -139,7 +140,9 @@ export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh
                                                     <LabelGroup aria-label={t("accessRequestsStatus")} isCompact>
                                                         <DecisionStatusLabel status={request.decisionStatus} t={t} />
                                                         {request.decisionStatus === "APPROVED" && (
-                                                            <ProvisioningStatusLabel status={request.provisioningStatus} t={t} />
+                                                            request.provisioningClosedAt
+                                                                ? <HistoryEventLabel event="PROVISIONING_CLOSED" t={t} />
+                                                                : <ProvisioningStatusLabel status={request.provisioningStatus} t={t} />
                                                         )}
                                                     </LabelGroup>
                                                     <p>
@@ -212,7 +215,9 @@ export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh
                                 <DescriptionListGroup>
                                     <DescriptionListTerm>{t("accessRequestsProvisioning")}</DescriptionListTerm>
                                     <DescriptionListDescription>
-                                        <ProvisioningStatusLabel status={selectedRequest.provisioningStatus} t={t} />
+                                        {selectedRequest.provisioningClosedAt
+                                            ? <HistoryEventLabel event="PROVISIONING_CLOSED" t={t} />
+                                            : <ProvisioningStatusLabel status={selectedRequest.provisioningStatus} t={t} />}
                                     </DescriptionListDescription>
                                 </DescriptionListGroup>
                                 {selectedRequest.decision && (

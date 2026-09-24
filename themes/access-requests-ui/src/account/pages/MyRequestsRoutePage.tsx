@@ -44,6 +44,7 @@ function requestEntries(page: { items: RequestSummary[] }): AccessRequest[] {
         id: item.id,
         justification: "",
         provisioningStatus: item.provisioningStatus,
+        provisioningClosedAt: item.provisioningClosedAt,
         requestedAt: item.createdAt,
         resourceType: item.resourceType
     }));
