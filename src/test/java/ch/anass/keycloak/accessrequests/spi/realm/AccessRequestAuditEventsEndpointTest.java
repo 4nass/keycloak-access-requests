@@ -78,6 +78,17 @@ class AccessRequestAuditEventsEndpointTest {
         assertEquals("requestId", handler.getParameters()[0].getAnnotation(PathParam.class).value());
     }
 
+    @Test
+    void usesAnAdminOnlyDetailEnvelopeWithRequesterStatusesAndHistoryActors() throws Exception {
+        assertEquals(java.util.List.of("id", "requesterId", "entitlementId", "resourceType", "resourceName",
+                "decisionStatus", "provisioningStatus", "createdAt", "provisioningClosedAt", "justification",
+                "decision", "history"), fields(responseType("AdminRequestDetailResponse")));
+        assertEquals(java.util.List.of("type", "actorId", "occurredAt"),
+                fields(responseType("AdminRequestHistoryEntryResponse")));
+        assertTrue(!fields(responseType("RequestDetailResponse")).contains("requesterId"));
+        assertTrue(!fields(responseType("RequestHistoryEntryResponse")).contains("actorId"));
+    }
+
     private static String defaultValue(Method handler, String name) {
         return Arrays.stream(handler.getParameters())
                 .filter(parameter -> name.equals(parameter.getAnnotation(QueryParam.class).value()))

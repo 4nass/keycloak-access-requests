@@ -325,7 +325,7 @@ public final class AccessRequestRealmResource {
         }
         var history = new JpaAccessRequestHistoryReader(entityManager)
                 .findByRequestId(manager.realm().getId(), requestId);
-        return Response.ok(RequestDetailResponse.from(new AccessRequestDetails(request, history))).build();
+        return Response.ok(AdminRequestDetailResponse.from(new AccessRequestDetails(request, history))).build();
     }
 
     @GET
@@ -1103,6 +1103,45 @@ public final class AccessRequestRealmResource {
             boolean canManageCatalog,
             boolean canManageNotifications,
             boolean canManageProvisioningFailures) {
+    }
+
+    public record AdminRequestDetailResponse(
+            String id,
+            String requesterId,
+            String entitlementId,
+            ResourceType resourceType,
+            String resourceName,
+            DecisionStatus decisionStatus,
+            ProvisioningStatus provisioningStatus,
+            String createdAt,
+            String provisioningClosedAt,
+            String justification,
+            DecisionResponse decision,
+            List<AdminRequestHistoryEntryResponse> history) {
+
+        private static AdminRequestDetailResponse from(AccessRequestDetails details) {
+            AccessRequest request = details.request();
+            DecisionResponse decision = request.approverId() == null
+                    ? null
+                    : new DecisionResponse(
+                            request.approverId(), request.decisionComment(), request.decidedAt().toString());
+            return new AdminRequestDetailResponse(
+                    request.id(), request.requesterId(), request.entitlementId(), request.resourceType(),
+                    request.resourceNameSnapshot(), request.decisionStatus(), request.provisioningStatus(),
+                    request.createdAt().toString(),
+                    request.provisioningClosedAt() == null ? null : request.provisioningClosedAt().toString(),
+                    request.justification(), decision,
+                    details.history().stream().map(AdminRequestHistoryEntryResponse::from).toList());
+        }
+    }
+
+    public record AdminRequestHistoryEntryResponse(String type, String actorId, String occurredAt) {
+
+        private static AdminRequestHistoryEntryResponse from(
+                ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent event) {
+            return new AdminRequestHistoryEntryResponse(
+                    event.type().name(), event.actorId(), event.occurredAt().toString());
+        }
     }
 
     public record AuditEventListResponse(List<AuditEventResponse> items, int page, int size, long total) {

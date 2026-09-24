@@ -180,7 +180,10 @@ They read the existing request history; they do not duplicate it into Keycloak u
 request event type, exact `actorId` and `requestId` filters, and `page`/`size` pagination.
 Results are newest first and contain only event ID, request ID, type, actor ID, and timestamp.
 Comments and other history metadata are not exposed in the list. Invalid filters return `400`.
-The detail endpoint returns `404` when the request does not exist in the selected realm.
+The admin detail response includes the requester ID, current decision and provisioning statuses,
+decision details, and each history entry's actor ID and timestamp. These administrative fields
+are not added to the requester's `/mine/{id}` response. The detail endpoint returns `404` when
+the request does not exist in the selected realm.
 
 ## Notification delivery administration endpoints
 

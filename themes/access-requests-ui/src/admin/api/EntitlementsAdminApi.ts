@@ -51,15 +51,17 @@ export type AdminAuditEventQuery = {
 
 export type AdminAuditRequestDetails = {
     id: string;
+    requesterId: string;
     entitlementId: string;
     resourceType: Entitlement["resourceType"];
     resourceName: string;
-    decisionStatus: string;
-    provisioningStatus: string;
+    decisionStatus: "PENDING" | "APPROVED" | "REJECTED" | "CANCELED";
+    provisioningStatus: "NOT_STARTED" | "SUCCEEDED" | "FAILED";
     createdAt: string;
+    provisioningClosedAt: string | null;
     justification: string;
     decision: { approverId: string; comment: string; decidedAt: string } | null;
-    history: { type: AdminAuditEventType; occurredAt: string }[];
+    history: { type: AdminAuditEventType; actorId: string; occurredAt: string }[];
 };
 
 export type EntitlementCreation = Pick<

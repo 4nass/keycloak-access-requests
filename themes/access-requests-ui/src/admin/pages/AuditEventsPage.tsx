@@ -17,6 +17,12 @@ import { auditEventTypes } from "./auditEventTypes";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50].map((value) => ({ title: String(value), value }));
 
+export function localAuditDayBoundary(day: string, endOfDay: boolean): string {
+    const [year, month, date] = day.split("-").map(Number);
+    return new Date(year, month - 1, date, endOfDay ? 23 : 0, endOfDay ? 59 : 0,
+        endOfDay ? 59 : 0, endOfDay ? 999 : 0).toISOString();
+}
+
 export function AuditEventsPage() {
     const { t, i18n } = useTranslation();
     const api = useEntitlementsAdminApi();
@@ -24,22 +30,25 @@ export function AuditEventsPage() {
     const [filters, setFilters] = useState<AdminAuditEventQuery>({});
     const [actorInput, setActorInput] = useState("");
     const [requestInput, setRequestInput] = useState("");
+    const [fromDay, setFromDay] = useState("");
+    const [toDay, setToDay] = useState("");
     const [page, setPage] = useState(0);
     const [size, setSize] = useState(20);
-    const [result, setResult] = useState<AdminAuditEventPage>();
-    const [error, setError] = useState<unknown>();
+    const [result, setResult] = useState<{ api: typeof api; key: string; data: AdminAuditEventPage }>();
+    const [error, setError] = useState<{ api: typeof api; key: string; cause: unknown }>();
     const [refresh, setRefresh] = useState(0);
+    const queryKey = JSON.stringify({ filters, page, size });
 
     useEffect(() => {
         let active = true;
         setError(undefined);
         void api.auditEvents({ ...filters, page, size }).then((next) => {
-            if (active) setResult(next);
+            if (active) setResult({ api, key: queryKey, data: next });
         }).catch((failure: unknown) => {
-            if (active) setError(failure);
+            if (active) setError({ api, key: queryKey, cause: failure });
         });
         return () => { active = false; };
-    }, [api, filters, page, size, refresh]);
+    }, [api, queryKey, refresh]);
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
@@ -58,7 +67,13 @@ export function AuditEventsPage() {
         setPage(0);
         setFilters((current) => ({ ...current, [key]: value }));
     };
-    const errorPresentation = error ? presentEntitlementsAdminError(error) : undefined;
+    const inputsPending = actorInput !== (filters.actorId ?? "")
+        || requestInput !== (filters.requestId ?? "");
+    const displayedResult = !inputsPending && result?.api === api && result.key === queryKey
+        ? result.data : undefined;
+    const currentError = !inputsPending && error?.api === api && error.key === queryKey
+        ? error.cause : undefined;
+    const errorPresentation = currentError ? presentEntitlementsAdminError(currentError) : undefined;
     const detailBase = pathname.replace(/\/events\/?$/, "/requests");
 
     return <>
@@ -77,11 +92,11 @@ export function AuditEventsPage() {
             <Toolbar aria-label={t("accessRequestsAdminEvents")}>
                 <ToolbarContent>
                     <ToolbarItem><label htmlFor="audit-from">{t("accessRequestsAdminEventsFrom")}</label><TextInput id="audit-from" type="date" aria-label={t("accessRequestsAdminEventsFrom")}
-                        value={filters.from?.slice(0, 10) ?? ""}
-                        onChange={(_event, value) => setFilter("from", value ? `${value}T00:00:00.000Z` : undefined)} /></ToolbarItem>
+                        value={fromDay}
+                        onChange={(_event, value) => { setFromDay(value); setFilter("from", value ? localAuditDayBoundary(value, false) : undefined); }} /></ToolbarItem>
                     <ToolbarItem><label htmlFor="audit-to">{t("accessRequestsAdminEventsTo")}</label><TextInput id="audit-to" type="date" aria-label={t("accessRequestsAdminEventsTo")}
-                        value={filters.to?.slice(0, 10) ?? ""}
-                        onChange={(_event, value) => setFilter("to", value ? `${value}T23:59:59.999Z` : undefined)} /></ToolbarItem>
+                        value={toDay}
+                        onChange={(_event, value) => { setToDay(value); setFilter("to", value ? localAuditDayBoundary(value, true) : undefined); }} /></ToolbarItem>
                     <ToolbarItem><label htmlFor="audit-type">{t("accessRequestsAdminEventsType")}</label><FormSelect id="audit-type" aria-label={t("accessRequestsAdminEventsType")}
                         value={filters.type ?? ""} onChange={(_event, value) => setFilter("type", value ? value as AdminAuditEventType : undefined)}>
                         <FormSelectOption value="" label={t("accessRequestsAdminEventsAllTypes")} />
@@ -94,14 +109,14 @@ export function AuditEventsPage() {
                     <ToolbarItem><label htmlFor="audit-request-id">{t("accessRequestsAdminEventsRequest")}</label><TextInput id="audit-request-id" aria-label={t("accessRequestsAdminEventsRequest")}
                         placeholder={t("accessRequestsAdminEventsRequest")}
                         value={requestInput} onChange={(_event, value) => setRequestInput(value)} /></ToolbarItem>
-                    {result && result.total > 0 && <ToolbarItem align={{ default: "alignRight" }} variant="pagination">
-                        <AuditPagination page={page} size={size} total={result.total} onPage={setPage} onSize={(next) => { setPage(0); setSize(next); }} />
+                    {displayedResult && displayedResult.total > 0 && <ToolbarItem align={{ default: "alignRight" }} variant="pagination">
+                        <AuditPagination page={page} size={size} total={displayedResult.total} onPage={setPage} onSize={(next) => { setPage(0); setSize(next); }} />
                     </ToolbarItem>}
                 </ToolbarContent>
             </Toolbar>
-            {!result && error ? null : !result ? <EmptyState><Spinner aria-label={t("loading")} /></EmptyState>
-                : result?.items.length ? <DataList aria-label={t("accessRequestsAdminEvents")}>
-                    {result.items.map((item) => <DataListItem key={item.id}>
+            {!displayedResult && errorPresentation ? null : !displayedResult ? <EmptyState><Spinner aria-label={t("loading")} /></EmptyState>
+                : displayedResult.items.length ? <DataList aria-label={t("accessRequestsAdminEvents")}>
+                    {displayedResult.items.map((item) => <DataListItem key={item.id}>
                         <DataListItemRow><DataListItemCells dataListCells={[
                             <DataListCell key="event"><Text component="p">{t(auditEventTypes[item.type])}</Text></DataListCell>,
                             <DataListCell key="date"><Text component="p">{t("accessRequestsAdminEventsOccurredAt")}: {new Intl.DateTimeFormat(i18n.resolvedLanguage || "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.occurredAt))}</Text></DataListCell>,
@@ -113,7 +128,7 @@ export function AuditEventsPage() {
                 </DataList>
                 : <EmptyState><EmptyStateHeader headingLevel="h2" titleText={t("accessRequestsAdminEventsEmpty")} />
                     <EmptyStateBody>{t("accessRequestsAdminEventsDescription")}</EmptyStateBody></EmptyState>}
-            {result && result.total > 0 && <AuditPagination page={page} size={size} total={result.total}
+            {displayedResult && displayedResult.total > 0 && <AuditPagination page={page} size={size} total={displayedResult.total}
                 onPage={setPage} onSize={(next) => { setPage(0); setSize(next); }} variant="bottom" />}
         </PageSection>
     </>;

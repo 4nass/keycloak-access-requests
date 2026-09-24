@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({ auditEvents: vi.fn(), auditRequest: vi.fn(), capabilities: vi.fn() }));
 vi.mock("../api/useEntitlementsAdminApi", () => ({ useEntitlementsAdminApi: () => api }));
 
-import { AuditEventsPage } from "./AuditEventsPage";
+import { AuditEventsPage, localAuditDayBoundary } from "./AuditEventsPage";
 import { AuditEventsRoute } from "./AuditEventsRoute";
 import { AuditRequestDetailsPage } from "./AuditRequestDetailsPage";
 
@@ -42,7 +42,26 @@ describe("Access request audit page", () => {
         await waitFor(() => expect(api.auditEvents).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 })));
     });
 
-    it("keeps the previous result visible when a refresh fails", async () => {
+    it("uses local calendar-day boundaries without changing the selected dates", async () => {
+        vi.stubEnv("TZ", "Europe/Paris");
+        try {
+            renderPage();
+            fireEvent.change(screen.getByLabelText("accessRequestsAdminEventsFrom"),
+                { target: { value: "2026-09-24" } });
+            fireEvent.change(screen.getByLabelText("accessRequestsAdminEventsTo"),
+                { target: { value: "2026-09-24" } });
+            await waitFor(() => expect(api.auditEvents).toHaveBeenLastCalledWith(expect.objectContaining({
+                from: "2026-09-23T22:00:00.000Z", to: "2026-09-24T21:59:59.999Z"
+            })));
+            expect(screen.getByLabelText("accessRequestsAdminEventsFrom")).toHaveValue("2026-09-24");
+            expect(screen.getByLabelText("accessRequestsAdminEventsTo")).toHaveValue("2026-09-24");
+            expect(localAuditDayBoundary("2026-03-29", true)).toBe("2026-03-29T21:59:59.999Z");
+        } finally {
+            vi.unstubAllEnvs();
+        }
+    });
+
+    it("hides results from the old filter while loading and after a failed search", async () => {
         api.auditEvents.mockResolvedValueOnce({ items: [event], page: 0, size: 20, total: 1 })
             .mockRejectedValueOnce(Object.assign(new Error("secret backend failure"), { code: "HTTP_503", status: 503 }));
         renderPage();
@@ -50,8 +69,9 @@ describe("Access request audit page", () => {
         expect(await screen.findByText("accessRequestsAdminEventRequestApproved")).toBeVisible();
         fireEvent.change(screen.getByRole("textbox", { name: "accessRequestsAdminEventsActor" }),
             { target: { value: "approver-1" } });
+        expect(screen.queryByRole("link", { name: /request-1/ })).not.toBeInTheDocument();
         expect(await screen.findByText("accessRequestsAdminErrorUnavailable")).toBeVisible();
-        expect(screen.getByRole("link", { name: /request-1/ })).toBeVisible();
+        expect(screen.queryByRole("link", { name: /request-1/ })).not.toBeInTheDocument();
         expect(screen.queryByText("secret backend failure")).not.toBeInTheDocument();
     });
 
@@ -67,9 +87,10 @@ describe("Access request audit page", () => {
 describe("Administrative request detail", () => {
     it("renders request history without raw event metadata", async () => {
         api.auditRequest.mockReset().mockResolvedValue({
-            id: "request-1", entitlementId: "entitlement-1", resourceName: "Finance",
+            id: "request-1", requesterId: "requester-1", entitlementId: "entitlement-1", resourceName: "Finance",
+            decisionStatus: "APPROVED", provisioningStatus: "SUCCEEDED", provisioningClosedAt: null,
             createdAt: "2026-09-24T10:00:00Z", justification: "I need access.",
-            decision: null, history: [{ type: "REQUEST_APPROVED", occurredAt: "2026-09-24T10:01:00Z" }]
+            decision: null, history: [{ type: "REQUEST_APPROVED", actorId: "approver-1", occurredAt: "2026-09-24T10:01:00Z" }]
         });
         render(<MemoryRouter initialEntries={["/master/access-requests/requests/request-1"]}>
             <Routes><Route path="/:realm/access-requests/requests/:requestId" element={<AuditRequestDetailsPage />} /></Routes>
@@ -77,6 +98,10 @@ describe("Administrative request detail", () => {
 
         expect(await screen.findByText("entitlement-1")).toBeVisible();
         expect(screen.getByText("accessRequestsAdminEventRequestApproved")).toBeVisible();
+        expect(screen.getByText("requester-1")).toBeVisible();
+        expect(screen.getByText("accessRequestsAdminDecisionApproved")).toBeVisible();
+        expect(screen.getByText("accessRequestsAdminProvisioningSucceeded")).toBeVisible();
+        expect(screen.getByText("accessRequestsAdminEventsActor: approver-1")).toBeVisible();
         expect(api.auditRequest).toHaveBeenCalledWith("request-1");
     });
 });

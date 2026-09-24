@@ -1,7 +1,7 @@
 import {
     Alert, Button, DataList, DataListCell, DataListItem, DataListItemCells, DataListItemRow,
     DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm,
-    EmptyState, PageSection, Spinner, Text, TextContent, Title
+    EmptyState, Label, PageSection, Spinner, Text, TextContent, Title
 } from "@patternfly/react-core";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,8 +15,8 @@ export function AuditRequestDetailsPage() {
     const { t, i18n } = useTranslation();
     const api = useEntitlementsAdminApi();
     const { realm, requestId } = useParams();
-    const [details, setDetails] = useState<AdminAuditRequestDetails>();
-    const [error, setError] = useState<unknown>();
+    const [details, setDetails] = useState<{ api: typeof api; requestId: string; data: AdminAuditRequestDetails }>();
+    const [error, setError] = useState<{ api: typeof api; requestId: string; cause: unknown }>();
     const [retry, setRetry] = useState(0);
 
     useEffect(() => {
@@ -24,14 +24,16 @@ export function AuditRequestDetailsPage() {
         let active = true;
         setError(undefined);
         void api.auditRequest(requestId).then((next) => {
-            if (active) setDetails(next);
+            if (active) setDetails({ api, requestId, data: next });
         }).catch((failure: unknown) => {
-            if (active) setError(failure);
+            if (active) setError({ api, requestId, cause: failure });
         });
         return () => { active = false; };
     }, [api, requestId, retry]);
 
-    const errorPresentation = error ? presentEntitlementsAdminError(error) : undefined;
+    const currentDetails = details?.api === api && details.requestId === requestId ? details.data : undefined;
+    const currentError = error?.api === api && error.requestId === requestId ? error.cause : undefined;
+    const errorPresentation = currentError ? presentEntitlementsAdminError(currentError) : undefined;
     const formatDate = (date: string) => new Intl.DateTimeFormat(i18n.resolvedLanguage || "en", {
         dateStyle: "medium", timeStyle: "short"
     }).format(new Date(date));
@@ -49,26 +51,35 @@ export function AuditRequestDetailsPage() {
                     : t(errorPresentation.messageKey)}
                 actionLinks={<Button variant="link" onClick={() => setRetry((value) => value + 1)}>{t("reload")}</Button>}
             />}
-            {!details && !error && <EmptyState><Spinner aria-label={t("loading")} /></EmptyState>}
-            {details && <>
+            {!currentDetails && !errorPresentation && <EmptyState><Spinner aria-label={t("loading")} /></EmptyState>}
+            {currentDetails && <>
                 <DescriptionList isHorizontal>
+                    <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningRequester")}</DescriptionListTerm>
+                        <DescriptionListDescription>{currentDetails.requesterId}</DescriptionListDescription></DescriptionListGroup>
                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningEntitlement")}</DescriptionListTerm>
-                        <DescriptionListDescription>{details.entitlementId}</DescriptionListDescription></DescriptionListGroup>
+                        <DescriptionListDescription>{currentDetails.entitlementId}</DescriptionListDescription></DescriptionListGroup>
                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningResource")}</DescriptionListTerm>
-                        <DescriptionListDescription>{details.resourceName}</DescriptionListDescription></DescriptionListGroup>
+                        <DescriptionListDescription>{currentDetails.resourceName}</DescriptionListDescription></DescriptionListGroup>
+                    <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminEventsDecisionStatus")}</DescriptionListTerm>
+                        <DescriptionListDescription><Label color={decisionLabels[currentDetails.decisionStatus].color}>
+                            {t(decisionLabels[currentDetails.decisionStatus].key)}</Label></DescriptionListDescription></DescriptionListGroup>
+                    <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminEventsProvisioningStatus")}</DescriptionListTerm>
+                        <DescriptionListDescription><Label color={provisioningLabels[currentDetails.provisioningStatus].color}>
+                            {t(provisioningLabels[currentDetails.provisioningStatus].key)}</Label></DescriptionListDescription></DescriptionListGroup>
                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminEventsOccurredAt")}</DescriptionListTerm>
-                        <DescriptionListDescription>{formatDate(details.createdAt)}</DescriptionListDescription></DescriptionListGroup>
+                        <DescriptionListDescription>{formatDate(currentDetails.createdAt)}</DescriptionListDescription></DescriptionListGroup>
                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminEventsJustification")}</DescriptionListTerm>
-                        <DescriptionListDescription>{details.justification}</DescriptionListDescription></DescriptionListGroup>
-                    {details.decision && <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminEventsActor")}</DescriptionListTerm>
-                        <DescriptionListDescription>{details.decision.approverId}: {details.decision.comment}</DescriptionListDescription></DescriptionListGroup>}
+                        <DescriptionListDescription>{currentDetails.justification}</DescriptionListDescription></DescriptionListGroup>
+                    {currentDetails.decision && <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminEventsActor")}</DescriptionListTerm>
+                        <DescriptionListDescription>{currentDetails.decision.approverId}: {currentDetails.decision.comment}</DescriptionListDescription></DescriptionListGroup>}
                 </DescriptionList>
                 <Title headingLevel="h2" size="lg">{t("accessRequestsAdminEventsHistory")}</Title>
                 <DataList aria-label={t("accessRequestsAdminEventsHistory")}>
-                    {details.history.map((event, index) => <DataListItem key={`${event.type}-${event.occurredAt}-${index}`}>
+                    {currentDetails.history.map((event, index) => <DataListItem key={`${event.type}-${event.occurredAt}-${index}`}>
                         <DataListItemRow><DataListItemCells dataListCells={[
                             <DataListCell key="type">{t(auditEventTypes[event.type])}</DataListCell>,
-                            <DataListCell key="date">{formatDate(event.occurredAt)}</DataListCell>
+                            <DataListCell key="date">{formatDate(event.occurredAt)}</DataListCell>,
+                            <DataListCell key="actor">{t("accessRequestsAdminEventsActor")}: {event.actorId}</DataListCell>
                         ]} /></DataListItemRow>
                     </DataListItem>)}
                 </DataList>
@@ -76,3 +87,16 @@ export function AuditRequestDetailsPage() {
         </PageSection>
     </>;
 }
+
+const decisionLabels = {
+    PENDING: { color: "orange", key: "accessRequestsAdminDecisionPending" },
+    APPROVED: { color: "green", key: "accessRequestsAdminDecisionApproved" },
+    REJECTED: { color: "red", key: "accessRequestsAdminDecisionRejected" },
+    CANCELED: { color: "grey", key: "accessRequestsAdminDecisionCanceled" }
+} as const;
+
+const provisioningLabels = {
+    NOT_STARTED: { color: "grey", key: "accessRequestsAdminProvisioningNotStarted" },
+    SUCCEEDED: { color: "green", key: "accessRequestsAdminProvisioningSucceeded" },
+    FAILED: { color: "red", key: "accessRequestsAdminProvisioningFailedStatus" }
+} as const;

@@ -588,8 +588,15 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .header("Authorization", "Bearer " + adminToken)
                         .GET().build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(200, detail.statusCode(), detail.body());
-        assertEquals(requestId, new ObjectMapper().readTree(detail.body()).path("id").asText());
-        assertTrue(new ObjectMapper().readTree(detail.body()).path("history").isArray());
+        JsonNode detailBody = new ObjectMapper().readTree(detail.body());
+        assertEquals(requestId, detailBody.path("id").asText());
+        assertFalse(detailBody.path("requesterId").asText().isBlank());
+        assertFalse(detailBody.path("decisionStatus").asText().isBlank());
+        assertFalse(detailBody.path("provisioningStatus").asText().isBlank());
+        assertTrue(detailBody.path("history").isArray());
+        assertTrue(java.util.stream.StreamSupport.stream(detailBody.path("history").spliterator(), false)
+                .anyMatch(item -> eventType.equals(item.path("type").asText())
+                        && actorId.equals(item.path("actorId").asText())));
         HttpResponse<Void> deniedDetail = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(detailEndpoint)
                         .header("Authorization", "Bearer " + nonManagerToken)
