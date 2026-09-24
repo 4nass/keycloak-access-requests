@@ -78,6 +78,9 @@ public final class KeycloakAccessRequestEmailNotifier {
                 case PROVISIONING_FAILED -> new EmailTemplate(
                         "accessRequestProvisioningFailedSubject",
                         "access-request-provisioning-failed.ftl");
+                case PROVISIONING_CLOSED -> new EmailTemplate(
+                        "accessRequestProvisioningClosedSubject",
+                        "access-request-provisioning-closed.ftl");
             };
         }
     }

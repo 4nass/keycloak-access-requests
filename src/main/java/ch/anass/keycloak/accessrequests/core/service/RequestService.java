@@ -8,6 +8,7 @@ import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidProvisioningRetryException;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningFailureCode;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.SelfApprovalException;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedApprovalException;
@@ -28,9 +29,12 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.List;
 import java.util.UUID;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class RequestService {
 
+    private static final Logger LOG = Logger.getLogger(RequestService.class.getName());
     private static final AccessRequestNotificationPublisher NO_OP_NOTIFICATION_PUBLISHER = notification -> {
     };
 
@@ -204,7 +208,7 @@ public final class RequestService {
             publish(approvalEvent, approved, entitlement);
             publish(AccessRequestEvent.provisioningStarted(approved, approverId, decidedAt), approved, entitlement);
 
-            ProvisioningResult result = provision(realmId, approved.requesterId(), entitlement);
+            ProvisioningResult result = provision(approved.id(), realmId, approved.requesterId(), entitlement);
             AccessRequest completed = approved.copy();
             Instant completedAt = Instant.now(clock);
             if (result.isSuccessful()) {
@@ -216,7 +220,7 @@ public final class RequestService {
             AccessRequestEvent provisioningEvent = result.isSuccessful()
                     ? AccessRequestEvent.provisioningSucceeded(persisted, approverId, completedAt)
                     : AccessRequestEvent.provisioningFailed(
-                            persisted, approverId, completedAt, result.failureReason());
+                            persisted, approverId, completedAt, result.failureReason(), result.failureCode());
             publish(provisioningEvent, persisted, entitlement);
             return persisted;
         });
@@ -227,7 +231,8 @@ public final class RequestService {
             AccessRequest request = accessRequestRepository.findByIdForUpdate(realmId, requestId)
                     .orElseThrow(() -> new RequestNotFoundException(requestId));
             if (request.decisionStatus() != DecisionStatus.APPROVED
-                    || request.provisioningStatus() != ProvisioningStatus.FAILED) {
+                    || request.provisioningStatus() != ProvisioningStatus.FAILED
+                    || request.provisioningFailureClosed()) {
                 throw new InvalidProvisioningRetryException();
             }
 
@@ -241,7 +246,7 @@ public final class RequestService {
             Instant startedAt = Instant.now(clock);
             publish(AccessRequestEvent.provisioningStarted(request, actorId, startedAt), request, entitlement);
 
-            ProvisioningResult result = provision(realmId, request.requesterId(), entitlement);
+            ProvisioningResult result = provision(request.id(), realmId, request.requesterId(), entitlement);
             Instant completedAt = Instant.now(clock);
             AccessRequest candidate = request.copy();
             candidate.completeProvisioningRetry(
@@ -250,8 +255,26 @@ public final class RequestService {
             AccessRequest persisted = updateOrThrow(candidate, request.version());
             AccessRequestEvent event = result.isSuccessful()
                     ? AccessRequestEvent.provisioningSucceeded(persisted, actorId, completedAt)
-                    : AccessRequestEvent.provisioningFailed(persisted, actorId, completedAt, result.failureReason());
+                    : AccessRequestEvent.provisioningFailed(
+                            persisted, actorId, completedAt, result.failureReason(), result.failureCode());
             publish(event, persisted, entitlement);
+            return persisted;
+        });
+    }
+
+    public AccessRequest closeFailedProvisioning(String realmId, String requestId, String actorId, String reason) {
+        return transaction.execute(() -> {
+            AccessRequest request = accessRequestRepository.findByIdForUpdate(realmId, requestId)
+                    .orElseThrow(() -> new RequestNotFoundException(requestId));
+            AccessRequest candidate = request.copy();
+            Instant closedAt = Instant.now(clock);
+            candidate.closeFailedProvisioning(actorId, reason, closedAt);
+            AccessRequest persisted = updateOrThrow(candidate, request.version());
+            AccessRequestEvent event = AccessRequestEvent.provisioningClosed(persisted, actorId, closedAt);
+            eventPublisher.publish(event);
+            entitlementRepository.findById(realmId, request.entitlementId())
+                    .ifPresent(entitlement -> notificationPolicy.notificationsFor(persisted, entitlement, event)
+                            .forEach(notificationPublisher::publish));
             return persisted;
         });
     }
@@ -314,7 +337,7 @@ public final class RequestService {
         return entitlement;
     }
 
-    private ProvisioningResult provision(String realmId, String requesterId, Entitlement entitlement) {
+    private ProvisioningResult provision(String requestId, String realmId, String requesterId, Entitlement entitlement) {
         for (EntitlementProvisioner provisioner : provisioners) {
             if (!provisioner.supports(entitlement.resourceType())) {
                 continue;
@@ -322,14 +345,23 @@ public final class RequestService {
             try {
                 ProvisioningResult result = provisioner.grant(realmId, requesterId, entitlement);
                 return result == null
-                        ? ProvisioningResult.failed("The entitlement provisioner returned no result.")
+                        ? ProvisioningResult.failed(
+                                ProvisioningFailureCode.PROVIDER_UNAVAILABLE,
+                                "The entitlement provisioner returned no result.")
                         : result;
             } catch (RuntimeException exception) {
-                return ProvisioningResult.failed("The entitlement provisioner failed: "
+                LOG.log(Level.SEVERE,
+                        "Unexpected provisioning failure [requestId=" + requestId
+                        + ", realmId=" + realmId
+                        + ", entitlementId=" + entitlement.id()
+                        + ", provisioner=" + provisioner.getClass().getName() + "]",
+                        exception);
+                return ProvisioningResult.failed(ProvisioningFailureCode.UNEXPECTED_FAILURE,
+                        "The entitlement provisioner failed: "
                         + exception.getClass().getSimpleName());
             }
         }
-        return ProvisioningResult.failed(
+        return ProvisioningResult.failed(ProvisioningFailureCode.PROVIDER_UNAVAILABLE,
                 "No entitlement provisioner supports resource type " + entitlement.resourceType() + ".");
     }
 

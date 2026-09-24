@@ -38,6 +38,9 @@ public class AccessRequestEventEntity {
     @Column(name = "EVENT_TIMESTAMP", nullable = false)
     private long occurredAt;
 
+    @Column(name = "REQUEST_VERSION")
+    private Long requestVersion;
+
     @Basic(fetch = FetchType.LAZY)
     @JdbcTypeCode(Types.LONGVARCHAR)
     @Column(name = "COMMENT", columnDefinition = "TEXT")
@@ -58,6 +61,7 @@ public class AccessRequestEventEntity {
         this.type = event.type();
         this.actorId = event.actorId();
         this.occurredAt = event.occurredAt().toEpochMilli();
+        this.requestVersion = event.requestVersion();
         this.comment = event.comment();
         this.metadata = event.metadata();
     }
@@ -71,6 +75,7 @@ public class AccessRequestEventEntity {
                 actorId,
                 java.time.Instant.ofEpochMilli(occurredAt),
                 comment,
-                metadata);
+                metadata,
+                requestVersion);
     }
 }

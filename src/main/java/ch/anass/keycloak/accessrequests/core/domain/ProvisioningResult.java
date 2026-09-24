@@ -5,27 +5,37 @@ import java.util.Objects;
 /**
  * The outcome of assigning an entitlement to a requester.
  */
-public record ProvisioningResult(ProvisioningStatus status, String failureReason) {
+public record ProvisioningResult(
+        ProvisioningStatus status, String failureReason, ProvisioningFailureCode failureCode) {
+
+    public ProvisioningResult(ProvisioningStatus status, String failureReason) {
+        this(status, failureReason, status == ProvisioningStatus.FAILED ? ProvisioningFailureCode.UNKNOWN : null);
+    }
 
     public ProvisioningResult {
         status = Objects.requireNonNull(status, "status must not be null");
         if (status == ProvisioningStatus.NOT_STARTED) {
             throw new IllegalArgumentException("A provisioning result must be final");
         }
-        if (status == ProvisioningStatus.SUCCEEDED && failureReason != null) {
-            throw new IllegalArgumentException("A successful provisioning result must not have a failure reason");
+        if (status == ProvisioningStatus.SUCCEEDED && (failureReason != null || failureCode != null)) {
+            throw new IllegalArgumentException("A successful provisioning result must not have failure details");
         }
         if (status == ProvisioningStatus.FAILED) {
             failureReason = requireText(failureReason, "failureReason");
+            failureCode = Objects.requireNonNull(failureCode, "failureCode must not be null");
         }
     }
 
     public static ProvisioningResult succeeded() {
-        return new ProvisioningResult(ProvisioningStatus.SUCCEEDED, null);
+        return new ProvisioningResult(ProvisioningStatus.SUCCEEDED, null, null);
     }
 
     public static ProvisioningResult failed(String failureReason) {
-        return new ProvisioningResult(ProvisioningStatus.FAILED, failureReason);
+        return failed(ProvisioningFailureCode.UNKNOWN, failureReason);
+    }
+
+    public static ProvisioningResult failed(ProvisioningFailureCode code, String failureReason) {
+        return new ProvisioningResult(ProvisioningStatus.FAILED, failureReason, code);
     }
 
     public boolean isSuccessful() {

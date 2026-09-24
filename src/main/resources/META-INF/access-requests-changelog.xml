@@ -272,4 +272,28 @@
             <column name="ID"/>
         </createIndex>
     </changeSet>
+
+    <changeSet id="9" author="4nass">
+        <createIndex indexName="IDX_ACCESS_REQUEST_HISTORY_FAILURE" tableName="AR_ACCESS_REQUEST_HISTORY">
+            <column name="REALM_ID"/>
+            <column name="REQUEST_ID"/>
+            <column name="EVENT_TYPE"/>
+            <column name="EVENT_TIMESTAMP" descending="true"/>
+            <column name="ID" descending="true"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="10" author="4nass">
+        <addColumn tableName="AR_ACCESS_REQUEST">
+            <column name="PROVISIONING_CLOSED_TIMESTAMP" type="BIGINT"/>
+            <column name="PROVISIONING_CLOSED_BY" type="VARCHAR(255)"/>
+            <column name="PROVISIONING_CLOSURE_REASON" type="TEXT"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="11" author="4nass">
+        <addColumn tableName="AR_ACCESS_REQUEST_HISTORY">
+            <column name="REQUEST_VERSION" type="BIGINT"/>
+        </addColumn>
+    </changeSet>
 </databaseChangeLog>

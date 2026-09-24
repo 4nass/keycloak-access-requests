@@ -11,8 +11,10 @@ import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidProvisioningRetryException;
+import ch.anass.keycloak.accessrequests.core.domain.InvalidProvisioningClosureException;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidRequestStateException;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningFailureCode;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
@@ -34,6 +36,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -113,6 +119,61 @@ class RequestProvisioningTest {
     }
 
     @Test
+    void logsUnexpectedProvisionerExceptionsForApprovalAndRetryWithoutPersistingTheirMessage() {
+        Fixture fixture = fixture(ResourceType.REALM_ROLE,
+                List.of(ProvisioningOutcome.THROWS, ProvisioningOutcome.THROWS));
+        List<LogRecord> records = captureProvisioningLogs(() -> {
+            assertEquals(ProvisioningStatus.FAILED, fixture.service().approve(
+                    fixture.request().realmId(), fixture.request().id(), "approver-1", "Approved.")
+                    .provisioningStatus());
+            assertEquals(ProvisioningStatus.FAILED, fixture.service().retryProvisioning(
+                    fixture.request().realmId(), fixture.request().id(), "realm-admin-1")
+                    .provisioningStatus());
+        });
+
+        assertEquals(2, records.size());
+        for (LogRecord record : records) {
+            assertEquals(Level.SEVERE, record.getLevel());
+            assertTrue(record.getMessage().contains("requestId=request-1"));
+            assertTrue(record.getMessage().contains("realmId=realm-1"));
+            assertTrue(record.getMessage().contains("entitlementId=entitlement-1"));
+            assertEquals("Sensitive provider diagnostic", record.getThrown().getMessage());
+        }
+        assertEquals(List.of("UNEXPECTED_FAILURE", "UNEXPECTED_FAILURE"), fixture.events().published().stream()
+                .filter(event -> event.type().name().equals("PROVISIONING_FAILED"))
+                .map(AccessRequestEvent::metadata)
+                .toList());
+        assertTrue(fixture.events().published().stream()
+                .noneMatch(event -> event.comment() != null
+                        && event.comment().contains("Sensitive provider diagnostic")));
+    }
+
+    @Test
+    void retriesAfterATransientProvisionerExceptionHasCleared() {
+        Fixture fixture = fixture(ResourceType.REALM_ROLE,
+                List.of(ProvisioningOutcome.THROWS, ProvisioningOutcome.SUCCEEDED));
+        List<LogRecord> records = captureProvisioningLogs(() -> {
+            AccessRequest approved = fixture.service().approve(
+                    fixture.request().realmId(), fixture.request().id(), "approver-1", "Approved.");
+            assertEquals(ProvisioningStatus.FAILED, approved.provisioningStatus());
+            AccessRequest retried = fixture.service().retryProvisioning(
+                    fixture.request().realmId(), fixture.request().id(), "realm-admin-1");
+            assertEquals(ProvisioningStatus.SUCCEEDED, retried.provisioningStatus());
+        });
+
+        assertEquals(1, records.size());
+        assertEquals("Sensitive provider diagnostic", records.getFirst().getThrown().getMessage());
+        assertEquals(2, fixture.provisioner().grantAttempts());
+        assertEquals(ProvisioningStatus.SUCCEEDED, fixture.persistedRequest().provisioningStatus());
+        assertEquals(List.of("REQUEST_APPROVED", "PROVISIONING_STARTED", "PROVISIONING_FAILED",
+                "PROVISIONING_STARTED", "PROVISIONING_SUCCEEDED"), fixture.eventTypes());
+        assertEquals(List.of("UNEXPECTED_FAILURE"), fixture.events().published().stream()
+                .filter(event -> event.type().name().equals("PROVISIONING_FAILED"))
+                .map(AccessRequestEvent::metadata)
+                .toList());
+    }
+
+    @Test
     void retriesOnlyTheProvisioningOfAnApprovedFailedRequestAndPreservesItsDecision() {
         Fixture fixture = fixture(
                 ResourceType.CLIENT_ROLE,
@@ -161,6 +222,14 @@ class RequestProvisioningTest {
                         "PROVISIONING_STARTED",
                         "PROVISIONING_FAILED"),
                 fixture.eventTypes());
+        assertEquals(List.of("RESOURCE_MISSING", "RESOURCE_MISSING"), fixture.events().published().stream()
+                .filter(event -> event.type().name().equals("PROVISIONING_FAILED"))
+                .map(event -> event.metadata())
+                .toList());
+        assertEquals(List.of(originallyApproved.version(), retried.version()), fixture.events().published().stream()
+                .filter(event -> event.type().name().equals("PROVISIONING_FAILED"))
+                .map(event -> event.requestVersion())
+                .toList());
         assertEquals(ProvisioningStatus.FAILED, fixture.persistedRequest().provisioningStatus());
     }
 
@@ -271,6 +340,52 @@ class RequestProvisioningTest {
     }
 
     @Test
+    void closesAnUnrecoverableFailureWithAnAuditEventAndNoFurtherRetry() {
+        Fixture fixture = fixture(ResourceType.REALM_ROLE, ProvisioningOutcome.FAILED);
+        fixture.service().approve(
+                fixture.request().realmId(), fixture.request().id(), "approver-1", "Approved.");
+
+        AccessRequest closed = fixture.service().closeFailedProvisioning(
+                fixture.request().realmId(), fixture.request().id(), "manager-1",
+                "  The requester was permanently removed.  ");
+
+        assertEquals(DecisionStatus.APPROVED, closed.decisionStatus());
+        assertEquals(ProvisioningStatus.FAILED, closed.provisioningStatus());
+        assertEquals("manager-1", closed.provisioningClosedBy());
+        assertEquals("The requester was permanently removed.", closed.provisioningClosureReason());
+        assertEquals(CLOCK.instant(), closed.provisioningClosedAt());
+        assertTrue(fixture.persistedRequest().provisioningFailureClosed());
+        assertEquals("PROVISIONING_CLOSED", fixture.eventTypes().getLast());
+        assertEquals("The requester was permanently removed.", fixture.events().published().getLast().comment());
+        assertThrows(InvalidProvisioningRetryException.class, () -> fixture.service().retryProvisioning(
+                fixture.request().realmId(), fixture.request().id(), "manager-1"));
+        assertThrows(InvalidProvisioningClosureException.class, () -> fixture.service().closeFailedProvisioning(
+                fixture.request().realmId(), fixture.request().id(), "manager-1", "Another closure reason."));
+        assertEquals(1, fixture.provisioner().grantAttempts());
+    }
+
+    @Test
+    void rejectsClosureOfNonFailedAndCrossRealmRequests() {
+        Fixture fixture = fixture(ResourceType.REALM_ROLE, ProvisioningOutcome.FAILED);
+        assertThrows(InvalidProvisioningClosureException.class, () -> fixture.service().closeFailedProvisioning(
+                fixture.request().realmId(), fixture.request().id(), "manager-1", "An operational reason."));
+        assertThrows(RequestNotFoundException.class, () -> fixture.service().closeFailedProvisioning(
+                "other-realm", fixture.request().id(), "manager-1", "An operational reason."));
+    }
+
+    @Test
+    void requiresAnActionableClosureReasonWithoutMutatingTheFailedRequest() {
+        Fixture fixture = fixture(ResourceType.REALM_ROLE, ProvisioningOutcome.FAILED);
+        fixture.service().approve(
+                fixture.request().realmId(), fixture.request().id(), "approver-1", "Approved.");
+        assertThrows(IllegalArgumentException.class, () -> fixture.service().closeFailedProvisioning(
+                fixture.request().realmId(), fixture.request().id(), "manager-1", "too short"));
+        assertEquals(ProvisioningStatus.FAILED, fixture.persistedRequest().provisioningStatus());
+        assertTrue(!fixture.persistedRequest().provisioningFailureClosed());
+        assertEquals("PROVISIONING_FAILED", fixture.eventTypes().getLast());
+    }
+
+    @Test
     void revalidatesTheEntitlementUnderTheProvisioningTransactionLock() {
         Fixture fixture = fixture(ResourceType.REALM_ROLE, ProvisioningOutcome.SUCCEEDED);
         Entitlement unpublished = fixture.entitlement().unpublish(CLOCK.instant());
@@ -325,6 +440,35 @@ class RequestProvisioningTest {
 
     private static Fixture fixture(ResourceType resourceType, ProvisioningOutcome outcome) {
         return fixture(resourceType, List.of(outcome));
+    }
+
+    private static List<LogRecord> captureProvisioningLogs(Runnable operation) {
+        List<LogRecord> records = new ArrayList<>();
+        Logger logger = Logger.getLogger(RequestService.class.getName());
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                records.add(record);
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        boolean useParentHandlers = logger.getUseParentHandlers();
+        logger.setUseParentHandlers(false);
+        logger.addHandler(handler);
+        try {
+            operation.run();
+        } finally {
+            logger.removeHandler(handler);
+            logger.setUseParentHandlers(useParentHandlers);
+        }
+        return records;
     }
 
     private static Fixture fixture(ResourceType resourceType, List<ProvisioningOutcome> outcomes) {
@@ -407,7 +551,8 @@ class RequestProvisioningTest {
 
     private enum ProvisioningOutcome {
         SUCCEEDED,
-        FAILED
+        FAILED,
+        THROWS
     }
 
     private static final class RecordingProvisioner implements EntitlementProvisioner {
@@ -436,7 +581,9 @@ class RequestProvisioningTest {
             ProvisioningOutcome outcome = outcomes.get(Math.min(grantAttempts - 1, outcomes.size() - 1));
             return switch (outcome) {
                 case SUCCEEDED -> ProvisioningResult.succeeded();
-                case FAILED -> ProvisioningResult.failed("The target resource could not be resolved.");
+                case FAILED -> ProvisioningResult.failed(ProvisioningFailureCode.RESOURCE_MISSING,
+                        "The target resource could not be resolved.");
+                case THROWS -> throw new IllegalStateException("Sensitive provider diagnostic");
             };
         }
 

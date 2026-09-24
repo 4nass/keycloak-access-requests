@@ -2,6 +2,7 @@ package ch.anass.keycloak.accessrequests.spi.provisioning;
 
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningFailureCode;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
@@ -24,6 +25,12 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -63,6 +70,7 @@ class KeycloakEntitlementProvisionerTest {
         ProvisioningResult result = grant(provisioner(fixture), fixture.entitlement());
 
         assertEquals(ProvisioningStatus.FAILED, result.status());
+        assertEquals(ProvisioningFailureCode.RESOURCE_MISSING, result.failureCode());
         fixture.assertNoGrant();
     }
 
@@ -74,7 +82,50 @@ class KeycloakEntitlementProvisionerTest {
         ProvisioningResult result = grant(provisioner(fixture), fixture.entitlement());
 
         assertEquals(ProvisioningStatus.FAILED, result.status());
+        assertEquals(ProvisioningFailureCode.REQUESTER_MISSING, result.failureCode());
         fixture.assertNoGrant();
+    }
+
+    @Test
+    void logsUnexpectedKeycloakFailureWithoutReturningItsSensitiveMessage() {
+        KeycloakFixture fixture = KeycloakFixture.withTarget(ResourceType.REALM_ROLE);
+        RuntimeException failure = new IllegalStateException("Sensitive Keycloak diagnostic");
+        fixture.failRequesterLookup(failure);
+        List<LogRecord> records = new ArrayList<>();
+        Logger logger = Logger.getLogger(KeycloakEntitlementProvisioner.class.getName());
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                records.add(record);
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        boolean useParentHandlers = logger.getUseParentHandlers();
+        logger.setUseParentHandlers(false);
+        logger.addHandler(handler);
+        ProvisioningResult result;
+        try {
+            result = grant(provisioner(fixture), fixture.entitlement());
+        } finally {
+            logger.removeHandler(handler);
+            logger.setUseParentHandlers(useParentHandlers);
+        }
+
+        assertEquals(ProvisioningFailureCode.UNEXPECTED_FAILURE, result.failureCode());
+        assertFalse(result.failureReason().contains("Sensitive Keycloak diagnostic"));
+        assertEquals(1, records.size());
+        assertEquals(Level.SEVERE, records.getFirst().getLevel());
+        assertEquals(failure, records.getFirst().getThrown());
+        assertTrue(records.getFirst().getMessage().contains("realmId=realm-1"));
+        assertTrue(records.getFirst().getMessage().contains("requesterId=requester-1"));
+        assertTrue(records.getFirst().getMessage().contains("entitlementId=entitlement-1"));
     }
 
     @Test
@@ -85,6 +136,7 @@ class KeycloakEntitlementProvisionerTest {
         ProvisioningResult result = grant(provisioner, "another-realm", fixture.requesterId(), fixture.entitlement());
 
         assertEquals(ProvisioningStatus.FAILED, result.status());
+        assertEquals(ProvisioningFailureCode.REALM_MISMATCH, result.failureCode());
         fixture.assertNoGrant();
     }
 
@@ -95,6 +147,7 @@ class KeycloakEntitlementProvisionerTest {
         ProvisioningResult result = grant(provisioner(fixture), fixture.entitlement(ResourceType.REALM_ROLE));
 
         assertEquals(ProvisioningStatus.FAILED, result.status());
+        assertEquals(ProvisioningFailureCode.RESOURCE_TYPE_MISMATCH, result.failureCode());
         fixture.assertNoGrant();
     }
 
@@ -105,6 +158,7 @@ class KeycloakEntitlementProvisionerTest {
         ProvisioningResult result = grant(provisioner(fixture), fixture.entitlement(ResourceType.CLIENT_ROLE));
 
         assertEquals(ProvisioningStatus.FAILED, result.status());
+        assertEquals(ProvisioningFailureCode.RESOURCE_TYPE_MISMATCH, result.failureCode());
         fixture.assertNoGrant();
     }
 
@@ -136,6 +190,7 @@ class KeycloakEntitlementProvisionerTest {
         private final Set<RoleModel> grantedRoles = Collections.newSetFromMap(new IdentityHashMap<>());
         private final Set<GroupModel> joinedGroups = Collections.newSetFromMap(new IdentityHashMap<>());
         private boolean requesterExists = true;
+        private RuntimeException requesterLookupFailure;
         private int roleGrantCalls;
         private int groupJoinCalls;
 
@@ -184,6 +239,10 @@ class KeycloakEntitlementProvisionerTest {
             requesterExists = false;
         }
 
+        void failRequesterLookup(RuntimeException failure) {
+            requesterLookupFailure = failure;
+        }
+
         RealmModel realm() {
             return proxy(RealmModel.class, (proxy, method, arguments) -> switch (method.getName()) {
                 case "getId" -> REALM_ID;
@@ -193,10 +252,15 @@ class KeycloakEntitlementProvisionerTest {
         }
 
         KeycloakSession session() {
-            UserProvider users = proxy(UserProvider.class, (proxy, method, arguments) ->
-                    method.getName().equals("getUserById") && REQUESTER_ID.equals(arguments[1]) && requesterExists
-                            ? requester()
-                            : null);
+            UserProvider users = proxy(UserProvider.class, (proxy, method, arguments) -> {
+                if (!method.getName().equals("getUserById")) {
+                    return null;
+                }
+                if (requesterLookupFailure != null) {
+                    throw requesterLookupFailure;
+                }
+                return REQUESTER_ID.equals(arguments[1]) && requesterExists ? requester() : null;
+            });
             GroupProvider groupsProvider = proxy(GroupProvider.class, (proxy, method, arguments) ->
                     method.getName().equals("getGroupById") ? groups.get(arguments[1]) : null);
             return proxy(KeycloakSession.class, (proxy, method, arguments) -> switch (method.getName()) {

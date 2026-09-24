@@ -15,8 +15,10 @@ import ch.anass.keycloak.accessrequests.core.domain.EntitlementAuditEvent;
 import ch.anass.keycloak.accessrequests.core.domain.EntitlementPage;
 import ch.anass.keycloak.accessrequests.core.domain.EntitlementQuery;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidProvisioningRetryException;
+import ch.anass.keycloak.accessrequests.core.domain.InvalidProvisioningClosureException;
 import ch.anass.keycloak.accessrequests.core.domain.InvalidRequestStateException;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningFailureCode;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.domain.SelfApprovalException;
@@ -300,16 +302,22 @@ public final class AccessRequestRealmResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listFailedProvisioningRequests(
             @DefaultValue("0") @QueryParam("page") int page,
-            @DefaultValue("20") @QueryParam("size") int size) {
+            @DefaultValue("20") @QueryParam("size") int size,
+            @DefaultValue("OPEN") @QueryParam("state") String state) {
         AccessRequestManager manager = requireAccessRequestManager();
         var entityManager = Objects.requireNonNull(
                 session.getProvider(JpaConnectionProvider.class),
                 "Keycloak JPA connection provider must not be null")
                 .getEntityManager();
         try {
+            if (!"OPEN".equals(state) && !"CLOSED".equals(state)) {
+                throw new IllegalArgumentException("state must be OPEN or CLOSED");
+            }
+            JpaAccessRequestRepository repository = new JpaAccessRequestRepository(entityManager);
             JpaAccessRequestRepository.FailedProvisioningPage failedRequests =
-                    new JpaAccessRequestRepository(entityManager)
-                            .findFailedProvisioning(manager.realm().getId(), page, size);
+                    "CLOSED".equals(state)
+                            ? repository.findClosedProvisioning(manager.realm().getId(), page, size)
+                            : repository.findFailedProvisioning(manager.realm().getId(), page, size);
             return Response.ok(FailedProvisioningRequestListResponse.from(failedRequests)).build();
         } catch (IllegalArgumentException exception) {
             return error(
@@ -361,6 +369,32 @@ public final class AccessRequestRealmResource {
             return error(Response.Status.NOT_FOUND, "ENTITLEMENT_NOT_FOUND", exception.getMessage(), requestId);
         } catch (InvalidProvisioningRetryException exception) {
             return error(Response.Status.CONFLICT, "INVALID_PROVISIONING_RETRY", exception.getMessage(), requestId);
+        } catch (ConcurrentRequestModificationException exception) {
+            return error(Response.Status.CONFLICT, "CONCURRENT_MODIFICATION", exception.getMessage(), requestId);
+        }
+    }
+
+    @POST
+    @Path("admin/requests/{requestId}/provisioning/close")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response closeFailedProvisioning(
+            @PathParam("requestId") String requestId, ProvisioningClosureSubmission submission) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        if (submission == null || submission.reason() == null
+                || submission.reason().strip().length() < 10
+                || submission.reason().strip().length() > 1_000) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_PROVISIONING_CLOSURE_REASON",
+                    "reason must contain 10 to 1000 characters", requestId);
+        }
+        try {
+            AccessRequest closed = requestService(manager.realm(), manager.user()).closeFailedProvisioning(
+                    manager.realm().getId(), requestId, manager.user().getId(), submission.reason());
+            return Response.ok(ProvisioningClosureResponse.from(closed)).build();
+        } catch (RequestNotFoundException exception) {
+            return error(Response.Status.NOT_FOUND, "REQUEST_NOT_FOUND", exception.getMessage(), requestId);
+        } catch (InvalidProvisioningClosureException exception) {
+            return error(Response.Status.CONFLICT, "INVALID_PROVISIONING_CLOSURE", exception.getMessage(), requestId);
         } catch (ConcurrentRequestModificationException exception) {
             return error(Response.Status.CONFLICT, "CONCURRENT_MODIFICATION", exception.getMessage(), requestId);
         }
@@ -890,6 +924,21 @@ public final class AccessRequestRealmResource {
     public record DecisionSubmission(String comment) {
     }
 
+    public record ProvisioningClosureSubmission(String reason) {
+    }
+
+    public record ProvisioningClosureResponse(
+            String id, DecisionStatus decisionStatus, ProvisioningStatus provisioningStatus,
+            String closedAt, String closedBy, String reason) {
+
+        private static ProvisioningClosureResponse from(AccessRequest request) {
+            return new ProvisioningClosureResponse(
+                    request.id(), request.decisionStatus(), request.provisioningStatus(),
+                    request.provisioningClosedAt().toString(), request.provisioningClosedBy(),
+                    request.provisioningClosureReason());
+        }
+    }
+
     public record RequestResponse(
             String id,
             String entitlementId,
@@ -923,7 +972,8 @@ public final class AccessRequestRealmResource {
             String resourceName,
             DecisionStatus decisionStatus,
             ProvisioningStatus provisioningStatus,
-            String createdAt) {
+            String createdAt,
+            String provisioningClosedAt) {
 
         private static RequestSummaryResponse from(AccessRequest request) {
             return new RequestSummaryResponse(
@@ -933,7 +983,8 @@ public final class AccessRequestRealmResource {
                     request.resourceNameSnapshot(),
                     request.decisionStatus(),
                     request.provisioningStatus(),
-                    request.createdAt().toString());
+                    request.createdAt().toString(),
+                    request.provisioningClosedAt() == null ? null : request.provisioningClosedAt().toString());
         }
     }
 
@@ -945,6 +996,7 @@ public final class AccessRequestRealmResource {
             DecisionStatus decisionStatus,
             ProvisioningStatus provisioningStatus,
             String createdAt,
+            String provisioningClosedAt,
             String justification,
             DecisionResponse decision,
             List<RequestHistoryEntryResponse> history) {
@@ -965,6 +1017,7 @@ public final class AccessRequestRealmResource {
                     request.decisionStatus(),
                     request.provisioningStatus(),
                     request.createdAt().toString(),
+                    request.provisioningClosedAt() == null ? null : request.provisioningClosedAt().toString(),
                     request.justification(),
                     decision,
                     details.history().stream().map(RequestHistoryEntryResponse::from).toList());
@@ -1042,7 +1095,11 @@ public final class AccessRequestRealmResource {
             String resourceName,
             DecisionStatus decisionStatus,
             ProvisioningStatus provisioningStatus,
-            String updatedAt) {
+            String updatedAt,
+            ProvisioningFailureCode failureCode,
+            String closedAt,
+            String closedBy,
+            String closureReason) {
 
         private static FailedProvisioningRequestResponse from(
                 JpaAccessRequestRepository.FailedProvisioningRequest request) {
@@ -1054,7 +1111,11 @@ public final class AccessRequestRealmResource {
                     request.resourceName(),
                     request.decisionStatus(),
                     request.provisioningStatus(),
-                    request.updatedAt().toString());
+                    request.updatedAt().toString(),
+                    request.failureCode(),
+                    request.closedAt() == null ? null : request.closedAt().toString(),
+                    request.closedBy(),
+                    request.closureReason());
         }
     }
 

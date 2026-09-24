@@ -51,6 +51,15 @@ public final class AccessRequestNotificationPolicy {
                     request,
                     entitlement,
                     event));
+            case PROVISIONING_CLOSED -> List.of(
+                    notification(
+                            AccessRequestNotificationType.PROVISIONING_CLOSED,
+                            AccessRequestNotificationRecipientType.USER,
+                            request.requesterId(), request, entitlement, event),
+                    notification(
+                            AccessRequestNotificationType.PROVISIONING_CLOSED,
+                            AccessRequestNotificationRecipientType.REALM_ROLE,
+                            entitlement.approverRoleId(), request, entitlement, event));
             case REQUEST_CANCELED, PROVISIONING_STARTED, PROVISIONING_SUCCEEDED -> List.of();
         };
     }

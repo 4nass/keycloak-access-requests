@@ -21,6 +21,9 @@ public final class AccessRequest {
     private final Instant createdAt;
     private Instant updatedAt;
     private Instant decidedAt;
+    private Instant provisioningClosedAt;
+    private String provisioningClosedBy;
+    private String provisioningClosureReason;
     private long version;
 
     private AccessRequest(
@@ -107,6 +110,18 @@ public final class AccessRequest {
             Instant updatedAt,
             Instant decidedAt,
             long version) {
+        return rehydrate(id, realmId, requesterId, entitlementId, resourceType, resourceId,
+                resourceNameSnapshot, justification, decisionStatus, provisioningStatus, approverId,
+                decisionComment, createdAt, updatedAt, decidedAt, version, null, null, null);
+    }
+
+    public static AccessRequest rehydrate(
+            String id, String realmId, String requesterId, String entitlementId,
+            ResourceType resourceType, String resourceId, String resourceNameSnapshot,
+            String justification, DecisionStatus decisionStatus, ProvisioningStatus provisioningStatus,
+            String approverId, String decisionComment, Instant createdAt, Instant updatedAt,
+            Instant decidedAt, long version, Instant provisioningClosedAt,
+            String provisioningClosedBy, String provisioningClosureReason) {
         AccessRequest request = create(
                 id,
                 realmId,
@@ -123,6 +138,9 @@ public final class AccessRequest {
         request.decisionComment = decisionComment;
         request.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
         request.decidedAt = decidedAt;
+        request.provisioningClosedAt = provisioningClosedAt;
+        request.provisioningClosedBy = provisioningClosedBy;
+        request.provisioningClosureReason = provisioningClosureReason;
         request.version = requireNonNegativeVersion(version);
         return request;
     }
@@ -191,6 +209,22 @@ public final class AccessRequest {
         return version;
     }
 
+    public Instant provisioningClosedAt() {
+        return provisioningClosedAt;
+    }
+
+    public String provisioningClosedBy() {
+        return provisioningClosedBy;
+    }
+
+    public String provisioningClosureReason() {
+        return provisioningClosureReason;
+    }
+
+    public boolean provisioningFailureClosed() {
+        return provisioningClosedAt != null;
+    }
+
     public AccessRequest copy() {
         return copyWithVersion(version);
     }
@@ -220,7 +254,8 @@ public final class AccessRequest {
     }
 
     public void completeProvisioningRetry(ProvisioningStatus result, Instant completedAt) {
-        if (decisionStatus != DecisionStatus.APPROVED || provisioningStatus != ProvisioningStatus.FAILED) {
+        if (decisionStatus != DecisionStatus.APPROVED || provisioningStatus != ProvisioningStatus.FAILED
+                || provisioningFailureClosed()) {
             throw new InvalidProvisioningRetryException();
         }
         if (result != ProvisioningStatus.SUCCEEDED && result != ProvisioningStatus.FAILED) {
@@ -228,6 +263,21 @@ public final class AccessRequest {
         }
         this.provisioningStatus = result;
         this.updatedAt = Objects.requireNonNull(completedAt, "completedAt must not be null");
+    }
+
+    public void closeFailedProvisioning(String actorId, String reason, Instant closedAt) {
+        if (decisionStatus != DecisionStatus.APPROVED || provisioningStatus != ProvisioningStatus.FAILED
+                || provisioningFailureClosed()) {
+            throw new InvalidProvisioningClosureException();
+        }
+        String trimmedReason = requireText(reason, "reason").strip();
+        if (trimmedReason.length() < 10 || trimmedReason.length() > 1_000) {
+            throw new IllegalArgumentException("reason must contain 10 to 1000 characters");
+        }
+        provisioningClosedBy = requireText(actorId, "actorId");
+        provisioningClosureReason = trimmedReason;
+        provisioningClosedAt = Objects.requireNonNull(closedAt, "closedAt must not be null");
+        updatedAt = closedAt;
     }
 
     public void reject(String approverId, String decisionComment) {
@@ -288,6 +338,9 @@ public final class AccessRequest {
         copy.provisioningStatus = provisioningStatus;
         copy.updatedAt = updatedAt;
         copy.decidedAt = decidedAt;
+        copy.provisioningClosedAt = provisioningClosedAt;
+        copy.provisioningClosedBy = provisioningClosedBy;
+        copy.provisioningClosureReason = provisioningClosureReason;
         copy.version = newVersion;
         return copy;
     }

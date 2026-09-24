@@ -79,6 +79,17 @@ public class AccessRequestEntity {
     @Column(name = "DECIDED_TIMESTAMP")
     private Long decidedTimestamp;
 
+    @Column(name = "PROVISIONING_CLOSED_TIMESTAMP")
+    private Long provisioningClosedTimestamp;
+
+    @Column(name = "PROVISIONING_CLOSED_BY", length = 255)
+    private String provisioningClosedBy;
+
+    @Basic(fetch = FetchType.LAZY)
+    @JdbcTypeCode(Types.LONGVARCHAR)
+    @Column(name = "PROVISIONING_CLOSURE_REASON", columnDefinition = "TEXT")
+    private String provisioningClosureReason;
+
     @Version
     @Column(name = "VERSION", nullable = false)
     private long version;
@@ -110,6 +121,10 @@ public class AccessRequestEntity {
         this.createdTimestamp = request.createdAt().toEpochMilli();
         this.updatedTimestamp = request.updatedAt().toEpochMilli();
         this.decidedTimestamp = request.decidedAt() == null ? null : request.decidedAt().toEpochMilli();
+        this.provisioningClosedTimestamp = request.provisioningClosedAt() == null
+                ? null : request.provisioningClosedAt().toEpochMilli();
+        this.provisioningClosedBy = request.provisioningClosedBy();
+        this.provisioningClosureReason = request.provisioningClosureReason();
     }
 
     AccessRequest toDomain() {
@@ -129,7 +144,11 @@ public class AccessRequestEntity {
                 java.time.Instant.ofEpochMilli(createdTimestamp),
                 java.time.Instant.ofEpochMilli(updatedTimestamp),
                 decidedTimestamp == null ? null : java.time.Instant.ofEpochMilli(decidedTimestamp),
-                version);
+                version,
+                provisioningClosedTimestamp == null ? null
+                        : java.time.Instant.ofEpochMilli(provisioningClosedTimestamp),
+                provisioningClosedBy,
+                provisioningClosureReason);
     }
 
     String realmId() {

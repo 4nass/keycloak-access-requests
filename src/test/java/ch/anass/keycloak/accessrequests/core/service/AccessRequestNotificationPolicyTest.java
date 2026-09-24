@@ -90,6 +90,25 @@ class AccessRequestNotificationPolicyTest {
     }
 
     @Test
+    void notifiesTheRequesterAndApproversWhenAnUnrecoverableFailureIsClosed() {
+        AccessRequest request = request();
+        Entitlement entitlement = entitlement();
+        AccessRequestEvent event = AccessRequestEvent.rehydrate(
+                "closure-1", request.id(), request.realmId(),
+                ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType.PROVISIONING_CLOSED,
+                "manager-1", CREATED_AT, "The original resource was removed.", null);
+
+        List<AccessRequestNotification> notifications = policy.notificationsFor(request, entitlement, event);
+
+        assertEquals(2, notifications.size());
+        assertEquals(AccessRequestNotificationType.PROVISIONING_CLOSED, notifications.get(0).type());
+        assertEquals(AccessRequestNotificationRecipientType.USER, notifications.get(0).recipientType());
+        assertEquals(request.requesterId(), notifications.get(0).recipientId());
+        assertEquals(AccessRequestNotificationRecipientType.REALM_ROLE, notifications.get(1).recipientType());
+        assertEquals(entitlement.approverRoleId(), notifications.get(1).recipientId());
+    }
+
+    @Test
     void doesNotSendDuplicateNotificationsForTechnicalOrCancellationEvents() {
         AccessRequest request = request();
         Entitlement entitlement = entitlement();

@@ -37,6 +37,7 @@ import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Testcontainers(disabledWithoutDocker = true)
@@ -272,10 +273,14 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
             assertTrue(tableExists(connection, "ar_access_request"));
             assertTrue(tableExists(connection, "ar_access_request_history"));
+            try (ResultSet columns = connection.getMetaData().getColumns(
+                    null, "public", "ar_access_request_history", "request_version")) {
+                assertTrue(columns.next(), "Failure event versions must be available after migration.");
+            }
             assertTrue(tableExists(connection, "ar_entitlement"));
             assertTrue(tableExists(connection, "ar_entitlement_history"));
             assertTrue(tableExists(connection, "ar_notification_outbox"));
-            assertEquals(8, providerChangeSetCount(connection));
+            assertEquals(11, providerChangeSetCount(connection));
         }
     }
 
@@ -1095,6 +1100,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertTrue(retriedResponse.body().contains("\"decisionStatus\":\"APPROVED\""));
         assertTrue(retriedResponse.body().contains("\"provisioningStatus\":\"FAILED\""));
         assertProvisioningRetryAuditEvents(requestId, subjectOf(managerToken));
+        assertFailedProvisioningAdministration(
+                server, accessRequestsEndpoint, adminToken, approverToken, managerToken, requestId);
 
         URI missingRetryEndpoint = URI.create(accessRequestsEndpoint
                 + "/admin/requests/missing-request/provisioning/retry");
@@ -1106,6 +1113,96 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(404, missingRetryResponse.statusCode());
         assertError(missingRetryResponse.body(), "REQUEST_NOT_FOUND", "missing-request");
+
+        URI closeEndpoint = URI.create(accessRequestsEndpoint
+                + "/admin/requests/" + requestId + "/provisioning/close");
+        HttpResponse<Void> forbiddenClosure = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(closeEndpoint)
+                        .header("Authorization", "Bearer " + approverToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("{\"reason\":\"The role was removed.\"}"))
+                        .build(), HttpResponse.BodyHandlers.discarding());
+        assertEquals(403, forbiddenClosure.statusCode());
+
+        HttpResponse<String> invalidClosure = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(closeEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("{\"reason\":\"short\"}"))
+                        .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, invalidClosure.statusCode());
+
+        HttpResponse<String> closedResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(closeEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"reason\":\"The Keycloak role was permanently removed.\"}"))
+                        .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, closedResponse.statusCode());
+        assertTrue(closedResponse.body().contains("\"closedBy\":\"" + subjectOf(managerToken) + "\""));
+
+        HttpResponse<String> closedQueue = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(accessRequestsEndpoint + "/admin/provisioning-failures"))
+                        .header("Authorization", "Bearer " + managerToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, closedQueue.statusCode());
+        assertFalse(closedQueue.body().contains(requestId));
+
+        URI archiveEndpoint = URI.create(accessRequestsEndpoint + "/admin/provisioning-failures?state=CLOSED");
+        HttpResponse<Void> forbiddenArchive = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(archiveEndpoint)
+                        .header("Authorization", "Bearer " + approverToken)
+                        .GET().build(), HttpResponse.BodyHandlers.discarding());
+        assertEquals(403, forbiddenArchive.statusCode());
+        HttpResponse<String> archive = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(archiveEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, archive.statusCode());
+        JsonNode archivedPage = new ObjectMapper().readTree(archive.body());
+        JsonNode archivedRequest = null;
+        for (JsonNode item : archivedPage.path("items")) {
+            if (requestId.equals(item.path("id").asText())) {
+                archivedRequest = item;
+                break;
+            }
+        }
+        assertNotNull(archivedRequest);
+        assertEquals(subjectOf(managerToken), archivedRequest.path("closedBy").asText());
+        assertEquals("The Keycloak role was permanently removed.", archivedRequest.path("closureReason").asText());
+        assertFalse(archivedRequest.path("closedAt").asText().isBlank());
+        assertFalse(archivedRequest.has("justification"));
+        assertFalse(archivedRequest.has("failureReason"));
+        HttpResponse<String> invalidArchiveState = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(accessRequestsEndpoint + "/admin/provisioning-failures?state=ALL"))
+                        .header("Authorization", "Bearer " + managerToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, invalidArchiveState.statusCode());
+        assertError(invalidArchiveState.body(), "INVALID_PROVISIONING_FAILURE_QUERY", null);
+
+        HttpResponse<String> closedRetry = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(retryEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, closedRetry.statusCode());
+        HttpResponse<String> duplicateClosure = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(closeEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"reason\":\"Another closure reason.\"}"))
+                        .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, duplicateClosure.statusCode());
+
+        HttpResponse<String> requesterHistory = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(accessRequestsEndpoint + "/mine/" + requestId))
+                        .header("Authorization", "Bearer " + requesterToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, requesterHistory.statusCode());
+        assertTrue(requesterHistory.body().contains("\"type\":\"PROVISIONING_CLOSED\""));
+        assertTrue(requesterHistory.body().contains("\"provisioningClosedAt\":"));
+        assertFalse(requesterHistory.body().contains("The Keycloak role was permanently removed."));
     }
 
     private void assertProvisioningRetryEndpoint(
@@ -1169,6 +1266,9 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertEquals("APPROVED", item.path("decisionStatus").asText());
             assertEquals("FAILED", item.path("provisioningStatus").asText());
             assertFalse(item.has("failureReason"), "Internal provisioning failure details must not be exposed.");
+            if (failedRequestId.equals(item.path("id").asText())) {
+                assertEquals("RESOURCE_MISSING", item.path("failureCode").asText());
+            }
             assertFalse(item.has("justification"), "The operational list must not expose requester justification.");
             containsFailedRequest |= failedRequestId.equals(item.path("id").asText());
         }

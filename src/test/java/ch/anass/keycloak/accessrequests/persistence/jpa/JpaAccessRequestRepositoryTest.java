@@ -12,6 +12,8 @@ import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningFailureCode;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
@@ -249,6 +251,34 @@ class JpaAccessRequestRepositoryTest {
             repository.createIfNoPending(newerFailure).orElseThrow();
             repository.createIfNoPending(succeeded).orElseThrow();
             repository.createIfNoPending(otherRealmFailure).orElseThrow();
+            JpaAccessRequestEventPublisher events = new JpaAccessRequestEventPublisher(entityManager);
+            events.publish(AccessRequestEvent.rehydrate(
+                    UUID.randomUUID().toString(), olderFailure.id(), olderFailure.realmId(),
+                    AccessRequestEventType.PROVISIONING_FAILED, "approver-1",
+                    olderFailure.updatedAt(), "Legacy internal detail", null));
+            events.publish(AccessRequestEvent.rehydrate(
+                    UUID.randomUUID().toString(), olderFailure.id(), olderFailure.realmId(),
+                    AccessRequestEventType.PROVISIONING_FAILED, "approver-1",
+                    olderFailure.updatedAt(), "Another same-millisecond legacy failure",
+                    ProvisioningFailureCode.RESOURCE_MISSING.name()));
+            events.publish(AccessRequestEvent.provisioningFailed(
+                    newerFailure, "approver-1", newerFailure.updatedAt().minusSeconds(30),
+                    "Earlier internal detail", ProvisioningFailureCode.RESOURCE_MISSING));
+            events.publish(AccessRequestEvent.rehydrate(
+                    "ffffffff-ffff-ffff-ffff-ffffffffffff", newerFailure.id(), newerFailure.realmId(),
+                    AccessRequestEventType.PROVISIONING_FAILED, "approver-1",
+                    newerFailure.updatedAt(), "Same-time internal detail",
+                    ProvisioningFailureCode.PROVIDER_UNAVAILABLE.name(), 1L));
+            events.publish(AccessRequestEvent.rehydrate(
+                    "00000000-0000-0000-0000-000000000001", newerFailure.id(), newerFailure.realmId(),
+                    AccessRequestEventType.PROVISIONING_FAILED, "approver-1",
+                    newerFailure.updatedAt(), "Latest internal detail",
+                    ProvisioningFailureCode.UNEXPECTED_FAILURE.name(), 2L));
+            events.publish(AccessRequestEvent.rehydrate(
+                    UUID.randomUUID().toString(), newerFailure.id(), "realm-other",
+                    AccessRequestEventType.PROVISIONING_FAILED, "approver-1",
+                    newerFailure.updatedAt().plusSeconds(30), "Other realm detail",
+                    ProvisioningFailureCode.REQUESTER_MISSING.name()));
             return null;
         });
 
@@ -264,7 +294,35 @@ class JpaAccessRequestRepositoryTest {
         assertEquals(DecisionStatus.APPROVED, firstPage.items().get(0).decisionStatus());
         assertEquals(ProvisioningStatus.FAILED, firstPage.items().get(0).provisioningStatus());
         assertEquals("Resource", firstPage.items().get(0).resourceName());
+        assertEquals(ProvisioningFailureCode.UNEXPECTED_FAILURE, firstPage.items().get(0).failureCode());
+        assertEquals(ProvisioningFailureCode.UNKNOWN, secondPage.items().get(0).failureCode());
+        transaction().execute(() -> {
+            AccessRequest closed = repository.findByIdForUpdate("realm-provisioning", newerFailure.id()).orElseThrow();
+            closed.closeFailedProvisioning("manager-1", "The original resource was deleted.",
+                    Instant.parse("2026-09-23T11:00:00Z"));
+            repository.updateIfVersionMatches(closed, newerFailure.version()).orElseThrow();
+            return null;
+        });
+        JpaAccessRequestRepository.FailedProvisioningPage afterClosure =
+                repository.findFailedProvisioning("realm-provisioning", 0, 20);
+        assertEquals(1, afterClosure.total());
+        assertEquals(olderFailure.id(), afterClosure.items().getFirst().id());
+        AccessRequest persistedClosure = repository.findById("realm-provisioning", newerFailure.id()).orElseThrow();
+        assertEquals("manager-1", persistedClosure.provisioningClosedBy());
+        assertEquals("The original resource was deleted.", persistedClosure.provisioningClosureReason());
+        assertEquals(Instant.parse("2026-09-23T11:00:00Z"), persistedClosure.provisioningClosedAt());
+        JpaAccessRequestRepository.FailedProvisioningPage closedPage =
+                repository.findClosedProvisioning("realm-provisioning", 0, 20);
+        assertEquals(1, closedPage.total());
+        assertEquals(newerFailure.id(), closedPage.items().getFirst().id());
+        assertEquals("manager-1", closedPage.items().getFirst().closedBy());
+        assertEquals("The original resource was deleted.", closedPage.items().getFirst().closureReason());
+        assertEquals(Instant.parse("2026-09-23T11:00:00Z"), closedPage.items().getFirst().closedAt());
+        assertEquals(ProvisioningFailureCode.UNEXPECTED_FAILURE, closedPage.items().getFirst().failureCode());
+        assertEquals(0, repository.findClosedProvisioning("realm-other", 0, 20).total());
         assertEquals(0, repository.findFailedProvisioning("realm-empty", 0, 20).total());
+        assertThrows(IllegalArgumentException.class, () -> repository.findClosedProvisioning("realm", 0, 0));
+        assertThrows(IllegalArgumentException.class, () -> repository.findClosedProvisioning("realm", -1, 20));
         assertThrows(IllegalArgumentException.class, () -> repository.findFailedProvisioning("realm", 0, 0));
         assertThrows(IllegalArgumentException.class, () -> repository.findFailedProvisioning("realm", 0, 101));
         assertThrows(IllegalArgumentException.class, () -> repository.findFailedProvisioning("realm", -1, 20));

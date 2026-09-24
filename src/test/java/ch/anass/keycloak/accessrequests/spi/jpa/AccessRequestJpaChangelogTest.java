@@ -51,6 +51,9 @@ class AccessRequestJpaChangelogTest {
                             "CREATED_TIMESTAMP",
                             "UPDATED_TIMESTAMP",
                             "DECIDED_TIMESTAMP",
+                            "PROVISIONING_CLOSED_TIMESTAMP",
+                            "PROVISIONING_CLOSED_BY",
+                            "PROVISIONING_CLOSURE_REASON",
                             "VERSION"),
                     columnsOf(connection, "AR_ACCESS_REQUEST"));
             assertEquals(
@@ -61,6 +64,7 @@ class AccessRequestJpaChangelogTest {
                             "EVENT_TYPE",
                             "ACTOR_ID",
                             "EVENT_TIMESTAMP",
+                            "REQUEST_VERSION",
                             "COMMENT",
                             "METADATA"),
                     columnsOf(connection, "AR_ACCESS_REQUEST_HISTORY"));
@@ -120,6 +124,8 @@ class AccessRequestJpaChangelogTest {
                     .contains("IDX_ACCESS_REQUEST_REQUESTER_CREATED"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
                     .contains("IDX_ACCESS_REQUEST_APPROVAL_QUEUE"));
+            assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST_HISTORY")
+                    .contains("IDX_ACCESS_REQUEST_HISTORY_FAILURE"));
             assertTrue(indexNamesOf(connection, "AR_ENTITLEMENT_HISTORY")
                     .contains("IDX_ENTITLEMENT_HISTORY_ENTITLEMENT_TIME"));
             assertTrue(indexNamesOf(connection, "AR_NOTIFICATION_OUTBOX")

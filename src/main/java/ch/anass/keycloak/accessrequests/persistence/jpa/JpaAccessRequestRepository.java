@@ -3,11 +3,13 @@ package ch.anass.keycloak.accessrequests.persistence.jpa;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
+import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueEntry;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage;
 import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery;
 import ch.anass.keycloak.accessrequests.core.domain.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
+import ch.anass.keycloak.accessrequests.core.domain.ProvisioningFailureCode;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.DuplicatePendingRequestException;
@@ -19,7 +21,9 @@ import org.hibernate.exception.ConstraintViolationException;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -99,6 +103,17 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
      * Lists approved requests whose entitlement provisioning failed, scoped to one realm.
      */
     public FailedProvisioningPage findFailedProvisioning(String realmId, int page, int size) {
+        return findProvisioningFailures(realmId, page, size, false);
+    }
+
+    /**
+     * Lists closed provisioning failures for the same realm, without making them retryable.
+     */
+    public FailedProvisioningPage findClosedProvisioning(String realmId, int page, int size) {
+        return findProvisioningFailures(realmId, page, size, true);
+    }
+
+    private FailedProvisioningPage findProvisioningFailures(String realmId, int page, int size, boolean closed) {
         if (realmId == null || realmId.isBlank()) {
             throw new IllegalArgumentException("realmId must not be blank");
         }
@@ -126,12 +141,15 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
                          where request.realmId = :realmId
                            and request.decisionStatus = :decisionStatus
                            and request.provisioningStatus = :provisioningStatus
+                           and ((:closed = true and request.provisioningClosedTimestamp is not null)
+                                or (:closed = false and request.provisioningClosedTimestamp is null))
                         """, Long.class)
                 .setParameter("realmId", realmId)
                 .setParameter("decisionStatus", DecisionStatus.APPROVED)
                 .setParameter("provisioningStatus", ProvisioningStatus.FAILED)
+                .setParameter("closed", closed)
                 .getSingleResult();
-        List<FailedProvisioningRequest> items = entityManager.createQuery("""
+        List<Object[]> rows = entityManager.createQuery("""
                         select request.id,
                                request.requesterId,
                                request.entitlementId,
@@ -139,20 +157,28 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
                                request.resourceNameSnapshot,
                                request.decisionStatus,
                                request.provisioningStatus,
-                               request.updatedTimestamp
+                               request.updatedTimestamp,
+                               request.provisioningClosedTimestamp,
+                               request.provisioningClosedBy,
+                               request.provisioningClosureReason
                           from AccessRequestEntity request
                          where request.realmId = :realmId
                            and request.decisionStatus = :decisionStatus
                            and request.provisioningStatus = :provisioningStatus
-                         order by request.updatedTimestamp desc, request.id asc
+                           and ((:closed = true and request.provisioningClosedTimestamp is not null)
+                                or (:closed = false and request.provisioningClosedTimestamp is null))
+                         order by request.provisioningClosedTimestamp desc, request.updatedTimestamp desc, request.id asc
                         """, Object[].class)
                 .setParameter("realmId", realmId)
                 .setParameter("decisionStatus", DecisionStatus.APPROVED)
                 .setParameter("provisioningStatus", ProvisioningStatus.FAILED)
+                .setParameter("closed", closed)
                 .setFirstResult(offset)
                 .setMaxResults(size)
-                .getResultList()
-                .stream()
+                .getResultList();
+        Map<String, ProvisioningFailureCode> failureCodes = latestFailureCodes(
+                realmId, rows.stream().map(row -> (String) row[0]).toList());
+        List<FailedProvisioningRequest> items = rows.stream()
                 .map(row -> new FailedProvisioningRequest(
                         (String) row[0],
                         (String) row[1],
@@ -161,9 +187,48 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
                         (String) row[4],
                         (DecisionStatus) row[5],
                         (ProvisioningStatus) row[6],
-                        Instant.ofEpochMilli((Long) row[7])))
+                        Instant.ofEpochMilli((Long) row[7]),
+                        failureCodes.getOrDefault((String) row[0], ProvisioningFailureCode.UNKNOWN),
+                        row[8] == null ? null : Instant.ofEpochMilli((Long) row[8]),
+                        (String) row[9],
+                        (String) row[10]))
                 .toList();
         return new FailedProvisioningPage(items, page, size, total);
+    }
+
+    private Map<String, ProvisioningFailureCode> latestFailureCodes(String realmId, List<String> requestIds) {
+        Map<String, ProvisioningFailureCode> codes = new HashMap<>();
+        if (requestIds.isEmpty()) {
+            return codes;
+        }
+        entityManager.createQuery("""
+                        select event.requestId, event.metadata
+                          from AccessRequestEventEntity event
+                         where event.realmId = :realmId
+                           and event.requestId in :requestIds
+                           and event.type = :eventType
+                           and not exists (
+                               select newer.id
+                                 from AccessRequestEventEntity newer
+                                where newer.realmId = event.realmId
+                                  and newer.requestId = event.requestId
+                                  and newer.type = event.type
+                                   and (newer.requestVersion is not null and event.requestVersion is null
+                                        or (newer.requestVersion is not null and event.requestVersion is not null
+                                            and newer.requestVersion > event.requestVersion)
+                                        or ((newer.requestVersion is null and event.requestVersion is null
+                                                or newer.requestVersion = event.requestVersion)
+                                            and newer.occurredAt > event.occurredAt))
+                           )
+                        """, Object[].class)
+                .setParameter("realmId", realmId)
+                .setParameter("requestIds", requestIds)
+                .setParameter("eventType", AccessRequestEventType.PROVISIONING_FAILED)
+                .getResultList()
+                .forEach(row -> codes.merge(
+                        (String) row[0], ProvisioningFailureCode.fromStoredValue((String) row[1]),
+                        (previous, ambiguous) -> ProvisioningFailureCode.UNKNOWN));
+        return codes;
     }
 
     public record FailedProvisioningPage(List<FailedProvisioningRequest> items, int page, int size, long total) {
@@ -180,7 +245,11 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
             String resourceName,
             DecisionStatus decisionStatus,
             ProvisioningStatus provisioningStatus,
-            Instant updatedAt) {
+            Instant updatedAt,
+            ProvisioningFailureCode failureCode,
+            Instant closedAt,
+            String closedBy,
+            String closureReason) {
     }
 
     private static String approvalQueueFromAndWhere() {
@@ -306,6 +375,9 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
                                 entity.decisionComment = :decisionComment,
                                 entity.updatedTimestamp = :updatedTimestamp,
                                 entity.decidedTimestamp = :decidedTimestamp,
+                                entity.provisioningClosedTimestamp = :provisioningClosedTimestamp,
+                                entity.provisioningClosedBy = :provisioningClosedBy,
+                                entity.provisioningClosureReason = :provisioningClosureReason,
                                 entity.version = entity.version + 1
                          where entity.id = :id
                            and entity.realmId = :realmId
@@ -319,6 +391,10 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
                 .setParameter(
                         "decidedTimestamp",
                         request.decidedAt() == null ? null : request.decidedAt().toEpochMilli())
+                .setParameter("provisioningClosedTimestamp", request.provisioningClosedAt() == null
+                        ? null : request.provisioningClosedAt().toEpochMilli())
+                .setParameter("provisioningClosedBy", request.provisioningClosedBy())
+                .setParameter("provisioningClosureReason", request.provisioningClosureReason())
                 .setParameter("id", request.id())
                 .setParameter("realmId", request.realmId())
                 .setParameter("expectedVersion", expectedVersion)

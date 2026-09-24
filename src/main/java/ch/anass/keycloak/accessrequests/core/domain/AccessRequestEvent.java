@@ -14,6 +14,7 @@ public final class AccessRequestEvent {
     private final Instant occurredAt;
     private final String comment;
     private final String metadata;
+    private final Long requestVersion;
 
     private AccessRequestEvent(
             String id,
@@ -23,7 +24,8 @@ public final class AccessRequestEvent {
             String actorId,
             Instant occurredAt,
             String comment,
-            String metadata) {
+            String metadata,
+            Long requestVersion) {
         this.id = requireText(id, "id");
         this.requestId = requireText(requestId, "requestId");
         this.realmId = requireText(realmId, "realmId");
@@ -32,6 +34,7 @@ public final class AccessRequestEvent {
         this.occurredAt = Objects.requireNonNull(occurredAt, "occurredAt must not be null");
         this.comment = comment;
         this.metadata = metadata;
+        this.requestVersion = requestVersion;
     }
 
     public static AccessRequestEvent created(AccessRequest request, String actorId, Instant occurredAt) {
@@ -80,7 +83,28 @@ public final class AccessRequestEvent {
             String actorId,
             Instant occurredAt,
             String failureReason) {
-        return from(request, AccessRequestEventType.PROVISIONING_FAILED, actorId, occurredAt, failureReason);
+        return provisioningFailed(request, actorId, occurredAt, failureReason, ProvisioningFailureCode.UNKNOWN);
+    }
+
+    public static AccessRequestEvent provisioningFailed(
+            AccessRequest request,
+            String actorId,
+            Instant occurredAt,
+            String failureReason,
+            ProvisioningFailureCode failureCode) {
+        Objects.requireNonNull(request, "request must not be null");
+        return new AccessRequestEvent(
+                UUID.randomUUID().toString(), request.id(), request.realmId(),
+                AccessRequestEventType.PROVISIONING_FAILED, actorId, occurredAt,
+                requireText(failureReason, "failureReason"),
+                Objects.requireNonNull(failureCode, "failureCode must not be null").name(),
+                request.version());
+    }
+
+    public static AccessRequestEvent provisioningClosed(AccessRequest request, String actorId, Instant occurredAt) {
+        Objects.requireNonNull(request, "request must not be null");
+        return from(request, AccessRequestEventType.PROVISIONING_CLOSED, actorId, occurredAt,
+                request.provisioningClosureReason());
     }
 
     public static AccessRequestEvent rehydrate(
@@ -92,7 +116,14 @@ public final class AccessRequestEvent {
             Instant occurredAt,
             String comment,
             String metadata) {
-        return new AccessRequestEvent(id, requestId, realmId, type, actorId, occurredAt, comment, metadata);
+        return rehydrate(id, requestId, realmId, type, actorId, occurredAt, comment, metadata, null);
+    }
+
+    public static AccessRequestEvent rehydrate(
+            String id, String requestId, String realmId, AccessRequestEventType type,
+            String actorId, Instant occurredAt, String comment, String metadata, Long requestVersion) {
+        return new AccessRequestEvent(id, requestId, realmId, type, actorId, occurredAt, comment, metadata,
+                requestVersion);
     }
 
     private static AccessRequestEvent from(
@@ -110,6 +141,7 @@ public final class AccessRequestEvent {
                 actorId,
                 occurredAt,
                 comment,
+                null,
                 null);
     }
 
@@ -143,6 +175,10 @@ public final class AccessRequestEvent {
 
     public String metadata() {
         return metadata;
+    }
+
+    public Long requestVersion() {
+        return requestVersion;
     }
 
     private static String requireText(String value, String fieldName) {

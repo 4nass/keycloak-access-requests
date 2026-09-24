@@ -112,7 +112,11 @@ class KeycloakAccessRequestEmailNotifierTest {
                 Arguments.of(
                         AccessRequestNotificationType.PROVISIONING_FAILED,
                         "accessRequestProvisioningFailedSubject",
-                        "access-request-provisioning-failed.ftl"));
+                        "access-request-provisioning-failed.ftl"),
+                Arguments.of(
+                        AccessRequestNotificationType.PROVISIONING_CLOSED,
+                        "accessRequestProvisioningClosedSubject",
+                        "access-request-provisioning-closed.ftl"));
     }
 
     private static UserModel user(String id, boolean enabled, String email) {
@@ -289,6 +293,10 @@ class KeycloakAccessRequestEmailNotifierTest {
                         "system",
                         occurredAt,
                         "The configured Keycloak role no longer exists.");
+                case PROVISIONING_CLOSED -> AccessRequestEvent.rehydrate(
+                        "closure-event-1", request.id(), request.realmId(),
+                        ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType.PROVISIONING_CLOSED,
+                        "manager-1", occurredAt, "The original role was removed.", null);
             };
         }
     }
