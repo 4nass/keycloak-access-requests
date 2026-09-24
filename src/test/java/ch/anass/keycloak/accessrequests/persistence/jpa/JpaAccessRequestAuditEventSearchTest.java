@@ -122,6 +122,36 @@ class JpaAccessRequestAuditEventSearchTest {
             assertInvalid(entityManager, "realm-a", null, null, null, null, null, 0, 0);
             assertInvalid(entityManager, "realm-a", null, null, null, null, null, 0, 101);
             assertInvalid(entityManager, "realm-a", SECOND, FIRST, null, null, null, 0, 20);
+            assertInvalid(entityManager, "realm-a", Instant.MAX, null, null, null, null, 0, 20);
+            assertInvalid(entityManager, "realm-a", null, Instant.MIN, null, null, null, 0, 20);
+            assertInvalid(entityManager, "realm-a", Instant.ofEpochMilli(Long.MAX_VALUE).plusNanos(1),
+                    null, null, null, null, 0, 20);
+        }
+    }
+
+    @Test
+    void pagesRequestHistoryInTheSameChronologicalOrderAsTheExistingReader() {
+        try (EntityManager entityManager = factory.createEntityManager()) {
+            Instant at = FIRST.plusMillis(10);
+            persist(entityManager,
+                    event("realm-detail", "request-many", "requester", AccessRequestEventType.REQUEST_CREATED, FIRST, 0),
+                    event("realm-detail", "request-many", "approver", AccessRequestEventType.REQUEST_APPROVED, at, 1),
+                    event("realm-detail", "request-many", "approver", AccessRequestEventType.PROVISIONING_STARTED, at, 1),
+                    event("realm-detail", "request-many", "approver", AccessRequestEventType.PROVISIONING_FAILED, at, 2),
+                    event("realm-detail", "request-many", "manager", AccessRequestEventType.PROVISIONING_STARTED, at, 2),
+                    event("realm-detail", "request-many", "manager", AccessRequestEventType.PROVISIONING_SUCCEEDED, at, 3),
+                    event("other-realm", "request-many", "secret", AccessRequestEventType.REQUEST_CREATED, at, 0));
+            JpaAccessRequestHistoryReader reader = new JpaAccessRequestHistoryReader(entityManager);
+            List<AccessRequestEvent> expected = reader.findByRequestId("realm-detail", "request-many");
+            List<AccessRequestEvent> actual = java.util.stream.IntStream.range(0, 3)
+                    .mapToObj(page -> reader.findPageByRequestId("realm-detail", "request-many", page, 2))
+                    .peek(result -> assertEquals(6, result.total()))
+                    .flatMap(result -> result.items().stream()).toList();
+            assertEquals(expected.stream().map(AccessRequestEvent::id).toList(),
+                    actual.stream().map(AccessRequestEvent::id).toList());
+            assertEquals(0, reader.findPageByRequestId("realm-detail", "request-many", 3, 2).items().size());
+            assertThrows(IllegalArgumentException.class,
+                    () -> reader.findPageByRequestId("realm-detail", "request-many", 0, 101));
         }
     }
 

@@ -45,14 +45,46 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
                 .toList();
     }
 
+    public AuditEventPage findPageByRequestId(String realmId, String requestId, int page, int size) {
+        requirePage(page, size);
+        if (realmId == null || realmId.isBlank() || requestId == null || requestId.isBlank()) {
+            throw new IllegalArgumentException("realmId and requestId must be provided");
+        }
+        String conditions = " where entity.realmId = :realmId and entity.requestId = :requestId";
+        long total = entityManager.createQuery(
+                        "select count(entity) from AccessRequestEventEntity entity" + conditions, Long.class)
+                .setParameter("realmId", realmId)
+                .setParameter("requestId", requestId)
+                .getSingleResult();
+        TypedQuery<AccessRequestEventEntity> query = entityManager.createQuery("""
+                        select entity from AccessRequestEventEntity entity
+                        """ + conditions + "\n" + """
+                        order by entity.occurredAt asc,
+                                 coalesce(entity.requestVersion, -1) asc,
+                                 case
+                                     when entity.type = :closed then 4
+                                     when entity.type = :started and entity.requestVersion is not null then 3
+                                     when entity.type in (:success, :failure) and entity.requestVersion is null then 3
+                                     when entity.type in (:success, :failure, :started) then 2
+                                     when entity.type in (:approved, :rejected, :canceled) then 1
+                                     else 0
+                                 end asc,
+                                 entity.id asc
+                        """, AccessRequestEventEntity.class);
+        query.setParameter("realmId", realmId);
+        query.setParameter("requestId", requestId);
+        setPhaseParameters(query);
+        List<AccessRequestEvent> items = query.setFirstResult(page * size).setMaxResults(size)
+                .getResultList().stream().map(AccessRequestEventEntity::toDomain).toList();
+        return new AuditEventPage(items, page, size, total);
+    }
+
     public AuditEventPage findAll(String realmId, Instant from, Instant to, AccessRequestEventType type,
             String actorId, String requestId, int page, int size) {
         if (realmId == null || realmId.isBlank()) {
             throw new IllegalArgumentException("realmId must be provided");
         }
-        if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) {
-            throw new IllegalArgumentException("page and size must define a bounded audit query");
-        }
+        requirePage(page, size);
         if (from != null && to != null && from.isAfter(to)) {
             throw new IllegalArgumentException("from must not be after to");
         }
@@ -66,7 +98,7 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
         }
         if (to != null) {
             conditions.append(" and entity.occurredAt <= :to");
-            parameters.put("to", to.toEpochMilli());
+            parameters.put("to", epochMillis(to, "to"));
         }
         if (type != null) {
             conditions.append(" and entity.type = :type");
@@ -102,6 +134,13 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
                                  entity.id desc
                         """, AccessRequestEventEntity.class);
         parameters.forEach(query::setParameter);
+        setPhaseParameters(query);
+        List<AccessRequestEvent> items = query.setFirstResult(page * size)
+                .setMaxResults(size).getResultList().stream().map(AccessRequestEventEntity::toDomain).toList();
+        return new AuditEventPage(items, page, size, total);
+    }
+
+    private static void setPhaseParameters(TypedQuery<AccessRequestEventEntity> query) {
         query.setParameter("closed", AccessRequestEventType.PROVISIONING_CLOSED);
         query.setParameter("started", AccessRequestEventType.PROVISIONING_STARTED);
         query.setParameter("success", AccessRequestEventType.PROVISIONING_SUCCEEDED);
@@ -109,9 +148,12 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
         query.setParameter("approved", AccessRequestEventType.REQUEST_APPROVED);
         query.setParameter("rejected", AccessRequestEventType.REQUEST_REJECTED);
         query.setParameter("canceled", AccessRequestEventType.REQUEST_CANCELED);
-        List<AccessRequestEvent> items = query.setFirstResult(page * size)
-                .setMaxResults(size).getResultList().stream().map(AccessRequestEventEntity::toDomain).toList();
-        return new AuditEventPage(items, page, size, total);
+    }
+
+    private static void requirePage(int page, int size) {
+        if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("page and size must define a bounded audit query");
+        }
     }
 
     public record AuditEventPage(List<AccessRequestEvent> items, int page, int size, long total) {
@@ -121,10 +163,25 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
     }
 
     private static long inclusiveLowerBoundInMillis(Instant instant) {
-        long wholeMillisecond = instant.toEpochMilli();
+        long wholeMillisecond = epochMillis(instant, "from");
         // Event timestamps are stored in milliseconds. A later nanosecond within the same
         // millisecond must exclude the event at the truncated lower bound.
-        return instant.getNano() % 1_000_000 == 0 ? wholeMillisecond : Math.addExact(wholeMillisecond, 1);
+        if (instant.getNano() % 1_000_000 == 0) {
+            return wholeMillisecond;
+        }
+        try {
+            return Math.addExact(wholeMillisecond, 1);
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException("from is outside the supported timestamp range", exception);
+        }
+    }
+
+    private static long epochMillis(Instant instant, String parameter) {
+        try {
+            return instant.toEpochMilli();
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException(parameter + " is outside the supported timestamp range", exception);
+        }
     }
 
     private static int phaseOrder(AccessRequestEvent event) {

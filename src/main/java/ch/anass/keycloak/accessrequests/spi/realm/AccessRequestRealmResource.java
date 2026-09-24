@@ -313,7 +313,9 @@ public final class AccessRequestRealmResource {
     @GET
     @Path("admin/requests/{requestId}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response administrativeRequestDetails(@PathParam("requestId") String requestId) {
+    public Response administrativeRequestDetails(@PathParam("requestId") String requestId,
+            @DefaultValue("0") @QueryParam("historyPage") int historyPage,
+            @DefaultValue("20") @QueryParam("historySize") int historySize) {
         AccessRequestManager manager = requireAccessRequestManager();
         var entityManager = Objects.requireNonNull(session.getProvider(JpaConnectionProvider.class))
                 .getEntityManager();
@@ -323,9 +325,13 @@ public final class AccessRequestRealmResource {
         if (request == null) {
             return error(Response.Status.NOT_FOUND, "REQUEST_NOT_FOUND", null, requestId);
         }
-        var history = new JpaAccessRequestHistoryReader(entityManager)
-                .findByRequestId(manager.realm().getId(), requestId);
-        return Response.ok(AdminRequestDetailResponse.from(new AccessRequestDetails(request, history))).build();
+        try {
+            var history = new JpaAccessRequestHistoryReader(entityManager)
+                    .findPageByRequestId(manager.realm().getId(), requestId, historyPage, historySize);
+            return Response.ok(AdminRequestDetailResponse.from(request, history)).build();
+        } catch (IllegalArgumentException exception) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_AUDIT_EVENT_QUERY", exception.getMessage(), requestId);
+        }
     }
 
     @GET
@@ -1117,10 +1123,13 @@ public final class AccessRequestRealmResource {
             String provisioningClosedAt,
             String justification,
             DecisionResponse decision,
-            List<AdminRequestHistoryEntryResponse> history) {
+            List<AdminRequestHistoryEntryResponse> history,
+            int historyPage,
+            int historySize,
+            long historyTotal) {
 
-        private static AdminRequestDetailResponse from(AccessRequestDetails details) {
-            AccessRequest request = details.request();
+        private static AdminRequestDetailResponse from(
+                AccessRequest request, JpaAccessRequestHistoryReader.AuditEventPage history) {
             DecisionResponse decision = request.approverId() == null
                     ? null
                     : new DecisionResponse(
@@ -1131,7 +1140,8 @@ public final class AccessRequestRealmResource {
                     request.createdAt().toString(),
                     request.provisioningClosedAt() == null ? null : request.provisioningClosedAt().toString(),
                     request.justification(), decision,
-                    details.history().stream().map(AdminRequestHistoryEntryResponse::from).toList());
+                    history.items().stream().map(AdminRequestHistoryEntryResponse::from).toList(),
+                    history.page(), history.size(), history.total());
         }
     }
 

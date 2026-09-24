@@ -605,9 +605,33 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertFalse(detailBody.path("decisionStatus").asText().isBlank());
         assertFalse(detailBody.path("provisioningStatus").asText().isBlank());
         assertTrue(detailBody.path("history").isArray());
+        assertEquals(0, detailBody.path("historyPage").asInt());
+        assertEquals(20, detailBody.path("historySize").asInt());
+        assertTrue(detailBody.path("historyTotal").asLong() >= detailBody.path("history").size());
         assertTrue(java.util.stream.StreamSupport.stream(detailBody.path("history").spliterator(), false)
                 .anyMatch(item -> eventType.equals(item.path("type").asText())
                         && actorId.equals(item.path("actorId").asText())));
+        HttpResponse<String> detailFirst = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(detailEndpoint + "?historyPage=0&historySize=1"))
+                        .header("Authorization", "Bearer " + adminToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> detailSecond = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(detailEndpoint + "?historyPage=1&historySize=1"))
+                        .header("Authorization", "Bearer " + adminToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, detailFirst.statusCode());
+        assertEquals(200, detailSecond.statusCode());
+        JsonNode detailFirstBody = new ObjectMapper().readTree(detailFirst.body());
+        JsonNode detailSecondBody = new ObjectMapper().readTree(detailSecond.body());
+        assertEquals(1, detailFirstBody.path("history").size());
+        assertEquals(1, detailSecondBody.path("history").size());
+        assertEquals(detailFirstBody.path("historyTotal").asLong(), detailSecondBody.path("historyTotal").asLong());
+        assertFalse(detailFirstBody.path("history").get(0).equals(detailSecondBody.path("history").get(0)));
+        HttpResponse<Void> invalidDetailPage = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(detailEndpoint + "?historySize=101"))
+                        .header("Authorization", "Bearer " + adminToken).GET().build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(400, invalidDetailPage.statusCode());
         HttpResponse<Void> deniedDetail = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(detailEndpoint)
                         .header("Authorization", "Bearer " + nonManagerToken)
@@ -638,6 +662,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .GET().build(), HttpResponse.BodyHandlers.discarding());
         assertEquals(400, invalid.statusCode());
         for (String query : List.of("type=NOT_AN_EVENT", "from=not-a-date",
+                "from=%2B1000000000-12-31T23:59:59Z", "to=-1000000000-01-01T00:00:00Z",
                 "from=2026-09-25T00:00:00Z&to=2026-09-24T00:00:00Z")) {
             HttpResponse<Void> invalidFilter = HttpClient.newHttpClient().send(
                     HttpRequest.newBuilder(URI.create(endpoint + "?" + query))

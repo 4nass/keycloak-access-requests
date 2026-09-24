@@ -79,15 +79,20 @@ class AccessRequestAuditEventsEndpointTest {
 
         assertEquals(Response.class, handler.getReturnType());
         assertEquals(MediaType.APPLICATION_JSON, handler.getAnnotation(Produces.class).value()[0]);
-        assertEquals(1, handler.getParameterCount());
+        assertEquals(3, handler.getParameterCount());
         assertEquals("requestId", handler.getParameters()[0].getAnnotation(PathParam.class).value());
+        assertEquals("historyPage", handler.getParameters()[1].getAnnotation(QueryParam.class).value());
+        assertEquals("0", handler.getParameters()[1].getAnnotation(DefaultValue.class).value());
+        assertEquals("historySize", handler.getParameters()[2].getAnnotation(QueryParam.class).value());
+        assertEquals("20", handler.getParameters()[2].getAnnotation(DefaultValue.class).value());
     }
 
     @Test
     void usesAnAdminOnlyDetailEnvelopeWithRequesterStatusesAndHistoryActors() throws Exception {
         assertEquals(java.util.List.of("id", "requesterId", "entitlementId", "resourceType", "resourceName",
                 "decisionStatus", "provisioningStatus", "createdAt", "provisioningClosedAt", "justification",
-                "decision", "history"), fields(responseType("AdminRequestDetailResponse")));
+                "decision", "history", "historyPage", "historySize", "historyTotal"),
+                fields(responseType("AdminRequestDetailResponse")));
         assertEquals(java.util.List.of("type", "actorId", "occurredAt", "failureCode", "closureReason"),
                 fields(responseType("AdminRequestHistoryEntryResponse")));
         assertTrue(!fields(responseType("RequestDetailResponse")).contains("requesterId"));
