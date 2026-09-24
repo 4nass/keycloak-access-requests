@@ -126,12 +126,33 @@ class AccessRequestAdminConsoleBrowserIT {
                             "/master/access-requests/requests/" + pending.request().requestId()));
                     waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
                             By.xpath("//h2[normalize-space()='History']")));
+                    assertAuditDetailValue(driver, "Requester", pending.request().requesterId());
+                    assertAuditDetailValue(driver, "Decision status", "Approved");
+                    assertAuditDetailValue(driver, "Provisioning status", "Failed");
+                    assertAuditHistoryActor(driver, "Requested", pending.request().requesterId());
+                    assertAuditHistoryActor(driver, "Approved", pending.approverId());
+                    assertAuditHistoryActor(driver, "Provisioning failed", pending.approverId());
+                    assertApiRequestStatus(driver,
+                            "/access-requests/admin/requests/" + pending.request().requestId(), 200);
                     assertNoJavaScriptErrors(driver);
                 } finally {
                     driver.quit();
                 }
             }
         }
+    }
+
+    private void assertAuditDetailValue(WebDriver driver, String label, String expectedValue) {
+        By value = By.xpath("//dt[normalize-space()='" + label + "']/following-sibling::dd[1]");
+        waitFor(driver).until(ExpectedConditions.textToBePresentInElementLocated(value, expectedValue));
+        assertEquals(expectedValue, driver.findElement(value).getText().trim(), label);
+    }
+
+    private void assertAuditHistoryActor(WebDriver driver, String eventType, String actorId) {
+        By entries = By.cssSelector("[aria-label='History'] li.pf-v5-c-data-list__item");
+        waitFor(driver).until(page -> page.findElements(entries).stream()
+                .map(WebElement::getText)
+                .anyMatch(text -> text.contains(eventType) && text.contains("Actor ID: " + actorId)));
     }
 
     @Test
