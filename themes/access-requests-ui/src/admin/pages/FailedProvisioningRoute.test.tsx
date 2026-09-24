@@ -25,7 +25,7 @@ describe("FailedProvisioningRoute", () => {
 
         expect(await screen.findByRole("heading", { name: "accessRequestsAdminFailedProvisioning" })).toBeVisible();
         expect(api.capabilities).toHaveBeenCalledOnce();
-        await waitFor(() => expect(api.failedProvisioningRequests).toHaveBeenCalledWith({ page: 0, size: 20 }));
+        await waitFor(() => expect(api.failedProvisioningRequests).toHaveBeenCalledWith({ page: 0, size: 20, state: "OPEN" }));
     });
 
     it("fails closed when the server denies provisioning-failure management", async () => {

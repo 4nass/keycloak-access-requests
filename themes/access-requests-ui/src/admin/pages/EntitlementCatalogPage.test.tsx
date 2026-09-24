@@ -49,8 +49,18 @@ describe("EntitlementCatalogPage", () => {
         expect(screen.getByText("accessRequestsAdminResourceTypeClientRole: finance-reader-role")).toBeVisible();
         expect(screen.getByText("finance-approvers")).toBeVisible();
         expect(screen.getByText("accessRequestsAdminRiskLevelLow")).toBeVisible();
-        expect(screen.getByText("accessRequestsAdminActive")).toBeVisible();
+        expect(screen.getByText("accessRequestsAdminOpenToRequests")).toBeVisible();
         expect(api.list).toHaveBeenCalledWith({ page: 0, size: 20 });
+    });
+
+    it("labels a non-requestable entitlement as closed to requests", async () => {
+        api.list.mockResolvedValue({
+            items: [{ ...entitlement, requestable: false }], page: 0, size: 20, total: 1
+        });
+        render(<EntitlementCatalogPage />);
+
+        expect(await screen.findByText("accessRequestsAdminClosedToRequests")).toBeVisible();
+        expect(screen.queryByText("accessRequestsAdminOpenToRequests")).not.toBeInTheDocument();
     });
 
     it("edits requestability with the current optimistic lock version", async () => {

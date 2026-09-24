@@ -287,7 +287,9 @@ function EntitlementListItem({ entitlement, onEdit }: { entitlement: Entitlement
                     </DataListCell>,
                     <DataListCell key="state" width={1}>
                         <Label color={entitlement.requestable ? "green" : "grey"}>
-                            {t(entitlement.requestable ? "accessRequestsAdminActive" : "accessRequestsAdminInactive")}
+                            {t(entitlement.requestable
+                                ? "accessRequestsAdminOpenToRequests"
+                                : "accessRequestsAdminClosedToRequests")}
                         </Label>
                     </DataListCell>
                 ]} />

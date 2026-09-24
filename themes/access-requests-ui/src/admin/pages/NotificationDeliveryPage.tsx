@@ -351,6 +351,7 @@ function notificationTypeLabel(
 ) {
     return {
         PROVISIONING_FAILED: translate("accessRequestsAdminNotificationTypeProvisioningFailed"),
+        PROVISIONING_CLOSED: translate("accessRequestsAdminNotificationTypeProvisioningClosed"),
         REQUEST_APPROVED: translate("accessRequestsAdminNotificationTypeRequestApproved"),
         REQUEST_REJECTED: translate("accessRequestsAdminNotificationTypeRequestRejected"),
         REQUEST_SUBMITTED: translate("accessRequestsAdminNotificationTypeRequestSubmitted")

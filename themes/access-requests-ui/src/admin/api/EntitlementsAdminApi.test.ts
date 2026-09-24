@@ -131,6 +131,7 @@ describe("Entitlements administration API client", () => {
             entitlementId: "finance-reader",
             id: "request-1",
             provisioningStatus: "FAILED" as const,
+            failureCode: "RESOURCE_MISSING" as const,
             requesterId: "user-1",
             resourceName: "Finance Reader",
             resourceType: "CLIENT_ROLE" as const,
@@ -150,12 +151,26 @@ describe("Entitlements administration API client", () => {
             total: 11
         });
         expect(request(fetchMock)).toEqual({
-            url: "https://keycloak.example/realms/finance/access-requests/admin/provisioning-failures?page=1&size=10",
+            url: "https://keycloak.example/realms/finance/access-requests/admin/provisioning-failures?page=1&size=10&state=OPEN",
             init: expect.objectContaining({
                 headers: expect.objectContaining({ authorization: "Bearer admin-console-token" })
             })
         });
         expect(String(fetchMock.mock.calls[0][0])).not.toContain("failureReason");
+    });
+
+    it("loads the realm-scoped closure archive without changing the active queue", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+            items: [{ id: "request-1", closedAt: "2026-09-23T10:00:00Z",
+                closedBy: "manager-1", closureReason: "The role was removed." }],
+            page: 0, size: 10, total: 1
+        }));
+
+        await expect(createApi(fetchMock).failedProvisioningRequests({ page: 0, size: 10, state: "CLOSED" }))
+            .resolves.toMatchObject({ total: 1, items: [{ closedBy: "manager-1" }] });
+        expect(request(fetchMock).url).toBe(
+            "https://keycloak.example/realms/finance/access-requests/admin/provisioning-failures?page=0&size=10&state=CLOSED"
+        );
     });
 
     it("retries a failed provisioning request using the request-scoped admin endpoint", async () => {
@@ -175,6 +190,27 @@ describe("Entitlements administration API client", () => {
             init: expect.objectContaining({
                 headers: expect.objectContaining({ authorization: "Bearer admin-console-token" }),
                 method: "POST"
+            })
+        });
+    });
+
+    it("closes an unrecoverable failure with a request-scoped reason", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+            id: "request-1", decisionStatus: "APPROVED", provisioningStatus: "FAILED",
+            closedAt: "2026-09-23T10:00:00Z", closedBy: "manager-1", reason: "User removed permanently."
+        }));
+
+        await expect(createApi(fetchMock).closeFailedProvisioning("request/1", "User removed permanently."))
+            .resolves.toMatchObject({ id: "request-1", closedBy: "manager-1" });
+        expect(request(fetchMock)).toEqual({
+            url: "https://keycloak.example/realms/finance/access-requests/admin/requests/request%2F1/provisioning/close",
+            init: expect.objectContaining({
+                headers: expect.objectContaining({
+                    authorization: "Bearer admin-console-token",
+                    "content-type": "application/json"
+                }),
+                method: "POST",
+                body: JSON.stringify({ reason: "User removed permanently." })
             })
         });
     });

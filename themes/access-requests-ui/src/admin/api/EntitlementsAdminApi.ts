@@ -43,8 +43,21 @@ export type FailedProvisioningRequest = {
     resourceName: string;
     decisionStatus: "APPROVED";
     provisioningStatus: "FAILED";
+    failureCode: ProvisioningFailureCode;
     updatedAt: string;
+    closedAt: string | null;
+    closedBy: string | null;
+    closureReason: string | null;
 };
+
+export type ProvisioningFailureCode =
+    | "REQUESTER_MISSING"
+    | "RESOURCE_MISSING"
+    | "RESOURCE_TYPE_MISMATCH"
+    | "REALM_MISMATCH"
+    | "PROVIDER_UNAVAILABLE"
+    | "UNEXPECTED_FAILURE"
+    | "UNKNOWN";
 
 export type FailedProvisioningRequestPage = {
     items: FailedProvisioningRequest[];
@@ -60,13 +73,22 @@ export type ProvisioningRetryResult = {
     provisioningStatus: "SUCCEEDED" | "FAILED";
 };
 
+export type ProvisioningClosureResult = {
+    id: string;
+    decisionStatus: "APPROVED";
+    provisioningStatus: "FAILED";
+    closedAt: string;
+    closedBy: string;
+    reason: string;
+};
+
 export type NotificationDelivery = {
     id: string;
     requestId: string;
     entitlementId: string;
     recipientId: string;
     recipientType: "USER" | "REALM_ROLE";
-    notificationType: "REQUEST_SUBMITTED" | "REQUEST_APPROVED" | "REQUEST_REJECTED" | "PROVISIONING_FAILED";
+    notificationType: "REQUEST_SUBMITTED" | "REQUEST_APPROVED" | "REQUEST_REJECTED" | "PROVISIONING_FAILED" | "PROVISIONING_CLOSED";
     attemptCount: number;
     lastAttemptAt?: string;
 };
@@ -98,8 +120,9 @@ export type EntitlementsAdminApi = {
     list(query?: { page?: number; size?: number }): Promise<EntitlementPage>;
     notificationDeliveries(query?: { page?: number; size?: number }): Promise<NotificationDeliveryPage>;
     notificationDeliverySummary(): Promise<NotificationDeliverySummary>;
-    failedProvisioningRequests(query?: { page?: number; size?: number }): Promise<FailedProvisioningRequestPage>;
+    failedProvisioningRequests(query?: { page?: number; size?: number; state?: "OPEN" | "CLOSED" }): Promise<FailedProvisioningRequestPage>;
     retryFailedProvisioning(id: string): Promise<ProvisioningRetryResult>;
+    closeFailedProvisioning(id: string, reason: string): Promise<ProvisioningClosureResult>;
     references(type: Entitlement["resourceType"], query?: { search?: string; max?: number }): Promise<KeycloakReference[]>;
     create(submission: EntitlementCreation): Promise<Entitlement>;
     update(id: string, submission: EntitlementUpdate): Promise<Entitlement>;
@@ -178,10 +201,16 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
         list: (query) => request(`/admin/entitlements?${pageQuery(query)}`),
         notificationDeliveries: (query) => request(`/admin/notification-deliveries?${pageQuery(query)}`),
         notificationDeliverySummary: () => request("/admin/notification-deliveries/summary"),
-        failedProvisioningRequests: (query) => request(`/admin/provisioning-failures?${pageQuery(query)}`),
+        failedProvisioningRequests: (query) => request(
+            `/admin/provisioning-failures?${pageQuery(query)}&state=${query?.state ?? "OPEN"}`
+        ),
         retryFailedProvisioning: (id) => request(
             `/admin/requests/${encodeURIComponent(id)}/provisioning/retry`,
             { method: "POST" }
+        ),
+        closeFailedProvisioning: (id, reason) => request(
+            `/admin/requests/${encodeURIComponent(id)}/provisioning/close`,
+            json("POST", { reason })
         ),
         references: async (type, query) => {
             const response = await request<{ items: KeycloakReference[] }>(`/admin/references?${referenceQuery(type, query)}`);
