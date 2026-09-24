@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,7 +26,8 @@ class AccessRequestEmailThemeTest {
             new EmailTemplate("access-request-submitted", "accessRequestSubmitted"),
             new EmailTemplate("access-request-approved", "accessRequestApproved"),
             new EmailTemplate("access-request-rejected", "accessRequestRejected"),
-            new EmailTemplate("access-request-provisioning-failed", "accessRequestProvisioningFailed"));
+            new EmailTemplate("access-request-provisioning-failed", "accessRequestProvisioningFailed"),
+            new EmailTemplate("access-request-provisioning-closed", "accessRequestProvisioningClosed"));
 
     @Test
     void packagesTheAccessRequestsEmailThemeAsPartOfTheProviderArchive() throws IOException {
@@ -57,6 +59,13 @@ class AccessRequestEmailThemeTest {
 
         assertTrue(messages.stringPropertyNames().containsAll(expectedMessageKeys()));
         assertTrue(expectedMessageKeys().stream().allMatch(key -> !messages.getProperty(key).isBlank()));
+    }
+
+    @Test
+    void doesNotExposeTheInternalClosureReasonToEmailRecipients() throws IOException {
+        String template = "access-request-provisioning-closed.ftl";
+        assertFalse(readResource(THEME_ROOT + "html/" + template).contains("event.comment"));
+        assertFalse(readResource(THEME_ROOT + "text/" + template).contains("event.comment"));
     }
 
     private static Stream<EmailTemplate> templates() {
