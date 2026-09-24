@@ -42,6 +42,61 @@ const entitlement = {
 };
 
 describe("Entitlements administration API client", () => {
+    it("loads a paginated audit event page with date, type, actor, and request filters", async () => {
+        const event = {
+            id: "event-1",
+            requestId: "request/1",
+            type: "REQUEST_APPROVED",
+            actorId: "approver-1",
+            occurredAt: "2026-09-24T10:00:00Z"
+        };
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+            items: [event], page: 1, size: 10, total: 11
+        }));
+        const api = createApi(fetchMock) as unknown as {
+            auditEvents(query: Record<string, string | number>): Promise<unknown>;
+        };
+
+        await expect(api.auditEvents({
+            page: 1, size: 10, from: "2026-09-24T00:00:00Z", to: "2026-09-25T00:00:00Z",
+            type: "REQUEST_APPROVED", actorId: "approver-1", requestId: "request/1"
+        })).resolves.toEqual({ items: [event], page: 1, size: 10, total: 11 });
+        const { url, init } = request(fetchMock);
+        const parsed = new URL(url);
+        expect(parsed.pathname).toBe("/realms/finance/access-requests/admin/events");
+        expect(Object.fromEntries(parsed.searchParams)).toEqual({
+            page: "1", size: "10", from: "2026-09-24T00:00:00Z", to: "2026-09-25T00:00:00Z",
+            type: "REQUEST_APPROVED", actorId: "approver-1", requestId: "request/1"
+        });
+        expect(init.headers).toEqual(expect.objectContaining({ authorization: "Bearer admin-console-token" }));
+    });
+
+    it("preserves empty audit pages and presents authorization failures without server error details", async () => {
+        const emptyFetch = vi.fn().mockResolvedValue(jsonResponse({ items: [], page: 0, size: 20, total: 0 }));
+        const emptyApi = createApi(emptyFetch) as unknown as { auditEvents(): Promise<unknown> };
+        await expect(emptyApi.auditEvents()).resolves.toEqual({ items: [], page: 0, size: 20, total: 0 });
+
+        for (const status of [401, 403]) {
+            const deniedFetch = vi.fn().mockResolvedValue(jsonResponse({
+                code: "INTERNAL_FAILURE", message: "Sensitive details", requestId: "trace-1"
+            }, status));
+            const deniedApi = createApi(deniedFetch) as unknown as { auditEvents(): Promise<unknown> };
+            await expect(deniedApi.auditEvents()).rejects.toMatchObject({ status, requestId: "trace-1" });
+        }
+    });
+
+    it("opens the authorized administrative request detail linked from an audit event", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+            id: "request/1", requesterId: "requester-1", history: [{ type: "REQUEST_CREATED" }]
+        }));
+        const api = createApi(fetchMock) as unknown as { auditRequest(id: string): Promise<unknown> };
+
+        await expect(api.auditRequest("request/1")).resolves.toMatchObject({ id: "request/1" });
+        expect(request(fetchMock).url).toBe(
+            "https://keycloak.example/realms/finance/access-requests/admin/requests/request%2F1"
+        );
+    });
+
     it("reads the server-authoritative catalog capability with the administrator token", async () => {
         const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
             canManageCatalog: true,

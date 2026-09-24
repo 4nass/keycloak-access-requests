@@ -85,6 +85,46 @@ class AccessRequestAdminConsoleBrowserIT {
     }
 
     @Test
+    void browsesRequestAuditEventsInsideThePackagedAccessRequestsAdminPage() throws Exception {
+        try (KeycloakContainer keycloak = keycloak()) {
+            keycloak.start();
+            configureAdminCliTokenBehavior(keycloak);
+            AdminConsoleFixture admin = configureAdminConsole(keycloak);
+            PendingProvisioningFixture pending = createDeletedRoleFailure(keycloak, admin.globalAdminToken());
+
+            try (GenericContainer<?> chrome = chrome()) {
+                chrome.start();
+                RemoteWebDriver driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
+                try {
+                    configureDriver(driver);
+                    logInToAdminConsole(keycloak, driver, admin.managerUsername(), admin.managerPassword());
+                    openAccessRequests(driver);
+
+                    WebElement eventsTab = waitFor(driver).until(ExpectedConditions.elementToBeClickable(
+                            By.xpath("//*[@role='tab' and normalize-space()='Events']")));
+                    eventsTab.click();
+                    assertPageHeading(driver, "Events");
+                    waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                            By.xpath("//*[contains(text(), '" + pending.request().requestId() + "')]")));
+                    assertTrue(driver.getCurrentUrl().contains("/master/access-requests/events"));
+
+                    WebElement requestFilter = driver.findElement(By.getId("audit-request-id"));
+                    requestFilter.sendKeys(pending.request().requestId());
+                    waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                            By.xpath("//*[contains(text(), '" + pending.request().requestId() + "')]")));
+                    assertTrue(driver.findElement(By.tagName("body")).getText().contains("Approved"));
+                    assertTrue(driver.findElements(By.xpath("//a[contains(@href, '/access-requests/requests/"
+                            + pending.request().requestId() + "')]")).size() >= 1,
+                            "An audit row must link to the request detail.");
+                    assertNoJavaScriptErrors(driver);
+                } finally {
+                    driver.quit();
+                }
+            }
+        }
+    }
+
+    @Test
     void retriesARealFailedGrantAfterTheTechnicalFixtureRestoresTheRole() throws Exception {
         try (PostgreSQLContainer postgres = new PostgreSQLContainer(
                 DockerImageName.parse(POSTGRESQL_CONTAINER).asCompatibleSubstituteFor("postgres"))

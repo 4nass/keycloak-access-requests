@@ -86,6 +86,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(firstServer);
             assertRequesterCanListViewAndCancelOnlyOwnRequests(firstServer);
             assertEntitlementScopedApproversCanDecideRequests(firstServer);
+            assertAdministrativeAuditEventSearch(firstServer);
         }
 
         try (KeycloakContainer restartedServer = keycloak()) {
@@ -99,6 +100,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(restartedServer);
             assertRequesterCanListViewAndCancelOnlyOwnRequests(restartedServer);
             assertEntitlementScopedApproversCanDecideRequests(restartedServer);
+            assertAdministrativeAuditEventSearch(restartedServer);
         }
     }
 
@@ -292,6 +294,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         URI referenceEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/references?type=REALM_ROLE"
                 .formatted(server.getHost(), server.getMappedPort(8080)));
         String adminToken = accessToken(server, "admin-cli");
+        enableNativeAdminEvents(server, adminToken);
 
         HttpResponse<Void> unauthenticatedResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementEndpoint).GET().build(),
@@ -370,6 +373,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertNotificationDeliveryAdministration(server, managerToken);
         String targetRoleId = createRealmRole(server, adminToken, "catalog-target-" + UUID.randomUUID());
         String approverRoleId = createRealmRole(server, adminToken, "catalog-approver-" + UUID.randomUUID());
+        String replacementApproverRoleId = createRealmRole(server, adminToken, "catalog-approver-new-" + UUID.randomUUID());
         ClientRole clientRole = createClientRole(server, adminToken, "catalog-client-target-" + UUID.randomUUID());
         String groupId = createGroup(server, adminToken, "catalog-group-target-" + UUID.randomUUID());
         assertKeycloakReferenceIsListed(server, managerToken, "REALM_ROLE", "catalog-target", targetRoleId);
@@ -405,12 +409,12 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                                 {
                                   "displayName":"Catalog Finance Reader",
                                   "description":"%s",
-                                  "riskLevel":"HIGH",
+                                  "riskLevel":"MEDIUM",
                                   "approverRoleId":"%s",
                                   "requestable":true,
                                   "version":0
                                 }
-                                """.formatted(description, approverRoleId)))
+                                """.formatted(description, replacementApproverRoleId)))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, updateResponse.statusCode());
@@ -436,6 +440,27 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(409, staleUpdateResponse.statusCode());
         assertEntitlementAuditEvents(entitlementId, subjectOf(managerToken));
 
+        HttpResponse<String> deactivationResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(entitlementByIdEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString("""
+                                {
+                                  "displayName":"Catalog Finance Reader",
+                                  "description":"%s",
+                                  "riskLevel":"MEDIUM",
+                                  "approverRoleId":"%s",
+                                  "requestable":false,
+                                  "version":1
+                                }
+                                """.formatted(description, replacementApproverRoleId)))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, deactivationResponse.statusCode());
+        assertTrue(deactivationResponse.body().contains("\"requestable\":false"));
+        assertCatalogNativeAdminEvents(server, adminToken, entitlementId, subjectOf(managerToken),
+                approverRoleId, replacementApproverRoleId);
+
         String otherRealmName = "catalog-other-realm-" + UUID.randomUUID();
         createRealm(server, adminToken, otherRealmName);
         URI otherRealmEndpoint = URI.create("http://%s:%d/realms/%s/access-requests/admin/entitlements"
@@ -447,6 +472,163 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .build(),
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(403, crossRealmResponse.statusCode());
+    }
+
+    private void enableNativeAdminEvents(GenericContainer<?> server, String adminToken) throws Exception {
+        URI realmEndpoint = URI.create("http://%s:%d/admin/realms/master"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpResponse<Void> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(realmEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString("{\"adminEventsEnabled\":true}"))
+                        .build(), HttpResponse.BodyHandlers.discarding());
+        assertEquals(204, response.statusCode());
+    }
+
+    private void assertCatalogNativeAdminEvents(GenericContainer<?> server, String adminToken,
+            String entitlementId, String actorId, String originalApproverRoleId,
+            String replacementApproverRoleId) throws Exception {
+        URI eventsEndpoint = URI.create("http://%s:%d/admin/realms/master/admin-events?max=100"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(eventsEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+        List<JsonNode> events = java.util.stream.StreamSupport.stream(
+                        new ObjectMapper().readTree(response.body()).spliterator(), false)
+                .filter(event -> "ACCESS_REQUEST_ENTITLEMENT".equals(event.path("resourceType").asText()))
+                .filter(event -> ("access-requests/entitlements/" + entitlementId)
+                        .equals(event.path("resourcePath").asText()))
+                .toList();
+        assertEquals(3, events.size(), "A rejected stale update must not produce an Admin Event.");
+        assertTrue(events.stream().allMatch(event -> actorId.equals(event.path("authDetails").path("userId").asText())));
+        assertTrue(events.stream().allMatch(event -> !event.hasNonNull("representation")),
+                "The native audit stream must not contain the full entitlement representation.");
+        assertTrue(events.stream().anyMatch(event -> "CREATE".equals(event.path("operationType").asText())
+                && "false".equals(event.path("details").path("requestable").asText())
+                && "HIGH".equals(event.path("details").path("riskLevel").asText())
+                && originalApproverRoleId.equals(event.path("details").path("approverRoleId").asText())));
+        assertTrue(events.stream().anyMatch(event -> "UPDATE".equals(event.path("operationType").asText())
+                && "true".equals(event.path("details").path("requestable").asText())
+                && "MEDIUM".equals(event.path("details").path("riskLevel").asText())
+                && replacementApproverRoleId.equals(event.path("details").path("approverRoleId").asText())));
+        assertTrue(events.stream().anyMatch(event -> "UPDATE".equals(event.path("operationType").asText())
+                && "false".equals(event.path("details").path("requestable").asText())
+                && "MEDIUM".equals(event.path("details").path("riskLevel").asText())
+                && replacementApproverRoleId.equals(event.path("details").path("approverRoleId").asText())));
+    }
+
+    private void assertAdministrativeAuditEventSearch(GenericContainer<?> server) throws Exception {
+        String adminToken = accessToken(server, "admin-cli");
+        URI endpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/events"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpResponse<Void> anonymous = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(endpoint).GET().build(), HttpResponse.BodyHandlers.discarding());
+        assertEquals(401, anonymous.statusCode());
+
+        String username = "audit-nonmanager-" + UUID.randomUUID();
+        String password = "audit-nonmanager-password";
+        createEnabledUser(server, adminToken, username, password);
+        String nonManagerToken = accessToken(server, "admin-cli", username, password);
+        HttpResponse<Void> denied = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(endpoint)
+                        .header("Authorization", "Bearer " + nonManagerToken)
+                        .GET().build(), HttpResponse.BodyHandlers.discarding());
+        assertEquals(403, denied.statusCode());
+
+        String eventId;
+        String requestId;
+        String actorId;
+        String eventType;
+        Instant occurredAt;
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement statement = connection.prepareStatement("""
+                     select ID, REQUEST_ID, ACTOR_ID, EVENT_TYPE, EVENT_TIMESTAMP
+                       from AR_ACCESS_REQUEST_HISTORY
+                      where REALM_ID = ?
+                      order by EVENT_TIMESTAMP desc
+                      limit 1
+                     """)) {
+            statement.setString(1, masterRealmId(connection));
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next(), "The earlier real workflows must have persisted audit events.");
+                eventId = result.getString("ID");
+                requestId = result.getString("REQUEST_ID");
+                actorId = result.getString("ACTOR_ID");
+                eventType = result.getString("EVENT_TYPE");
+                occurredAt = Instant.ofEpochMilli(result.getLong("EVENT_TIMESTAMP"));
+            }
+        }
+
+        URI filtered = URI.create(endpoint + "?page=0&size=20&requestId=" + requestId
+                + "&actorId=" + actorId + "&type=" + eventType
+                + "&from=" + occurredAt + "&to=" + occurredAt);
+        HttpResponse<String> matching = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(filtered)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, matching.statusCode(), matching.body());
+        JsonNode filteredPage = new ObjectMapper().readTree(matching.body());
+        assertTrue(filteredPage.path("total").asInt() >= 1);
+        assertTrue(java.util.stream.StreamSupport.stream(filteredPage.path("items").spliterator(), false)
+                .anyMatch(event -> eventId.equals(event.path("id").asText())));
+        for (JsonNode item : filteredPage.path("items")) {
+            assertFalse(item.has("comment"));
+            assertFalse(item.has("metadata"));
+            assertFalse(item.has("justification"));
+        }
+
+        URI detailEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/requests/%s"
+                .formatted(server.getHost(), server.getMappedPort(8080), requestId));
+        HttpResponse<String> detail = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(detailEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, detail.statusCode(), detail.body());
+        assertEquals(requestId, new ObjectMapper().readTree(detail.body()).path("id").asText());
+        assertTrue(new ObjectMapper().readTree(detail.body()).path("history").isArray());
+        HttpResponse<Void> deniedDetail = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(detailEndpoint)
+                        .header("Authorization", "Bearer " + nonManagerToken)
+                        .GET().build(), HttpResponse.BodyHandlers.discarding());
+        assertEquals(403, deniedDetail.statusCode());
+
+        HttpResponse<String> first = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(endpoint + "?page=0&size=1"))
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> second = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(endpoint + "?page=1&size=1"))
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, first.statusCode());
+        assertEquals(200, second.statusCode());
+        JsonNode firstPage = new ObjectMapper().readTree(first.body());
+        JsonNode secondPage = new ObjectMapper().readTree(second.body());
+        assertTrue(firstPage.path("total").asInt() > 1);
+        assertEquals(1, firstPage.path("items").size());
+        assertEquals(1, secondPage.path("items").size());
+        assertFalse(firstPage.path("items").get(0).path("id").asText()
+                .equals(secondPage.path("items").get(0).path("id").asText()));
+
+        HttpResponse<Void> invalid = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(endpoint + "?page=0&size=0"))
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.discarding());
+        assertEquals(400, invalid.statusCode());
+
+        String otherRealm = "audit-other-realm-" + UUID.randomUUID();
+        createRealm(server, adminToken, otherRealm);
+        HttpResponse<String> isolated = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://%s:%d/realms/%s/access-requests/admin/events"
+                                .formatted(server.getHost(), server.getMappedPort(8080), otherRealm)))
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, isolated.statusCode());
+        assertEquals(0, new ObjectMapper().readTree(isolated.body()).path("total").asInt());
     }
 
     private void assertNotificationDeliveryAdministration(GenericContainer<?> server, String managerToken) throws Exception {

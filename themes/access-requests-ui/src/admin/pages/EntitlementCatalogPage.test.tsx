@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
@@ -40,6 +41,19 @@ describe("EntitlementCatalogPage", () => {
             ]
             : []));
         api.update.mockReset().mockResolvedValue({ ...entitlement, requestable: false, version: 5 });
+    });
+
+    it("offers Events as an Access requests sub-tab instead of another sidebar section", async () => {
+        render(<MemoryRouter initialEntries={["/master/access-requests"]}>
+            <EntitlementCatalogPage />
+        </MemoryRouter>);
+
+        expect(await screen.findByRole("tab", { name: "accessRequestsAdminCatalog" })).toHaveAttribute(
+            "aria-selected", "true"
+        );
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminEvents" })).toHaveAttribute(
+            "href", "/master/access-requests/events"
+        );
     });
 
     it("renders the complete administrative metadata using native list affordances", async () => {

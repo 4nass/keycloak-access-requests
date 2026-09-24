@@ -12,6 +12,12 @@ describe("Administration Console routes", () => {
         const failedProvisioningIndex = children.findIndex(
             (route) => route.path === "/:realm/access-requests/provisioning-failures"
         );
+        const auditEventsIndex = children.findIndex(
+            (route) => route.path === "/:realm/access-requests/events"
+        );
+        const requestDetailIndex = children.findIndex(
+            (route) => route.path === "/:realm/access-requests/requests/:requestId"
+        );
         const notFoundIndex = children.findIndex((route) => route.path === "*");
 
         expect(catalogIndex).toBeGreaterThanOrEqual(0);
@@ -20,6 +26,10 @@ describe("Administration Console routes", () => {
         expect(notificationDeliveryIndex).toBeLessThan(notFoundIndex);
         expect(failedProvisioningIndex).toBeGreaterThanOrEqual(0);
         expect(failedProvisioningIndex).toBeLessThan(notFoundIndex);
+        expect(auditEventsIndex).toBeGreaterThanOrEqual(0);
+        expect(auditEventsIndex).toBeLessThan(notFoundIndex);
+        expect(requestDetailIndex).toBeGreaterThanOrEqual(0);
+        expect(requestDetailIndex).toBeLessThan(notFoundIndex);
         expect(children.some((route) => route.path === "/:realm/page-section/access-requests")).toBe(false);
     });
 });
