@@ -67,14 +67,20 @@ export function FailedProvisioningPage() {
     const retryInFlight = useRef(false);
     const closeInFlight = useRef(false);
     const locallyResolvedIds = useRef(new Set<string>());
+    const pendingDiagnosticIds = useRef(new Set<string>());
+    const diagnosticRevision = useRef(0);
 
     useEffect(() => {
         let active = true;
+        const revision = diagnosticRevision.current;
         setRefreshError(undefined);
 
         void api.failedProvisioningRequests({ page, size, state })
             .then((nextPage) => {
-                if (active) {
+                if (active && revision === diagnosticRevision.current) {
+                    if (state === "OPEN") {
+                        pendingDiagnosticIds.current.clear();
+                    }
                     const items = state === "OPEN"
                         ? nextPage.items.filter((request) => !locallyResolvedIds.current.has(request.id))
                         : nextPage.items;
@@ -91,7 +97,7 @@ export function FailedProvisioningPage() {
                 }
             })
             .catch((error: unknown) => {
-                if (active) {
+                if (active && revision === diagnosticRevision.current) {
                     setRefreshError(error);
                 }
             });
@@ -126,6 +132,17 @@ export function FailedProvisioningPage() {
             const outcome = await api.retryFailedProvisioning(retryTarget.id);
             if (outcome.provisioningStatus === "SUCCEEDED") {
                 removeResolvedRequest(retryTarget.id);
+            } else {
+                diagnosticRevision.current += 1;
+                pendingDiagnosticIds.current.add(retryTarget.id);
+                setRequests((current) => current && state === "OPEN"
+                    ? {
+                        ...current,
+                        items: current.items.map((request) => pendingDiagnosticIds.current.has(request.id)
+                            ? { ...request, failureCode: "UNKNOWN" }
+                            : request)
+                    }
+                    : current);
             }
             setRetryTarget(undefined);
             setActionNotice(outcome.provisioningStatus === "SUCCEEDED" ? "success" : "stillFailed");

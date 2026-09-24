@@ -64,7 +64,8 @@ await i18n.init({
                 accessRequestsAdminProvisioningFailed: "Provisioning failed",
                 accessRequestsAdminNotAvailable: "Not available",
                 close: "Close",
-                loading: "Loading"
+                loading: "Loading",
+                reload: "Reload"
             }
         }
     }
@@ -278,6 +279,67 @@ describe("FailedProvisioningPage", () => {
         await waitFor(() => expect(mocks.api.failedProvisioningRequests).toHaveBeenCalledTimes(2));
         expect(screen.getByRole("button", { name: "Retry provisioning" })).toBeInTheDocument();
         expect(screen.getByRole("button", { name: "Close failure" })).toBeInTheDocument();
+    });
+
+    it("hides the old diagnosis until a failed retry can be refreshed", async () => {
+        mocks.api.retryFailedProvisioning.mockResolvedValue({
+            decisionStatus: "APPROVED",
+            entitlementId: "finance-reader",
+            id: "request-1",
+            provisioningStatus: "FAILED"
+        });
+        mocks.api.failedProvisioningRequests
+            .mockResolvedValueOnce({ items: [failedRequest], page: 0, size: 20, total: 1 })
+            .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+            .mockResolvedValueOnce({
+                items: [{ ...failedRequest, failureCode: "REQUESTER_MISSING" }],
+                page: 0,
+                size: 20,
+                total: 1
+            });
+
+        renderPage();
+        fireEvent.click(await screen.findByRole("button", { name: "Retry provisioning" }));
+        fireEvent.click(within(await screen.findByRole("dialog", { name: "Retry provisioning" }))
+            .getByRole("button", { name: "Retry provisioning" }));
+
+        expect(await screen.findByText("The service is unavailable.")).toBeInTheDocument();
+        expect(screen.getByText("Provisioning failed again.")).toBeInTheDocument();
+        expect(screen.getByText("The cause is unavailable.")).toBeInTheDocument();
+        expect(screen.queryByText("The original resource is missing.")).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+        expect(await screen.findByText("The requester no longer exists.")).toBeInTheDocument();
+        expect(screen.queryByText("The cause is unavailable.")).not.toBeInTheDocument();
+    });
+
+    it("ignores a diagnosis fetched before the failed retry completed", async () => {
+        let finishStaleFetch!: (value: unknown) => void;
+        mocks.api.retryFailedProvisioning.mockResolvedValue({
+            decisionStatus: "APPROVED",
+            entitlementId: "finance-reader",
+            id: "request-1",
+            provisioningStatus: "FAILED"
+        });
+        mocks.api.failedProvisioningRequests
+            .mockResolvedValueOnce({ items: [failedRequest], page: 0, size: 20, total: 21 })
+            .mockReturnValueOnce(new Promise((resolve) => { finishStaleFetch = resolve; }))
+            .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+        renderPage();
+        await screen.findByText("The original resource is missing.");
+        fireEvent.click(screen.getByLabelText("Go to next page"));
+        await waitFor(() => expect(mocks.api.failedProvisioningRequests).toHaveBeenCalledTimes(2));
+
+        fireEvent.click(screen.getByRole("button", { name: "Retry provisioning" }));
+        fireEvent.click(within(await screen.findByRole("dialog", { name: "Retry provisioning" }))
+            .getByRole("button", { name: "Retry provisioning" }));
+        expect(await screen.findByText("The cause is unavailable.")).toBeInTheDocument();
+
+        finishStaleFetch({ items: [failedRequest], page: 1, size: 20, total: 21 });
+        expect(await screen.findByText("The service is unavailable.")).toBeInTheDocument();
+        expect(screen.getByText("The cause is unavailable.")).toBeInTheDocument();
+        expect(screen.queryByText("The original resource is missing.")).not.toBeInTheDocument();
     });
 
     it("removes a successfully retried request before refresh, even if reloading fails", async () => {
