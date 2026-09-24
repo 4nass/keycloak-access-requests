@@ -62,7 +62,7 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
         parameters.put("realmId", realmId);
         if (from != null) {
             conditions.append(" and entity.occurredAt >= :from");
-            parameters.put("from", from.toEpochMilli());
+            parameters.put("from", inclusiveLowerBoundInMillis(from));
         }
         if (to != null) {
             conditions.append(" and entity.occurredAt <= :to");
@@ -118,6 +118,13 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
         public AuditEventPage {
             items = List.copyOf(items);
         }
+    }
+
+    private static long inclusiveLowerBoundInMillis(Instant instant) {
+        long wholeMillisecond = instant.toEpochMilli();
+        // Event timestamps are stored in milliseconds. A later nanosecond within the same
+        // millisecond must exclude the event at the truncated lower bound.
+        return instant.getNano() % 1_000_000 == 0 ? wholeMillisecond : Math.addExact(wholeMillisecond, 1);
     }
 
     private static int phaseOrder(AccessRequestEvent event) {

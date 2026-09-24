@@ -81,6 +81,41 @@ class JpaAccessRequestAuditEventSearchTest {
     }
 
     @Test
+    void roundsSubMillisecondLowerBoundsUpWithoutChangingExactOrPreEpochBounds() throws Exception {
+        Instant beforeEpoch = Instant.parse("1969-12-31T23:59:59.999Z");
+        try (EntityManager entityManager = factory.createEntityManager()) {
+            persist(entityManager,
+                    event("realm-precision", "request-at-boundary", "actor",
+                            AccessRequestEventType.REQUEST_CREATED, FIRST, 0),
+                    event("realm-precision", "request-after-boundary", "actor",
+                            AccessRequestEventType.REQUEST_CREATED, FIRST.plusMillis(1), 0),
+                    event("realm-before-epoch", "request-before-epoch", "actor",
+                            AccessRequestEventType.REQUEST_CREATED, beforeEpoch, 0),
+                    event("realm-before-epoch", "request-at-epoch", "actor",
+                            AccessRequestEventType.REQUEST_CREATED, Instant.EPOCH, 0));
+
+            Object fractional = search(entityManager, "realm-precision", FIRST.plusNanos(1),
+                    FIRST.plusMillis(1), null, null, null, 0, 20);
+            assertEquals(1L, total(fractional));
+            assertEquals("request-after-boundary", items(fractional).getFirst().requestId());
+
+            Object exact = search(entityManager, "realm-precision", FIRST,
+                    FIRST, null, null, null, 0, 20);
+            assertEquals(1L, total(exact));
+            assertEquals("request-at-boundary", items(exact).getFirst().requestId());
+
+            Object empty = search(entityManager, "realm-precision", FIRST.plusNanos(1),
+                    FIRST.plusNanos(999_999), null, null, null, 0, 20);
+            assertEquals(0L, total(empty));
+
+            Object before1970 = search(entityManager, "realm-before-epoch", beforeEpoch.plusNanos(1),
+                    Instant.EPOCH, null, null, null, 0, 20);
+            assertEquals(1L, total(before1970));
+            assertEquals("request-at-epoch", items(before1970).getFirst().requestId());
+        }
+    }
+
+    @Test
     void rejectsUnboundedOrInvalidAuditQueries() throws Exception {
         try (EntityManager entityManager = factory.createEntityManager()) {
             assertInvalid(entityManager, "realm-a", null, null, null, null, null, -1, 20);

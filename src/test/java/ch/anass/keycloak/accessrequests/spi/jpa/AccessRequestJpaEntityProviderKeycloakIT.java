@@ -575,6 +575,17 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertTrue(filteredPage.path("total").asInt() >= 1);
         assertTrue(java.util.stream.StreamSupport.stream(filteredPage.path("items").spliterator(), false)
                 .anyMatch(event -> eventId.equals(event.path("id").asText())));
+
+        URI fractionalWindow = URI.create(endpoint + "?requestId=" + requestId
+                + "&from=" + occurredAt.plusNanos(1)
+                + "&to=" + occurredAt.plusNanos(999_999));
+        HttpResponse<String> fractionalResult = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(fractionalWindow)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, fractionalResult.statusCode(), fractionalResult.body());
+        assertEquals(0, new ObjectMapper().readTree(fractionalResult.body()).path("total").asInt());
+
         for (JsonNode item : filteredPage.path("items")) {
             assertFalse(item.has("comment"));
             assertFalse(item.has("metadata"));
