@@ -66,6 +66,70 @@ class JpaAccessRequestHistoryReaderTest {
         assertEquals("Approved.", history.get(1).comment());
     }
 
+    @Test
+    void ordersSameMillisecondRetriesAndClosureByRequestVersionAndLifecyclePhase() {
+        String instant = "2026-09-03T10:05:00Z";
+        transaction(() -> {
+            entityManager.persist(new AccessRequestEventEntity(event(
+                    "event-a", "request-1", "realm-1", AccessRequestEventType.PROVISIONING_CLOSED,
+                    instant, 4L)));
+            entityManager.persist(new AccessRequestEventEntity(event(
+                    "event-b", "request-1", "realm-1", AccessRequestEventType.PROVISIONING_FAILED,
+                    instant, 3L)));
+            entityManager.persist(new AccessRequestEventEntity(event(
+                    "event-c", "request-1", "realm-1", AccessRequestEventType.PROVISIONING_STARTED,
+                    instant, 2L)));
+            entityManager.persist(new AccessRequestEventEntity(event(
+                    "event-d", "request-1", "realm-1", AccessRequestEventType.PROVISIONING_FAILED,
+                    instant, 2L)));
+            entityManager.persist(new AccessRequestEventEntity(event(
+                    "event-e", "request-1", "realm-1", AccessRequestEventType.PROVISIONING_STARTED,
+                    instant, 1L)));
+            entityManager.persist(new AccessRequestEventEntity(event(
+                    "event-f", "request-1", "realm-1", AccessRequestEventType.REQUEST_APPROVED,
+                    instant, 1L)));
+            entityManager.persist(new AccessRequestEventEntity(event(
+                    "event-g", "request-1", "realm-1", AccessRequestEventType.REQUEST_CREATED,
+                    instant, 0L)));
+        });
+        entityManager.clear();
+
+        List<AccessRequestEventType> types = new JpaAccessRequestHistoryReader(entityManager)
+                .findByRequestId("realm-1", "request-1").stream().map(AccessRequestEvent::type).toList();
+
+        assertEquals(List.of(
+                AccessRequestEventType.REQUEST_CREATED,
+                AccessRequestEventType.REQUEST_APPROVED,
+                AccessRequestEventType.PROVISIONING_STARTED,
+                AccessRequestEventType.PROVISIONING_FAILED,
+                AccessRequestEventType.PROVISIONING_STARTED,
+                AccessRequestEventType.PROVISIONING_FAILED,
+                AccessRequestEventType.PROVISIONING_CLOSED), types);
+    }
+
+    @Test
+    void ordersLegacySameMillisecondDecisionStartAndFailureWithoutAStoredVersion() {
+        String instant = "2026-09-03T10:05:00Z";
+        transaction(() -> {
+            entityManager.persist(new AccessRequestEventEntity(event(
+                    "event-a", "request-1", "realm-1", AccessRequestEventType.PROVISIONING_FAILED,
+                    instant, null)));
+            entityManager.persist(new AccessRequestEventEntity(event(
+                    "event-b", "request-1", "realm-1", AccessRequestEventType.PROVISIONING_STARTED,
+                    instant, null)));
+            entityManager.persist(new AccessRequestEventEntity(event(
+                    "event-z", "request-1", "realm-1", AccessRequestEventType.REQUEST_APPROVED,
+                    instant, null)));
+        });
+        entityManager.clear();
+
+        assertEquals(List.of(AccessRequestEventType.REQUEST_APPROVED, AccessRequestEventType.PROVISIONING_STARTED,
+                        AccessRequestEventType.PROVISIONING_FAILED),
+                new JpaAccessRequestHistoryReader(entityManager)
+                        .findByRequestId("realm-1", "request-1").stream()
+                        .map(AccessRequestEvent::type).toList());
+    }
+
     private static AccessRequestEvent event(
             String id,
             String requestId,
@@ -82,6 +146,14 @@ class JpaAccessRequestHistoryReaderTest {
                 Instant.parse(occurredAt),
                 comment,
                 null);
+    }
+
+    private static AccessRequestEvent event(
+            String id, String requestId, String realmId, AccessRequestEventType type,
+            String occurredAt, long requestVersion) {
+        return AccessRequestEvent.rehydrate(
+                id, requestId, realmId, type, "actor-1", Instant.parse(occurredAt),
+                null, null, requestVersion);
     }
 
     private void transaction(Runnable work) {

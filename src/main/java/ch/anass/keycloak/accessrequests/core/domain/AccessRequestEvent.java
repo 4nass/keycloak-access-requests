@@ -142,7 +142,7 @@ public final class AccessRequestEvent {
                 occurredAt,
                 comment,
                 null,
-                null);
+                request.version());
     }
 
     public String id() {

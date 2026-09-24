@@ -197,6 +197,8 @@ class RequestProvisioningTest {
                         "PROVISIONING_STARTED",
                         "PROVISIONING_SUCCEEDED"),
                 fixture.eventTypes());
+        assertEquals(List.of(1L, 1L, 2L, 2L, 3L), fixture.events().published().stream()
+                .map(AccessRequestEvent::requestVersion).toList());
         assertEquals(ProvisioningStatus.SUCCEEDED, fixture.persistedRequest().provisioningStatus());
     }
 
@@ -357,6 +359,7 @@ class RequestProvisioningTest {
         assertTrue(fixture.persistedRequest().provisioningFailureClosed());
         assertEquals("PROVISIONING_CLOSED", fixture.eventTypes().getLast());
         assertEquals("The requester was permanently removed.", fixture.events().published().getLast().comment());
+        assertEquals(closed.version(), fixture.events().published().getLast().requestVersion());
         assertThrows(InvalidProvisioningRetryException.class, () -> fixture.service().retryProvisioning(
                 fixture.request().realmId(), fixture.request().id(), "manager-1"));
         assertThrows(InvalidProvisioningClosureException.class, () -> fixture.service().closeFailedProvisioning(
