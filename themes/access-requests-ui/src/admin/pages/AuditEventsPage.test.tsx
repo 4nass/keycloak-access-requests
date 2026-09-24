@@ -103,7 +103,33 @@ describe("Administrative request detail", () => {
         expect(screen.getByText("accessRequestsAdminDecisionApproved")).toBeVisible();
         expect(screen.getByText("accessRequestsAdminProvisioningSucceeded")).toBeVisible();
         expect(screen.getByText("accessRequestsAdminEventsActor: approver-1")).toBeVisible();
-        expect(api.auditRequest).toHaveBeenCalledWith("request-1");
+        expect(api.auditRequest).toHaveBeenCalledWith("request-1", { page: 0, size: 20 });
+    });
+
+    it("pages long request histories without keeping the previous page visible", async () => {
+        const user = userEvent.setup();
+        const detail = {
+            id: "request-1", requesterId: "requester-1", entitlementId: "entitlement-1",
+            resourceName: "Finance", decisionStatus: "APPROVED", provisioningStatus: "FAILED",
+            provisioningClosedAt: null, createdAt: "2026-09-24T10:00:00Z", justification: "Need access.",
+            decision: null, historySize: 20, historyTotal: 21
+        };
+        api.auditRequest.mockReset()
+            .mockResolvedValueOnce({ ...detail, historyPage: 0, history: [{
+                type: "REQUEST_CREATED", actorId: "requester-1", occurredAt: "2026-09-24T10:00:00Z"
+            }] })
+            .mockResolvedValueOnce({ ...detail, historyPage: 1, history: [{
+                type: "PROVISIONING_FAILED", actorId: "approver-2", occurredAt: "2026-09-24T10:02:00Z"
+            }] });
+        render(<MemoryRouter initialEntries={["/master/access-requests/requests/request-1"]}>
+            <Routes><Route path="/:realm/access-requests/requests/:requestId" element={<AuditRequestDetailsPage />} /></Routes>
+        </MemoryRouter>);
+
+        expect(await screen.findByText("accessRequestsAdminEventRequestCreated")).toBeVisible();
+        await user.click(screen.getByRole("button", { name: /next page/i }));
+        await waitFor(() => expect(api.auditRequest).toHaveBeenCalledWith("request-1", { page: 1, size: 20 }));
+        expect(await screen.findByText("accessRequestsAdminEventProvisioningFailed")).toBeVisible();
+        expect(screen.queryByText("accessRequestsAdminEventRequestCreated")).not.toBeInTheDocument();
     });
 
     it("shows each safe failure code and the closure reason without technical diagnostics", async () => {

@@ -86,15 +86,20 @@ describe("Entitlements administration API client", () => {
     });
 
     it("opens the authorized administrative request detail linked from an audit event", async () => {
-        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+        const fetchMock = vi.fn().mockImplementation(async () => jsonResponse({
             id: "request/1", requesterId: "requester-1", history: [{ type: "REQUEST_CREATED" }]
         }));
-        const api = createApi(fetchMock) as unknown as { auditRequest(id: string): Promise<unknown> };
+        const api = createApi(fetchMock) as unknown as {
+            auditRequest(id: string, query?: { page: number; size: number }): Promise<unknown>
+        };
 
         await expect(api.auditRequest("request/1")).resolves.toMatchObject({ id: "request/1" });
         expect(request(fetchMock).url).toBe(
             "https://keycloak.example/realms/finance/access-requests/admin/requests/request%2F1"
+                + "?historyPage=0&historySize=20"
         );
+        await api.auditRequest("request/1", { page: 2, size: 10 });
+        expect(String(fetchMock.mock.calls[1][0])).toContain("?historyPage=2&historySize=10");
     });
 
     it("reads the server-authoritative catalog capability with the administrator token", async () => {

@@ -181,7 +181,10 @@ request event type, exact `actorId` and `requestId` filters, and `page`/`size` p
 Results are newest first and contain only event ID, request ID, type, actor ID, and timestamp.
 Comments and other history metadata are not exposed in the list. Invalid filters return `400`.
 The admin detail response includes the requester ID, current decision and provisioning statuses,
-decision details, and each history entry's actor ID and timestamp. Failed provisioning entries
+decision details, and a chronological history page (default `historyPage=0&historySize=20`,
+maximum size 100). `historyPage`, `historySize`, and `historyTotal` accompany the `history`
+array so clients can request subsequent pages without loading the entire history.
+Each history entry includes its actor ID and timestamp. Failed provisioning entries
 include only a stable failure code (unknown values become `UNKNOWN`), while closure entries
 include the operator's closure reason. Raw failure comments and event metadata are never returned.
 These administrative fields are not added to the requester's `/mine/{id}` response.

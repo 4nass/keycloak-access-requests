@@ -68,6 +68,9 @@ export type AdminAuditRequestDetails = {
         failureCode: ProvisioningFailureCode | null;
         closureReason: string | null;
     }[];
+    historyPage: number;
+    historySize: number;
+    historyTotal: number;
 };
 
 export type EntitlementCreation = Pick<
@@ -170,7 +173,7 @@ export type EntitlementsAdminApi = {
     capabilities(): Promise<AdminCapabilities>;
     list(query?: { page?: number; size?: number }): Promise<EntitlementPage>;
     auditEvents(query?: AdminAuditEventQuery): Promise<AdminAuditEventPage>;
-    auditRequest(id: string): Promise<AdminAuditRequestDetails>;
+    auditRequest(id: string, query?: { page?: number; size?: number }): Promise<AdminAuditRequestDetails>;
     notificationDeliveries(query?: { page?: number; size?: number }): Promise<NotificationDeliveryPage>;
     notificationDeliverySummary(): Promise<NotificationDeliverySummary>;
     failedProvisioningRequests(query?: { page?: number; size?: number; state?: "OPEN" | "CLOSED" }): Promise<FailedProvisioningRequestPage>;
@@ -262,7 +265,8 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
         capabilities: () => request("/admin/capabilities"),
         list: (query) => request(`/admin/entitlements?${pageQuery(query)}`),
         auditEvents: (query) => request(`/admin/events?${auditQuery(query)}`),
-        auditRequest: (id) => request(`/admin/requests/${encodeURIComponent(id)}`),
+        auditRequest: (id, query) => request(`/admin/requests/${encodeURIComponent(id)}`
+            + `?historyPage=${query?.page ?? 0}&historySize=${query?.size ?? 20}`),
         notificationDeliveries: (query) => request(`/admin/notification-deliveries?${pageQuery(query)}`),
         notificationDeliverySummary: () => request("/admin/notification-deliveries/summary"),
         failedProvisioningRequests: (query) => request(

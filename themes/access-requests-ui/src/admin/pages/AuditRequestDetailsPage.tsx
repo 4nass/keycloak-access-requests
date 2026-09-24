@@ -1,7 +1,7 @@
 import {
     Alert, Button, DataList, DataListCell, DataListItem, DataListItemCells, DataListItemRow,
     DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm,
-    EmptyState, Label, PageSection, Spinner, Text, TextContent, Title
+    EmptyState, Label, PageSection, Pagination, Spinner, Text, TextContent, Title
 } from "@patternfly/react-core";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -16,24 +16,32 @@ export function AuditRequestDetailsPage() {
     const { t, i18n } = useTranslation();
     const api = useEntitlementsAdminApi();
     const { realm, requestId } = useParams();
-    const [details, setDetails] = useState<{ api: typeof api; requestId: string; data: AdminAuditRequestDetails }>();
-    const [error, setError] = useState<{ api: typeof api; requestId: string; cause: unknown }>();
+    const [page, setPage] = useState(0);
+    const [size, setSize] = useState(20);
+    const [details, setDetails] = useState<{
+        api: typeof api; requestId: string; page: number; size: number; data: AdminAuditRequestDetails
+    }>();
+    const [error, setError] = useState<{
+        api: typeof api; requestId: string; page: number; size: number; cause: unknown
+    }>();
     const [retry, setRetry] = useState(0);
 
     useEffect(() => {
         if (!requestId) return;
         let active = true;
         setError(undefined);
-        void api.auditRequest(requestId).then((next) => {
-            if (active) setDetails({ api, requestId, data: next });
+        void api.auditRequest(requestId, { page, size }).then((next) => {
+            if (active) setDetails({ api, requestId, page, size, data: next });
         }).catch((failure: unknown) => {
-            if (active) setError({ api, requestId, cause: failure });
+            if (active) setError({ api, requestId, page, size, cause: failure });
         });
         return () => { active = false; };
-    }, [api, requestId, retry]);
+    }, [api, requestId, page, size, retry]);
 
-    const currentDetails = details?.api === api && details.requestId === requestId ? details.data : undefined;
-    const currentError = error?.api === api && error.requestId === requestId ? error.cause : undefined;
+    const currentDetails = details?.api === api && details.requestId === requestId
+        && details.page === page && details.size === size ? details.data : undefined;
+    const currentError = error?.api === api && error.requestId === requestId
+        && error.page === page && error.size === size ? error.cause : undefined;
     const errorPresentation = currentError ? presentEntitlementsAdminError(currentError) : undefined;
     const formatDate = (date: string) => new Intl.DateTimeFormat(i18n.resolvedLanguage || "en", {
         dateStyle: "medium", timeStyle: "short"
@@ -90,6 +98,15 @@ export function AuditRequestDetailsPage() {
                         ]} /></DataListItemRow>
                     </DataListItem>)}
                 </DataList>
+                {currentDetails.historyTotal > currentDetails.historySize && <Pagination
+                    aria-label={t("accessRequestsAdminEventsHistory")}
+                    itemCount={currentDetails.historyTotal}
+                    page={page + 1}
+                    perPage={size}
+                    perPageOptions={[10, 20, 50].map((value) => ({ title: String(value), value }))}
+                    onSetPage={(_event, next) => setPage(next - 1)}
+                    onPerPageSelect={(_event, next) => { setPage(0); setSize(next); }}
+                />}
             </>}
         </PageSection>
     </>;
