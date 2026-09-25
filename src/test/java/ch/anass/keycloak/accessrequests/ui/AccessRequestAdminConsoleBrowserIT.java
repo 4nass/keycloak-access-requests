@@ -41,6 +41,7 @@ import java.security.cert.X509Certificate;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
@@ -89,8 +90,17 @@ class AccessRequestAdminConsoleBrowserIT {
     }
 
     @Test
-    void completesAccessRequestWorkflowAcrossBothConsoles() throws Exception {
-        try (KeycloakContainer keycloak = keycloak(); GenericContainer<?> chrome = chrome()) {
+    void completesAccessRequestWorkflowAcrossBothConsolesOnPostgres() throws Exception {
+        try (PostgreSQLContainer postgres = new PostgreSQLContainer(
+                DockerImageName.parse(POSTGRESQL_CONTAINER).asCompatibleSubstituteFor("postgres"))
+                .withDatabaseName("keycloak")
+                .withUsername("keycloak")
+                .withPassword("keycloak")
+                .withNetwork(NETWORK)
+                .withNetworkAliases("postgres");
+             KeycloakContainer keycloak = keycloakWithPostgres();
+             GenericContainer<?> chrome = chrome()) {
+            postgres.start();
             keycloak.start();
             configureAdminCliTokenBehavior(keycloak);
             AdminConsoleFixture manager = configureAdminConsole(keycloak);
@@ -178,6 +188,7 @@ class AccessRequestAdminConsoleBrowserIT {
                     "A fresh requester access token must contain the granted target role.");
             assertCompleteRequestHistory(keycloak, adminToken, freshRequesterToken,
                     requestId, requesterId, approverId, justification);
+            assertCompletedRequestPersistedInPostgres(postgres, requestId);
 
             driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
             try {
@@ -308,6 +319,36 @@ class AccessRequestAdminConsoleBrowserIT {
         assertEquals("PROVISIONING_SUCCEEDED", history.get(3).path("type").asText());
         for (int index = 1; index < history.size(); index++) {
             assertEquals(approverId, history.get(index).path("actorId").asText());
+        }
+    }
+
+    private void assertCompletedRequestPersistedInPostgres(PostgreSQLContainer postgres, String requestId)
+            throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+             PreparedStatement request = connection.prepareStatement("""
+                     select DECISION_STATUS, PROVISIONING_STATUS
+                       from AR_ACCESS_REQUEST
+                      where ID = ?
+                     """);
+             PreparedStatement events = connection.prepareStatement("""
+                     select count(*)
+                       from AR_ACCESS_REQUEST_HISTORY
+                      where REQUEST_ID = ?
+                     """)) {
+            request.setString(1, requestId);
+            try (ResultSet result = request.executeQuery()) {
+                assertTrue(result.next(), "The browser-created request must be stored in PostgreSQL.");
+                assertEquals("APPROVED", result.getString("DECISION_STATUS"));
+                assertEquals("SUCCEEDED", result.getString("PROVISIONING_STATUS"));
+                assertFalse(result.next());
+            }
+
+            events.setString(1, requestId);
+            try (ResultSet result = events.executeQuery()) {
+                assertTrue(result.next());
+                assertEquals(4, result.getInt(1), "PostgreSQL must contain the complete request history.");
+            }
         }
     }
 
