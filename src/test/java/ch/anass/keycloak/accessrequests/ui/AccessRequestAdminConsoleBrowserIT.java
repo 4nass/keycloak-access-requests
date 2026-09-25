@@ -1,5 +1,7 @@
 package ch.anass.keycloak.accessrequests.ui;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dasniko.testcontainers.keycloak.KeycloakContainer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
@@ -40,6 +42,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -65,6 +68,7 @@ class AccessRequestAdminConsoleBrowserIT {
             "postgresql.container", DEFAULT_POSTGRESQL_CONTAINER);
     private static final Network NETWORK = Network.newNetwork();
     private static final HttpClient HTTP_CLIENT = insecureHttpClient();
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     @AfterAll
     static void closeNetwork() {
@@ -81,6 +85,229 @@ class AccessRequestAdminConsoleBrowserIT {
             verifyCatalogManagement(keycloak, fixture, false, true);
             verifyCatalogManagement(keycloak, fixture, true, false);
             verifyCatalogAccessDenied(keycloak, fixture);
+        }
+    }
+
+    @Test
+    void completesAccessRequestWorkflowAcrossBothConsoles() throws Exception {
+        try (KeycloakContainer keycloak = keycloak(); GenericContainer<?> chrome = chrome()) {
+            keycloak.start();
+            configureAdminCliTokenBehavior(keycloak);
+            AdminConsoleFixture manager = configureAdminConsole(keycloak);
+            String adminToken = manager.globalAdminToken();
+            String requestClientId = createRequestTestClient(keycloak, adminToken);
+            enableAccountConsoleForAccessRequests(keycloak, adminToken);
+
+            String suffix = UUID.randomUUID().toString();
+            String roleName = "browser-target-" + suffix;
+            String entitlementName = "Browser workflow entitlement " + suffix.substring(0, 8);
+            String approverRoleName = "browser-approver-" + suffix;
+            String roleId = createRealmRole(keycloak, adminToken, roleName);
+            String approverRoleId = createRealmRole(keycloak, adminToken, approverRoleName);
+            String requesterUsername = "browser-requester-" + suffix;
+            String approverUsername = "browser-approver-user-" + suffix;
+            String requesterPassword = "browser-requester-password";
+            String approverPassword = "browser-approver-password";
+            String requesterId = createEnabledUser(keycloak, adminToken, requesterUsername, requesterPassword);
+            String approverId = createEnabledUser(keycloak, adminToken, approverUsername, approverPassword);
+            assignRealmRole(keycloak, adminToken, approverId, approverRoleId, approverRoleName);
+            assertRoleNotGranted(keycloak, adminToken, requesterId, roleId);
+
+            AdminConsoleFixture workflowCatalog = new AdminConsoleFixture(
+                    adminToken, manager.managerUsername(), manager.managerPassword(),
+                    manager.observerUsername(), manager.observerPassword(), roleId, approverRoleId);
+            chrome.start();
+            RemoteWebDriver driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
+            try {
+                configureDriver(driver);
+                logInToAdminConsole(keycloak, driver, manager.managerUsername(), manager.managerPassword());
+                openAccessRequests(driver);
+                createEntitlement(driver, workflowCatalog, entitlementName);
+                updateEntitlement(driver, entitlementName);
+                assertNoJavaScriptErrors(driver);
+            } finally {
+                driver.quit();
+            }
+            String entitlementId = entitlementId(keycloak, adminToken, entitlementName);
+            String justification = "Need read-only access for the project.";
+            driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
+            try {
+                configureDriver(driver);
+                logInToAccountConsole(keycloak, driver, requesterUsername, requesterPassword, "request-access");
+                By entitlement = By.id("requestable-entitlement-" + entitlementId);
+                WebElement row = waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(entitlement));
+                row.findElement(By.xpath(".//button[normalize-space()='Request access']")).click();
+                driver.findElement(By.id("access-request-justification")).sendKeys(justification);
+                driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Submit request']")).click();
+                waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                        By.xpath("//*[@id='requestable-entitlement-" + entitlementId
+                                + "']//*[normalize-space()='Request pending']")));
+                assertNoJavaScriptErrors(driver);
+            } finally {
+                driver.quit();
+            }
+            String requesterToken = accessToken(keycloak, requestClientId, requesterUsername, requesterPassword);
+            String requestId = onlyRequestId(keycloak, requesterToken, entitlementId);
+            assertRoleNotGranted(keycloak, adminToken, requesterId, roleId);
+
+            driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
+            try {
+                configureDriver(driver);
+                logInToAccountConsole(keycloak, driver, approverUsername, approverPassword, "approvals");
+                WebElement row = waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                        By.id("pending-request-" + requestId)));
+                assertTrue(row.getText().contains(justification));
+                row.findElement(By.xpath(".//button[normalize-space()='Approve']")).click();
+                driver.findElement(By.id("access-request-decision-comment"))
+                        .sendKeys("Approved for the project.");
+                driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Confirm approval']"))
+                        .click();
+                waitFor(driver).until(ExpectedConditions.invisibilityOfElementLocated(
+                        By.id("pending-request-" + requestId)));
+                assertNoJavaScriptErrors(driver);
+            } finally {
+                driver.quit();
+            }
+
+            assertRoleGranted(keycloak, adminToken, requesterId, roleId);
+            String freshRequesterToken = accessToken(keycloak, requestClientId, requesterUsername, requesterPassword);
+            JsonNode token = JSON.readTree(Base64.getUrlDecoder().decode(freshRequesterToken.split("\\.")[1]));
+            assertTrue(token.path("realm_access").path("roles").isArray());
+            assertTrue(token.path("realm_access").path("roles").valueStream()
+                    .anyMatch(role -> roleName.equals(role.asText())),
+                    "A fresh requester access token must contain the granted target role.");
+            assertCompleteRequestHistory(keycloak, adminToken, freshRequesterToken,
+                    requestId, requesterId, approverId, justification);
+
+            driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
+            try {
+                configureDriver(driver);
+                logInToAccountConsole(keycloak, driver, requesterUsername, requesterPassword, "my-requests");
+                WebElement row = waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                        By.id("access-request-" + requestId)));
+                assertTrue(row.getText().contains(entitlementName));
+                assertTrue(row.getText().contains("Approved"));
+                assertNoJavaScriptErrors(driver);
+            } finally {
+                driver.quit();
+            }
+
+            driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
+            try {
+                configureDriver(driver);
+                logInToAdminConsole(keycloak, driver, manager.managerUsername(), manager.managerPassword());
+                driver.navigate().to(adminConsoleUri() + "#/master/access-requests/requests/" + requestId);
+                waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                        By.xpath("//h2[normalize-space()='History']")));
+                assertAuditDetailValue(driver, "Requester", requesterId);
+                assertAuditDetailValue(driver, "Decision status", "Approved");
+                assertAuditDetailValue(driver, "Provisioning status", "Succeeded");
+                assertAuditHistoryActor(driver, "Requested", requesterId);
+                assertAuditHistoryActor(driver, "Approved", approverId);
+                assertAuditHistoryActor(driver, "Provisioning started", approverId);
+                assertAuditHistoryActor(driver, "Provisioning succeeded", approverId);
+                assertNoJavaScriptErrors(driver);
+            } finally {
+                driver.quit();
+            }
+        }
+    }
+
+    private void enableAccountConsoleForAccessRequests(KeycloakContainer keycloak, String adminToken) throws Exception {
+        HttpResponse<Void> theme = HTTP_CLIENT.send(
+                adminRequest(keycloak, "/admin/realms/master", adminToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(
+                                "{\"accountTheme\":\"access-requests\",\"adminTheme\":\"access-requests\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(204, theme.statusCode());
+
+        String accountClientId = findId(
+                keycloak, "/admin/realms/master/clients?clientId=account-console", adminToken);
+        HttpResponse<Void> mapper = HTTP_CLIENT.send(
+                adminRequest(keycloak, "/admin/realms/master/clients/" + accountClientId
+                        + "/protocol-mappers/models", adminToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("""
+                                {"name":"access-requests-api-audience","protocol":"openid-connect",
+                                 "protocolMapper":"oidc-audience-mapper","config":{
+                                   "included.client.audience":"access-requests-api",
+                                   "access.token.claim":"true","id.token.claim":"false"}}
+                                """))
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(201, mapper.statusCode());
+    }
+
+    private void logInToAccountConsole(
+            KeycloakContainer keycloak, WebDriver driver, String username, String password, String route) {
+        driver.navigate().to("https://keycloak:8443/realms/master/account/" + route);
+        try {
+            waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.id("username"))).sendKeys(username);
+        } catch (TimeoutException exception) {
+            throw new AssertionError("The Account Console login form was not rendered. Page: %s. Keycloak log: %s"
+                    .formatted(driver.findElement(By.tagName("body")).getText(), tail(keycloak.getLogs())), exception);
+        }
+        driver.findElement(By.id("password")).sendKeys(password);
+        driver.findElement(By.id("kc-login")).click();
+        waitFor(driver).until(ExpectedConditions.urlContains("/realms/master/account/" + route));
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("#app")));
+    }
+
+    private String entitlementId(KeycloakContainer keycloak, String adminToken, String name) throws Exception {
+        HttpResponse<String> response = HTTP_CLIENT.send(
+                adminRequest(keycloak, "/realms/master/access-requests/admin/entitlements?page=0&size=100", adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), response.body());
+        for (JsonNode item : JSON.readTree(response.body()).path("items")) {
+            if (name.equals(item.path("displayName").asText())) {
+                assertTrue(item.path("requestable").asBoolean(), "The catalog entry must be published.");
+                return item.path("id").asText();
+            }
+        }
+        throw new AssertionError("The published entitlement is missing from the admin catalog.");
+    }
+
+    private String onlyRequestId(KeycloakContainer keycloak, String requesterToken, String entitlementId)
+            throws Exception {
+        HttpResponse<String> response = HTTP_CLIENT.send(
+                adminRequest(keycloak, "/realms/master/access-requests/mine", requesterToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), response.body());
+        JsonNode page = JSON.readTree(response.body());
+        assertEquals(1, page.path("total").asInt(), "The requester must have exactly one request.");
+        JsonNode request = page.path("items").get(0);
+        assertEquals(entitlementId, request.path("entitlementId").asText());
+        assertEquals("PENDING", request.path("decisionStatus").asText());
+        return request.path("id").asText();
+    }
+
+    private void assertCompleteRequestHistory(
+            KeycloakContainer keycloak, String adminToken, String requesterToken, String requestId,
+            String requesterId, String approverId, String justification) throws Exception {
+        HttpResponse<String> mine = HTTP_CLIENT.send(
+                adminRequest(keycloak, "/realms/master/access-requests/mine/" + requestId, requesterToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, mine.statusCode(), mine.body());
+        JsonNode requesterView = JSON.readTree(mine.body());
+        assertEquals(justification, requesterView.path("justification").asText());
+        assertEquals("APPROVED", requesterView.path("decisionStatus").asText());
+        assertEquals("SUCCEEDED", requesterView.path("provisioningStatus").asText());
+
+        HttpResponse<String> audit = HTTP_CLIENT.send(
+                adminRequest(keycloak, "/realms/master/access-requests/admin/requests/" + requestId, adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, audit.statusCode(), audit.body());
+        JsonNode history = JSON.readTree(audit.body()).path("history");
+        assertEquals(4, history.size(), "The completed request must have a complete immutable audit history.");
+        assertEquals("REQUEST_CREATED", history.get(0).path("type").asText());
+        assertEquals(requesterId, history.get(0).path("actorId").asText());
+        assertEquals("REQUEST_APPROVED", history.get(1).path("type").asText());
+        assertEquals("PROVISIONING_STARTED", history.get(2).path("type").asText());
+        assertEquals("PROVISIONING_SUCCEEDED", history.get(3).path("type").asText());
+        for (int index = 1; index < history.size(); index++) {
+            assertEquals(approverId, history.get(index).path("actorId").asText());
         }
     }
 
