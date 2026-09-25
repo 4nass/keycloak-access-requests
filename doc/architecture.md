@@ -102,7 +102,7 @@ The Account application is a focused integration in the public Account Console s
 
 Keycloak exposes the Admin UI's pages, routes, providers, and `PageNav` through its public UI package. It does not currently expose a stable contribution API for adding one item to the stock navigation. `PageNav` itself does not accept contributed entries.
 
-The theme therefore maintains a small fork of Keycloak's `PageNav` in `AccessRequestsAdminPageNav.tsx`. Its baseline is Keycloak 26.7.3 and the only product-specific behavior is the **Access requests** catalog item. The item is visible only after a capability check; the realm API remains authoritative for authorization.
+The theme therefore maintains a small fork of Keycloak 26.7.4's `PageNav` in `AccessRequestsAdminPageNav.tsx`, including its route normalization. The product-specific additions are the **Access requests** navigation entries. Each entry is visible only after a capability check; the realm API remains authoritative for authorization.
 
 Using Keycloak's `declarative-ui` server feature only for this link would make the provider depend on an experimental feature being enabled at runtime. The local fork avoids that runtime requirement at the cost of an explicit upgrade review.
 

@@ -18,6 +18,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import { useEntitlementsAdminApi } from "./api/useEntitlementsAdminApi";
+import { normalizeNavRoutePath } from "./page-nav-utils";
 
 type AccessType = Parameters<ReturnType<typeof useAccess>["hasAccess"]>[number];
 
@@ -26,12 +27,12 @@ type SelectedItem = {
 };
 
 /**
- * Forked from Keycloak 26.7.3's PageNav:
- * https://github.com/keycloak/keycloak/blob/26.7.3/js/apps/admin-ui/src/PageNav.tsx
+ * Forked from Keycloak 26.7.4's PageNav:
+ * https://github.com/keycloak/keycloak/blob/26.7.4/js/apps/admin-ui/src/PageNav.tsx
  *
  * The public PageNav export has no supported contribution point for an additional navigation item.
  * Keep this implementation aligned with that source on every Keycloak minor upgrade; the only
- * product-specific addition is the server-authorized Access requests catalog entry.
+ * product-specific additions are the server-authorized Access requests navigation entries.
  */
 export function AccessRequestsAdminPageNav() {
     const { t } = useTranslation();
@@ -156,7 +157,7 @@ function KeycloakNavItem({ path, title }: { path: string; title: string }) {
 }
 
 function hasKeycloakRouteAccess(path: string, hasAccess: (...access: AccessType[]) => boolean) {
-    const route = keycloakRoutes.find((candidate) => candidate.path.replace(/\/:.+?(\?|(?:(?!\/).)*|$)/g, "") === path);
+    const route = keycloakRoutes.find((candidate) => normalizeNavRoutePath(candidate.path) === path);
     const access = route?.handle?.access as AccessType | AccessType[] | undefined;
 
     return access !== undefined && (Array.isArray(access) ? hasAccess(...access) : hasAccess(access));
