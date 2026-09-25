@@ -1,6 +1,7 @@
 import { Page } from "@keycloak/keycloak-account-ui";
 import {
     ActionGroup,
+    Alert,
     Button,
     DataList,
     DataListAction,
@@ -211,6 +212,9 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagina
                             void submit();
                         }}
                     >
+                        {pendingDecision.type === "approve" && pendingDecision.request.resourceType === "GROUP" && (
+                            <Alert isInline variant="warning" title={t("accessRequestsGroupApprovalWarning")} />
+                        )}
                         <FormGroup fieldId="access-request-decision-comment" label={t("accessRequestsDecisionComment")}>
                             <TextArea
                                 aria-label={t("accessRequestsDecisionComment")}

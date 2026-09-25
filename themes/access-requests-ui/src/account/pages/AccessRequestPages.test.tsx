@@ -90,6 +90,7 @@ describe("Access Request account console pages", () => {
             "accessRequestsApprove",
             "accessRequestsApproved",
             "accessRequestsApproveEntitlement",
+            "accessRequestsGroupApprovalWarning",
             "accessRequestsApprover",
             "accessRequestsCancel",
             "accessRequestsCanceled",
@@ -397,6 +398,23 @@ describe("Access Request account console pages", () => {
             .getByText("Already granted")).toBeVisible();
         expect(within(screen.getByRole("listitem", { name: "VPN Production" }))
             .getByText("Request pending")).toBeVisible();
+    });
+
+    it("does not show the approver-only group warning to a requester", async () => {
+        const user = userEvent.setup();
+        renderAccessRequestUi(<RequestAccessPage
+            entries={[{
+                id: "vpn-production", name: "VPN Production", description: "Production VPN group",
+                resourceType: "GROUP", riskLevel: "HIGH", alreadyGranted: false, pendingRequest: false
+            }]}
+            onRequest={vi.fn()}
+        />);
+
+        const warning = messages.accessRequestsGroupApprovalWarning;
+        expect(screen.queryByText(warning)).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Request access" }));
+        expect(screen.getByRole("dialog", { name: "Request access to VPN Production" })).toBeVisible();
+        expect(screen.queryByText(warning)).not.toBeInTheDocument();
     });
 
     it("keeps the request dialog open, prevents duplicate submission, and refreshes only after a successful request", async () => {
@@ -783,6 +801,43 @@ describe("Access Request account console pages", () => {
             "Access request approved."
         ));
         expect(accountAlerts.addAlert).toHaveBeenNthCalledWith(2, "Access request rejected.");
+    });
+
+    it("warns about inherited group access only before approving a group request", async () => {
+        const user = userEvent.setup();
+        renderAccessRequestUi(<ApprovalsPage
+            requests={[
+                {
+                    id: "group-request", requester: "Anass Chahbouni", entitlementName: "VPN Group",
+                    resourceType: "GROUP", riskLevel: "HIGH", justification: "Need VPN access.",
+                    requestedAt: "2026-09-25T10:00:00Z"
+                },
+                {
+                    id: "role-request", requester: "Anass Chahbouni", entitlementName: "Finance Reader",
+                    resourceType: "CLIENT_ROLE", riskLevel: "LOW", justification: "Need reports.",
+                    requestedAt: "2026-09-25T10:00:00Z"
+                }
+            ]}
+            onApprove={vi.fn()}
+            onReject={vi.fn()}
+        />);
+
+        const warning = messages.accessRequestsGroupApprovalWarning;
+        const group = screen.getByRole("listitem", { name: "VPN Group requested by Anass Chahbouni" });
+        expect(screen.queryByText(warning)).not.toBeInTheDocument();
+        await user.click(within(group).getByRole("button", { name: "Approve" }));
+        expect(within(screen.getByRole("dialog", { name: "Approve VPN Group" })).getByText(warning)).toBeVisible();
+        await user.keyboard("{Escape}");
+
+        await user.click(within(group).getByRole("button", { name: "Reject" }));
+        expect(within(screen.getByRole("dialog", { name: "Reject VPN Group" })).queryByText(warning))
+            .not.toBeInTheDocument();
+        await user.keyboard("{Escape}");
+
+        const role = screen.getByRole("listitem", { name: "Finance Reader requested by Anass Chahbouni" });
+        await user.click(within(role).getByRole("button", { name: "Approve" }));
+        expect(within(screen.getByRole("dialog", { name: "Approve Finance Reader" })).queryByText(warning))
+            .not.toBeInTheDocument();
     });
 
     it("waits for a decision, prevents duplicate approval, and retains the dialog if it fails", async () => {

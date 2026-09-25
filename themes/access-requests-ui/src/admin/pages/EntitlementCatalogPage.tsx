@@ -361,6 +361,11 @@ function EntitlementDialog({
                         <FormSelectOption label={t("accessRequestsAdminResourceTypeGroup")} value="GROUP" />
                     </FormSelect>
                 </FormGroup>
+                {isCreate && form.resourceType === "GROUP" && <Alert
+                    isInline
+                    variant="warning"
+                    title={t("accessRequestsAdminGroupAccessWarning")}
+                />}
                 <FormGroup fieldId="entitlement-resource-id" isRequired label={t("accessRequestsAdminResourceId")}>
                     {isCreate ? (
                         <KeycloakReferenceSelector

@@ -130,6 +130,27 @@ describe("EntitlementCatalogPage", () => {
         expect(screen.queryByRole("textbox", { name: "accessRequestsAdminApproverRole" })).not.toBeInTheDocument();
     });
 
+    it("warns about composite group access only while creating a group entitlement", async () => {
+        const user = userEvent.setup();
+        api.list.mockResolvedValue({
+            items: [{ ...entitlement, resourceType: "GROUP" }], page: 0, size: 20, total: 1
+        });
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        expect(screen.queryByText("accessRequestsAdminGroupAccessWarning")).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminCreateEntitlement" }));
+        const resourceType = screen.getByRole("combobox", { name: "accessRequestsAdminResourceType" });
+        expect(screen.queryByText("accessRequestsAdminGroupAccessWarning")).not.toBeInTheDocument();
+        await user.selectOptions(resourceType, "GROUP");
+        expect(screen.getByText("accessRequestsAdminGroupAccessWarning")).toBeVisible();
+        await user.selectOptions(resourceType, "CLIENT_ROLE");
+        expect(screen.queryByText("accessRequestsAdminGroupAccessWarning")).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminCancel" }));
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminEditEntitlement" }));
+        expect(screen.queryByText("accessRequestsAdminGroupAccessWarning")).not.toBeInTheDocument();
+    });
+
     it("retains the existing page and shows a safe inline error when refresh fails", async () => {
         const user = userEvent.setup();
         const failure = Object.assign(new Error("The access request API call failed."), {

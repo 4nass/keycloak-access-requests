@@ -39,6 +39,7 @@ const expectedMessageKeys = [
     "accessRequestsAdminCatalogDescription",
     "accessRequestsAdminCreated",
     "accessRequestsAdminCreateEntitlement",
+    "accessRequestsAdminGroupAccessWarning",
     "accessRequestsAdminDescription",
     "accessRequestsAdminDisplayName",
     "accessRequestsAdminEditEntitlement",
