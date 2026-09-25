@@ -9,14 +9,14 @@ importers:
   .:
     dependencies:
       '@keycloak/keycloak-account-ui':
-        specifier: 26.7.3
-        version: 26.7.3(typescript@7.0.2)
+        specifier: 26.7.4
+        version: 26.7.4(typescript@7.0.2)
       '@keycloak/keycloak-admin-ui':
-        specifier: 26.7.3
-        version: 26.7.3(@babel/runtime@7.29.7)(@types/react@18.3.31)(typescript@7.0.2)
+        specifier: 26.7.4
+        version: 26.7.4(@babel/runtime@7.29.7)(@types/react@18.3.31)(typescript@7.0.2)
       '@keycloak/keycloak-ui-shared':
-        specifier: 26.7.3
-        version: 26.7.3(typescript@7.0.2)
+        specifier: 26.7.4
+        version: 26.7.4(typescript@7.0.2)
       '@patternfly/patternfly':
         specifier: 5.4.2
         version: 5.4.2
@@ -322,18 +322,18 @@ packages:
   '@jridgewell/sourcemap-codec@1.6.0':
     resolution: {integrity: sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==}
 
-  '@keycloak/keycloak-account-ui@26.7.3':
-    resolution: {integrity: sha512-7OUHQEQlbVhQJpiCGtUi+nPUYyHnAP0CWJvIpKcJkQc45INGf6T6fKDmKqEn1zDyyOCOKlc25zhDCGuFwRiDvQ==}
+  '@keycloak/keycloak-account-ui@26.7.4':
+    resolution: {integrity: sha512-UAmlnaB/RxzRTkh7I0rvngtfIaDsPkZPuW4J6f6paiGm7I18SPd4Umk6maPrdcXuIm7t4AgvqNFa6qVRls2sZQ==}
 
-  '@keycloak/keycloak-admin-client@26.7.3':
-    resolution: {integrity: sha512-y9wbqcaoRjCvTF+XKaCDTBbHjuFZPbDKS/BRUzIwEBG/prHJ7YuCIsN61FzWzAVAQpvjed5YZ8x9C1/ijGV3mw==}
+  '@keycloak/keycloak-admin-client@26.7.4':
+    resolution: {integrity: sha512-Zrjt3SqMXk/aUCLWYhxDbNl/WSzns3Hr+IrJN2Tw4rEsRXpLC1ABUhB1n7mjw+OsxDvxVhF8QtwHuAUA8tQmkw==}
     engines: {node: '>=18'}
 
-  '@keycloak/keycloak-admin-ui@26.7.3':
-    resolution: {integrity: sha512-bsTpxr80Xaa5Z8JFl1kZs1eCHswmPIGyTihXM2IKmQUKlssHRG1xYXBtwBUjMTU3of6MOd68MWJLOBDUm83D9A==}
+  '@keycloak/keycloak-admin-ui@26.7.4':
+    resolution: {integrity: sha512-HWQVktZlNQMAt0oISiyXKKFp1rIEz0D8vOg6s1eYVtSIM/qeA4VUxX3wt8pboS36vDqq2XXDWU9XdkaJ+LyQpQ==}
 
-  '@keycloak/keycloak-ui-shared@26.7.3':
-    resolution: {integrity: sha512-j2BlnBWeEef6WMqaofH8+CMc3nOXkiupzpfEo5YOoY3HLZj6d6e/hWDAjaCNJ5xgHkak0u9Pyon2cQrev/vOPg==}
+  '@keycloak/keycloak-ui-shared@26.7.4':
+    resolution: {integrity: sha512-brSuGuigCzRUr2+0tdbxT67Unc6ZKWO3kq3yIHy2psoV06HB9MVlgp2IxkF0JmDnn1gTQIxmU6hLv85YXqo7cg==}
 
   '@microsoft/kiota-abstractions@1.0.0-preview.103':
     resolution: {integrity: sha512-om7nKH8nWyEAQ0lgbIdKdrkmznhkdDJdliCnAIo31X/hlUah1aBzvfUx+pbyp67Q040yLK+2J6P7AnvGSoN/qQ==}
@@ -2126,9 +2126,9 @@ snapshots:
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
 
-  '@keycloak/keycloak-account-ui@26.7.3(typescript@7.0.2)':
+  '@keycloak/keycloak-account-ui@26.7.4(typescript@7.0.2)':
     dependencies:
-      '@keycloak/keycloak-ui-shared': 26.7.3(typescript@7.0.2)
+      '@keycloak/keycloak-ui-shared': 26.7.4(typescript@7.0.2)
       '@patternfly/patternfly': 5.4.2
       '@patternfly/react-core': 5.4.14(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@patternfly/react-icons': 5.4.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -2146,7 +2146,7 @@ snapshots:
       - react-native
       - typescript
 
-  '@keycloak/keycloak-admin-client@26.7.3':
+  '@keycloak/keycloak-admin-client@26.7.4':
     dependencies:
       '@microsoft/kiota-abstractions': 1.0.0-preview.103
       '@microsoft/kiota-http-fetchlibrary': 1.0.0-preview.103
@@ -2157,11 +2157,11 @@ snapshots:
       camelize-ts: 3.0.0
       url-template: 3.1.1
 
-  '@keycloak/keycloak-admin-ui@26.7.3(@babel/runtime@7.29.7)(@types/react@18.3.31)(typescript@7.0.2)':
+  '@keycloak/keycloak-admin-ui@26.7.4(@babel/runtime@7.29.7)(@types/react@18.3.31)(typescript@7.0.2)':
     dependencies:
       '@dagrejs/dagre': 1.1.8
-      '@keycloak/keycloak-admin-client': 26.7.3
-      '@keycloak/keycloak-ui-shared': 26.7.3(typescript@7.0.2)
+      '@keycloak/keycloak-admin-client': 26.7.4
+      '@keycloak/keycloak-ui-shared': 26.7.4(typescript@7.0.2)
       '@patternfly/patternfly': 5.4.2
       '@patternfly/react-core': 5.4.14(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@patternfly/react-icons': 5.4.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -2190,9 +2190,9 @@ snapshots:
       - react-native
       - typescript
 
-  '@keycloak/keycloak-ui-shared@26.7.3(typescript@7.0.2)':
+  '@keycloak/keycloak-ui-shared@26.7.4(typescript@7.0.2)':
     dependencies:
-      '@keycloak/keycloak-admin-client': 26.7.3
+      '@keycloak/keycloak-admin-client': 26.7.4
       '@patternfly/react-core': 5.4.14(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@patternfly/react-icons': 5.4.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@patternfly/react-styles': 5.4.1

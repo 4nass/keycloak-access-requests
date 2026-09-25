@@ -28,15 +28,26 @@ async function keycloakVersion() {
     return match[1];
 }
 
+async function extensionVersion() {
+    const pom = await readFile(pomPath, "utf-8");
+    const match = pom.match(/<version>([^<]+)<\/version>/);
+
+    if (!match) {
+        throw new Error("The Maven project version is missing.");
+    }
+
+    return match[1];
+}
+
 async function themePackage() {
     return JSON.parse(await readFile(packagePath, "utf-8")) as ThemePackage;
 }
 
 describe("Keycloak UI dependency alignment", () => {
-    it("keeps the theme package and Keycloak UI packages on the Maven compatibility version", async () => {
-        const [version, theme] = await Promise.all([keycloakVersion(), themePackage()]);
+    it("keeps the theme release version separate from its Keycloak UI baseline", async () => {
+        const [version, releaseVersion, theme] = await Promise.all([keycloakVersion(), extensionVersion(), themePackage()]);
 
-        expect(theme.version.replace(/-SNAPSHOT$/, "")).toBe(version);
+        expect(theme.version).toBe(releaseVersion);
         keycloakUiPackages.forEach((dependency) => {
             expect(theme.dependencies[dependency], dependency).toBe(version);
         });

@@ -9,6 +9,7 @@ const viewport: ViewportSize = { width: 1920, height: 1080 };
 export default defineConfig({
     testDir: "./e2e",
     fullyParallel: true,
+    workers: 1,
     forbidOnly: Boolean(process.env.CI),
     reporter: process.env.CI ? [["github"], ["html"]] : "list",
 

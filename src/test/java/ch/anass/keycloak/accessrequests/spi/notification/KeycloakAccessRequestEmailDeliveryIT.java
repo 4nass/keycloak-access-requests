@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class KeycloakAccessRequestEmailDeliveryIT {
 
     private static final String ACCESS_REQUESTS_API_AUDIENCE = "access-requests-api";
-    private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.3";
+    private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.4";
     private static final String DEFAULT_POSTGRESQL_CONTAINER = "mirror.gcr.io/postgres:18";
     private static final String DEFAULT_MAILPIT_CONTAINER = "axllent/mailpit:v1.30.7";
     private static final String DEFAULT_SMTP_STALL_CONTAINER = "busybox:1.36.1";

@@ -12,10 +12,10 @@ import { providerJarPath } from "./provider-jar-path.js";
 
 const DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const WORKSPACE_DIRECTORY = path.resolve(DIRECTORY, "..");
-const MANAGED_SERVER_DIRECTORY = path.join(WORKSPACE_DIRECTORY, "server");
 const PROVIDER_JAR = providerJarPath(WORKSPACE_DIRECTORY);
 const SCRIPT_EXTENSION = process.platform === "win32" ? ".bat" : ".sh";
 const KEYCLOAK_VERSION = process.env.KEYCLOAK_VERSION ?? packageJson.dependencies["@keycloak/keycloak-account-ui"];
+const MANAGED_SERVER_DIRECTORY = path.join(WORKSPACE_DIRECTORY, "server", KEYCLOAK_VERSION);
 const accountDevMode = process.argv.includes("--account-dev");
 const adminDevMode = process.argv.includes("--admin-dev");
 const argumentsForKeycloak = process.argv.slice(2).filter((argument) => argument !== "--account-dev" && argument !== "--admin-dev");

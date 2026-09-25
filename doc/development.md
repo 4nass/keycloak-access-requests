@@ -6,8 +6,9 @@
 | --- | --- |
 | Java | 21 |
 | Maven | 3.9 or newer |
-| Keycloak baseline | 26.7.3 |
-| Quarkus BOM | 3.33.3.1 |
+| Keycloak build baseline | 26.7.4 |
+| Validated Keycloak runtimes | 26.7.0–26.7.4 |
+| Quarkus BOM | 3.33.3.2 |
 | Node.js | 24.18.1, provisioned by Maven |
 | pnpm | 11.18.0, provisioned by Maven |
 
@@ -23,9 +24,10 @@ Run commands from the repository root unless stated otherwise.
 | `mvn test` | Java unit tests and Account/Admin UI unit tests |
 | `mvn package` | Java compilation, theme builds, theme verification, and one provider JAR |
 | `mvn verify` | Unit tests plus Java integration tests |
-| `mvn verify -Pplaywright-e2e -DskipTests -DskipITs` | Browser tests against an already running packaged Keycloak server |
+| `mvn verify -Pplaywright-e2e -DskipITs` | Unit and browser tests against an already running packaged Keycloak server |
 
 `mvn clean verify` is the recommended pre-push check. Java integration tests need Docker because they use Testcontainers.
+To test the same JAR against a different Keycloak runtime without changing its compilation baseline, first build it with `mvn package -DskipTests`, then run `mvn failsafe:integration-test failsafe:verify -Dkeycloak.test.version=26.7.0`. A plain `mvn verify -Dkeycloak.test.version=...` also runs the Java and UI unit tests and rebuilds the provider with the pinned Keycloak build baseline.
 
 ## UI workspace
 
@@ -68,8 +70,8 @@ The UI tests cover success paths and failures such as `401`, `403`, `409`, netwo
 
 Two GitHub Actions workflows protect `main` and pull requests:
 
-- **Build and tests** runs `mvn clean verify`, uploads the provider JAR, and covers the Java and UI unit/integration suite.
-- **Console E2E** packages the JAR, starts Keycloak 26.7.3, selects both packaged themes, and runs the Playwright profile in Chromium and Firefox.
+- **Build and tests** runs `mvn clean verify` against Keycloak 26.7.0–26.7.4 in separate jobs, always compiling against 26.7.4 and uploading the provider JAR from each job.
+- **Console E2E** packages the 26.7.4-based JAR, starts each Keycloak runtime, selects both packaged themes, and runs Playwright in Chromium and Firefox.
 
 The workflows run when relevant source, theme, Maven, or workflow files change. CodeQL and Dependabot run independently.
 
@@ -91,14 +93,14 @@ One extension release targets one Keycloak minor line. For an upgrade:
 3. Rebuild and run every test layer against the exact target Keycloak version.
 4. Review the Account and Admin themes in light/dark mode and with keyboard navigation.
 5. Diff the maintained Admin navigation component against Keycloak's upstream `PageNav`; see [Admin navigation maintenance](architecture.md#admin-navigation-maintenance).
-6. Publish a release whose version identifies the validated Keycloak baseline.
+6. Publish a release whose major and minor numbers identify the supported Keycloak line; use the patch number for the extension's own revisions.
 
 Never state compatibility with a new Keycloak patch or minor release merely because the Java compilation succeeds.
 
 ## Publish a GitHub Release
 
 Update the Maven project version to the release version, run the full verification
-workflow, and create a matching version tag such as `v26.7.3`. The Release
+workflow, and create a matching version tag such as `v26.7.0`. The Release
 workflow checks that the tag matches the Maven version, runs `mvn clean verify`,
 and publishes both `keycloak-access-requests.jar` and
 `keycloak-access-requests-email-theme.zip` as GitHub Release assets.

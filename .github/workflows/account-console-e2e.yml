@@ -22,9 +22,13 @@ concurrency:
 
 jobs:
   account-console-e2e:
-    name: Keycloak 26.7.3 Console E2E
+    name: Keycloak ${{ matrix.keycloak }} Console E2E
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        keycloak: ['26.7.0', '26.7.1', '26.7.2', '26.7.3', '26.7.4']
 
     steps:
       - name: Check out repository
@@ -48,6 +52,8 @@ jobs:
 
       - name: Start Keycloak with the packaged provider
         working-directory: themes/access-requests-ui
+        env:
+          KEYCLOAK_VERSION: ${{ matrix.keycloak }}
         run: |
           nohup "${GITHUB_WORKSPACE}/target/frontend/node/node" ./scripts/start-account-keycloak.js > "${GITHUB_WORKSPACE}/target/keycloak-e2e.log" 2>&1 &
 
@@ -64,8 +70,8 @@ jobs:
 
       - name: Select the packaged console themes
         run: |
-          themes/access-requests-ui/server/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin
-          themes/access-requests-ui/server/bin/kcadm.sh update realms/master -s accountTheme=access-requests -s adminTheme=access-requests
+          themes/access-requests-ui/server/${{ matrix.keycloak }}/bin/kcadm.sh config credentials --server http://localhost:8080 --realm master --user admin --password admin
+          themes/access-requests-ui/server/${{ matrix.keycloak }}/bin/kcadm.sh update realms/master -s accountTheme=access-requests -s adminTheme=access-requests
 
       - name: Run console browser tests through Maven
         env:
@@ -74,13 +80,13 @@ jobs:
           KEYCLOAK_ADMIN_CONSOLE_URL: http://localhost:8080/admin/master/console/
           KEYCLOAK_TEST_USERNAME: admin
           KEYCLOAK_TEST_PASSWORD: admin
-        run: mvn --batch-mode --no-transfer-progress verify -Pplaywright-e2e -DskipTests -DskipITs
+        run: mvn --batch-mode --no-transfer-progress verify -Pplaywright-e2e -DskipITs
 
       - name: Upload E2E diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: account-console-e2e-diagnostics
+          name: account-console-e2e-diagnostics-${{ matrix.keycloak }}
           path: |
             target/keycloak-e2e.log
             themes/access-requests-ui/playwright-report/

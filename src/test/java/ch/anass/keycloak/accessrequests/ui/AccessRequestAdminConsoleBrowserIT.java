@@ -57,7 +57,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Testcontainers(disabledWithoutDocker = true)
 class AccessRequestAdminConsoleBrowserIT {
 
-    private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.3";
+    private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.4";
     private static final String DEFAULT_SELENIUM_CHROME_CONTAINER = "selenium/standalone-chrome:4.45.0-20260606";
     private static final String DEFAULT_POSTGRESQL_CONTAINER = "mirror.gcr.io/postgres:18";
     private static final String KEYCLOAK_VERSION = System.getProperty("keycloak.version", DEFAULT_KEYCLOAK_VERSION);

@@ -47,7 +47,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     private static final String ADMIN_CONSOLE_RESOURCE_PATH = "theme/access-requests/admin/resources/";
     private static final String ACCESS_REQUESTS_API_AUDIENCE = "access-requests-api";
     private static final String ACCESS_REQUEST_MANAGER_ROLE = "manage-access-requests";
-    private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.3";
+    private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.4";
     private static final String DEFAULT_POSTGRESQL_CONTAINER = "mirror.gcr.io/postgres:18";
     private static final String KEYCLOAK_VERSION = System.getProperty("keycloak.version", DEFAULT_KEYCLOAK_VERSION);
     private static final String KEYCLOAK_IMAGE = System.getProperty(
@@ -673,17 +673,19 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
         String otherRealm = "audit-other-realm-" + UUID.randomUUID();
         createRealm(server, adminToken, otherRealm);
+        // Keep the isolation assertion independent of an admin token issued before the realm existed.
+        String freshAdminToken = accessToken(server, "admin-cli");
         HttpResponse<String> isolated = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(URI.create("http://%s:%d/realms/%s/access-requests/admin/events"
                                 .formatted(server.getHost(), server.getMappedPort(8080), otherRealm)))
-                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Authorization", "Bearer " + freshAdminToken)
                         .GET().build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(200, isolated.statusCode());
         assertEquals(0, new ObjectMapper().readTree(isolated.body()).path("total").asInt());
         HttpResponse<Void> isolatedDetail = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(URI.create("http://%s:%d/realms/%s/access-requests/admin/requests/%s"
                                 .formatted(server.getHost(), server.getMappedPort(8080), otherRealm, requestId)))
-                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Authorization", "Bearer " + freshAdminToken)
                         .GET().build(), HttpResponse.BodyHandlers.discarding());
         assertEquals(404, isolatedDetail.statusCode());
     }
@@ -1550,14 +1552,13 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         createRealm(server, adminToken, otherRealm);
         URI otherRealmEndpoint = URI.create("http://%s:%d/realms/%s/access-requests/admin/provisioning-failures"
                 .formatted(server.getHost(), server.getMappedPort(8080), otherRealm));
-        HttpResponse<String> realmScoped = HttpClient.newHttpClient().send(
+        HttpResponse<Void> crossRealmManager = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(otherRealmEndpoint)
-                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Authorization", "Bearer " + managerToken)
                         .GET()
                         .build(),
-                HttpResponse.BodyHandlers.ofString());
-        assertEquals(200, realmScoped.statusCode());
-        assertEquals(0, new ObjectMapper().readTree(realmScoped.body()).path("total").asInt());
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(403, crossRealmManager.statusCode());
     }
 
     private void assertProvisioningRetryAuditEvents(String requestId, String actorId) throws SQLException {

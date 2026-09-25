@@ -112,7 +112,7 @@ pnpm run admin:dev
 pnpm run admin:start-keycloak
 ```
 
-The development launcher downloads Keycloak 26.7.3 once under `themes/access-requests-ui/server/`, installs the packaged provider, and starts a local server. It uses `KC_ACCOUNT_VITE_URL=http://localhost:5173` for Account development and `KC_ADMIN_VITE_URL=http://localhost:5174` for Admin development.
+The development launcher downloads the selected Keycloak version under `themes/access-requests-ui/server/<version>/` (26.7.4 by default), installs the packaged provider, and starts a local server. It uses `KC_ACCOUNT_VITE_URL=http://localhost:5173` for Account development and `KC_ADMIN_VITE_URL=http://localhost:5174` for Admin development.
 
 Use `account:start-keycloak:packaged` or `admin:start-keycloak:packaged` to exercise the assets from the JAR without a Vite server.
 
@@ -140,6 +140,6 @@ The packaged Playwright suite measures resources served from Keycloak's `/resour
 
 This is a browser transfer budget, not a Vite raw-chunk-size target. Production deployments should enable HTTP compression at the reverse proxy or ingress; it is infrastructure configuration and is not forced by the provider.
 
-The theme deliberately keeps `@keycloak/keycloak-admin-ui/styles.css` as well as PatternFly base and addons styles. The PatternFly imports match Keycloak 26.7.3's own Admin Console entry point. Removing them only to reduce CSS size could cause subtle visual or accessibility regressions, so any such change requires packaged visual checks in light/dark mode, desktop/mobile layouts, keyboard navigation, and a screen reader.
+The theme deliberately keeps `@keycloak/keycloak-admin-ui/styles.css` as well as PatternFly base and addons styles. The PatternFly imports match Keycloak 26.7.4's own Admin Console entry point. Removing them only to reduce CSS size could cause subtle visual or accessibility regressions, so any such change requires packaged visual checks in light/dark mode, desktop/mobile layouts, keyboard navigation, and a screen reader.
 
 A `manualChunks` configuration would only change cache boundaries: it would not materially reduce the first load while the full Admin Console shell, navigation, and standard routes remain necessary. A major reduction would require Keycloak to provide a stable API for contributing one page and navigation item to the stock Admin Console.

@@ -50,7 +50,7 @@ class AccessRequestAccountConsoleBrowserIT {
 
     private static final String ACCESS_REQUESTS_API_AUDIENCE = "access-requests-api";
     private static final String ACCOUNT_CONSOLE_CLIENT_ID = "account-console";
-    private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.3";
+    private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.4";
     private static final String DEFAULT_SELENIUM_CHROME_CONTAINER = "selenium/standalone-chrome:4.45.0-20260606";
     private static final String KEYCLOAK_VERSION = System.getProperty("keycloak.version", DEFAULT_KEYCLOAK_VERSION);
     private static final String KEYCLOAK_IMAGE = System.getProperty(

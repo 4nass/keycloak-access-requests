@@ -4,13 +4,13 @@ Keycloak Access Requests is a Keycloak provider for requesting, approving, and p
 
 It is delivered as one JAR containing the server provider, database migrations, and optional Account, Admin Console, and e-mail themes.
 
-## Supported baseline
+## Compatibility
 
-| Extension version | Supported Keycloak line | Tested baseline |
+| Extension version | Verified Keycloak versions | Build baseline |
 | --- | --- | --- |
-| `26.7.3-SNAPSHOT` | 26.7.x | 26.7.3 |
+| `26.7.0-SNAPSHOT` | 26.7.0–26.7.4 | 26.7.4 |
 
-One extension release targets one Keycloak minor line. Keycloak 26.5.x and 26.6.x are not supported.
+The first extension release for the Keycloak 26.7 line is planned as `26.7.0`; its patch number is the extension's own revision, not the Keycloak server patch. The provider is built against the latest verified 26.7 patch, currently 26.7.4. The same JAR passed the Keycloak integration suite and packaged-console browser tests on 26.7.0 through 26.7.4. Later 26.7.x patches require their own verification before they are added to the compatibility table. Keycloak 26.5.x and 26.6.x are not supported.
 
 ## Quick start
 
