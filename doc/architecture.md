@@ -72,6 +72,8 @@ The database enforces one pending request per requester and entitlement. Updates
 
 The JPA provider owns the Liquibase changelog. Its tables are deliberately prefixed `AR_` to keep the provider's schema objects recognizable in the shared Keycloak database.
 
+Grant provenance and revocation authority are distinct. `AR_ACCESS_GRANT.GRANT_ORIGIN` records what the provisioner observed when a request succeeded. `REVOCATION_STATE` starts at `UNVERIFIED`; an origin of `CREATED_BY_EXTENSION` alone does not permit automatic deletion of a Keycloak role or group mapping. The grant state is versioned so an external-change invalidation can win against a stale revocation decision. No automatic revocation worker is registered yet.
+
 ### Notification delivery
 
 Lifecycle e-mails for a user are written as recipient-specific rows in `AR_NOTIFICATION_OUTBOX` in the same transaction as the request, decision, and audit event. A role-targeted notification is persisted as one role instruction; the timer expands its current eligible members only after that transaction commits. The HTTP request therefore never resolves a role membership or calls SMTP, and a rolled-back business transaction leaves no delivery to send.

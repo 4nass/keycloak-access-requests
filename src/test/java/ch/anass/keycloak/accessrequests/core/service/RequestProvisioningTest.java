@@ -3,6 +3,7 @@ package ch.anass.keycloak.accessrequests.core.service;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.GrantOrigin;
+import ch.anass.keycloak.accessrequests.core.domain.GrantRevocationState;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
@@ -107,7 +108,8 @@ class RequestProvisioningTest {
         assertEquals(ProvisioningStatus.SUCCEEDED, approved.provisioningStatus());
         AccessGrant grant = fixture.grants().findByRequestId("realm-1", approved.id()).orElseThrow();
         assertEquals(GrantOrigin.PREEXISTING, grant.origin());
-        assertTrue(!grant.ownedByExtension());
+        assertEquals(GrantRevocationState.UNVERIFIED, grant.revocationState());
+        assertTrue(!grant.canAutoRevoke());
     }
 
     @Test
@@ -771,6 +773,11 @@ class RequestProvisioningTest {
             return grants.stream()
                     .filter(grant -> grant.realmId().equals(realmId) && grant.requestId().equals(requestId))
                     .findFirst();
+        }
+
+        @Override
+        public Optional<AccessGrant> invalidateIfVersionMatches(String realmId, String requestId, long expectedVersion) {
+            throw new UnsupportedOperationException("Grant invalidation is not used by this test double.");
         }
 
         int size() {

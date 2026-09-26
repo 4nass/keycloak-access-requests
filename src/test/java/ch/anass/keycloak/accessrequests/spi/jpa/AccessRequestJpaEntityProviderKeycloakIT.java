@@ -283,7 +283,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertTrue(tableExists(connection, "ar_entitlement"));
             assertTrue(tableExists(connection, "ar_entitlement_history"));
             assertTrue(tableExists(connection, "ar_notification_outbox"));
-            assertEquals(13, providerChangeSetCount(connection));
+            assertEquals(1, providerChangeSetCount(connection));
         }
     }
 
@@ -1895,7 +1895,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertProvisioningAuditEvent(connection, requestId, "PROVISIONING_STARTED", approverId);
             assertProvisioningAuditEvent(connection, requestId, completionEventType, approverId);
             try (var grantStatement = connection.prepareStatement("""
-                    select GRANT_ORIGIN, REALM_ID, REQUESTER_ID, RESOURCE_TYPE, RESOURCE_ID
+                    select GRANT_ORIGIN, REVOCATION_STATE, REALM_ID, REQUESTER_ID, RESOURCE_TYPE, RESOURCE_ID
                       from AR_ACCESS_GRANT
                      where REQUEST_ID = ?
                     """)) {
@@ -1904,6 +1904,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                     if ("SUCCEEDED".equals(provisioningStatus)) {
                         assertTrue(grant.next(), "Successful provisioning must persist grant provenance.");
                         assertEquals("CREATED_BY_EXTENSION", grant.getString("GRANT_ORIGIN"));
+                        assertEquals("UNVERIFIED", grant.getString("REVOCATION_STATE"));
                         assertTrue(grant.getString("REALM_ID") != null);
                         assertTrue(grant.getString("REQUESTER_ID") != null);
                         assertTrue(grant.getString("RESOURCE_TYPE") != null);

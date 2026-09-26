@@ -24,8 +24,36 @@ class AccessGrantTest {
         assertEquals(ResourceType.REALM_ROLE, owned.resourceType());
         assertEquals("role-1", owned.resourceId());
         assertEquals(GRANTED_AT, owned.recordedAt());
-        assertTrue(owned.ownedByExtension());
-        assertFalse(preexisting.ownedByExtension());
+        assertEquals(GrantRevocationState.UNVERIFIED, owned.revocationState());
+        assertFalse(owned.canAutoRevoke(), "Historical origin must not authorize automatic revocation.");
+        assertFalse(preexisting.canAutoRevoke());
+    }
+
+    @Test
+    void invalidatesARecordedGrantAndRejectsRevocationWithoutExplicitAuthority() {
+        AccessGrant owned = AccessGrant.from(request(), entitlement(), GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT);
+
+        assertThrows(IllegalStateException.class, owned::markRevoked);
+        AccessGrant invalidated = owned.invalidate();
+        assertEquals(GrantRevocationState.INVALIDATED, invalidated.revocationState());
+        assertFalse(invalidated.canAutoRevoke());
+        assertThrows(IllegalStateException.class, invalidated::markRevoked);
+    }
+
+    @Test
+    void onlyAnExplicitlyAuthorizedActiveJitGrantCanBeMarkedRevoked() {
+        AccessGrant grant = AccessGrant.from(request(), entitlement(), GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT);
+        AccessGrant authorized = new AccessGrant(grant.requestId(), grant.realmId(), grant.requesterId(),
+                grant.entitlementId(), grant.resourceType(), grant.resourceId(), grant.origin(), grant.recordedAt(),
+                GrantRevocationState.AUTHORIZED, grant.version());
+
+        assertTrue(authorized.canAutoRevoke());
+        assertEquals(GrantRevocationState.REVOKED, authorized.markRevoked().revocationState());
+        assertFalse(authorized.invalidate().canAutoRevoke());
+        assertThrows(IllegalArgumentException.class, () -> new AccessGrant(
+                grant.requestId(), grant.realmId(), grant.requesterId(), grant.entitlementId(),
+                grant.resourceType(), grant.resourceId(), GrantOrigin.PREEXISTING, grant.recordedAt(),
+                GrantRevocationState.AUTHORIZED, grant.version()));
     }
 
     @Test

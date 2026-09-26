@@ -18,6 +18,10 @@ An entitlement is unique per realm, resource type, and resource. Its target reso
 
 New entitlements are drafts (`requestable=false`). Setting `requestable=true` publishes the entitlement to the requester catalog. Setting it back to `false` stops new requests while preserving the entitlement and its history. There is no hard-delete endpoint.
 
+### Separate birthright and just-in-time access
+
+Do not publish a structural (birthright) role or group managed by HR, LDAP, AD, or another synchronization process as a just-in-time entitlement. Create a separate Keycloak resource dedicated to temporary access, such as `database-admin-jit`, and publish that resource instead. The external system keeps ownership of its structural mappings; the extension manages only its dedicated JIT mappings. Publishing an existing shared resource does **not** make it exclusively managed by the extension.
+
 Risk is currently a catalog and approval-queue classification. It does not alter the number of approvers or activate an automatic approval policy.
 
 ## Request lifecycle
@@ -76,6 +80,8 @@ After an approval, the provider performs one synchronous, idempotent Keycloak op
 - join a group.
 
 If the user already has the resource, the operation succeeds without duplicating it. If the target user, role, or group no longer exists, provisioning fails and the request history records the failure. A manager can retry a failed approved request from the Admin Console or protected API. Failed provisioning is not retried automatically, and approval does not create a revocation workflow.
+
+A successful operation records an `AccessGrant` with either `CREATED_BY_EXTENSION` or `PREEXISTING` origin. This is historical provenance, not durable proof that the current Keycloak mapping still belongs to the extension: an administrator or synchronization process may remove it and later reassign the same resource. New and existing grants therefore have `UNVERIFIED` revocation state and cannot authorize automatic removal. When an external change is detected, the grant can be invalidated with optimistic locking; an invalidated grant cannot be automatically revoked. The current release does not detect every external modification or expose a revocation action. A future expiration worker must require explicit, verified exclusive management of the JIT resource and an eligible grant state; otherwise it must leave the mapping untouched for manual reconciliation.
 
 ## Audit history
 

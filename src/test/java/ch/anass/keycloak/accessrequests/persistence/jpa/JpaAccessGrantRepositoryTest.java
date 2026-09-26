@@ -2,6 +2,7 @@ package ch.anass.keycloak.accessrequests.persistence.jpa;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.GrantOrigin;
+import ch.anass.keycloak.accessrequests.core.domain.GrantRevocationState;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
@@ -62,8 +63,10 @@ class JpaAccessGrantRepositoryTest {
         assertEquals(preexisting, repository.findByRequestId("realm-1", "request-2").orElseThrow());
         assertTrue(repository.findByRequestId("other-realm", "request-1").isEmpty());
         assertTrue(repository.findByRequestId("realm-1", "missing").isEmpty());
-        assertTrue(repository.findByRequestId("realm-1", "request-1").orElseThrow().ownedByExtension());
-        assertFalse(repository.findByRequestId("realm-1", "request-2").orElseThrow().ownedByExtension());
+        assertEquals(GrantRevocationState.UNVERIFIED,
+                repository.findByRequestId("realm-1", "request-1").orElseThrow().revocationState());
+        assertFalse(repository.findByRequestId("realm-1", "request-1").orElseThrow().canAutoRevoke());
+        assertFalse(repository.findByRequestId("realm-1", "request-2").orElseThrow().canAutoRevoke());
     }
 
     @Test
@@ -78,6 +81,23 @@ class JpaAccessGrantRepositoryTest {
         assertTrue(repository.findByRequestId("realm-1", "request-3").isEmpty());
     }
 
+    @Test
+    void invalidatesAGrantOnceWithOptimisticLockingAndRealmIsolation() {
+        inTransaction(() -> repository.create(grant("request-4", GrantOrigin.CREATED_BY_EXTENSION)));
+        entityManager.clear();
+
+        assertTrue(inTransactionResult(() -> repository.invalidateIfVersionMatches("other-realm", "request-4", 0))
+                .isEmpty());
+        AccessGrant invalidated = inTransactionResult(
+                () -> repository.invalidateIfVersionMatches("realm-1", "request-4", 0).orElseThrow());
+
+        assertEquals(GrantRevocationState.INVALIDATED, invalidated.revocationState());
+        assertEquals(1, invalidated.version());
+        assertFalse(invalidated.canAutoRevoke());
+        assertTrue(inTransactionResult(() -> repository.invalidateIfVersionMatches("realm-1", "request-4", 0)).isEmpty());
+        assertTrue(inTransactionResult(() -> repository.invalidateIfVersionMatches("realm-1", "request-4", 1)).isEmpty());
+    }
+
     private static AccessGrant grant(String requestId, GrantOrigin origin) {
         return new AccessGrant(requestId, "realm-1", "user-1", "entitlement-1", ResourceType.REALM_ROLE,
                 "role-1", origin, Instant.parse("2026-09-01T10:15:30Z"));
@@ -88,6 +108,20 @@ class JpaAccessGrantRepositoryTest {
         try {
             operation.run();
             entityManager.getTransaction().commit();
+        } catch (RuntimeException exception) {
+            if (entityManager.getTransaction().isActive()) {
+                entityManager.getTransaction().rollback();
+            }
+            throw exception;
+        }
+    }
+
+    private <T> T inTransactionResult(java.util.function.Supplier<T> operation) {
+        entityManager.getTransaction().begin();
+        try {
+            T result = operation.get();
+            entityManager.getTransaction().commit();
+            return result;
         } catch (RuntimeException exception) {
             if (entityManager.getTransaction().isActive()) {
                 entityManager.getTransaction().rollback();

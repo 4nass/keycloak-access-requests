@@ -2,6 +2,7 @@ package ch.anass.keycloak.accessrequests.persistence.jpa;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.GrantOrigin;
+import ch.anass.keycloak.accessrequests.core.domain.GrantRevocationState;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -9,6 +10,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.time.Instant;
 
@@ -43,6 +45,14 @@ public class AccessGrantEntity {
     @Column(name = "RECORDED_TIMESTAMP", nullable = false)
     private long recordedTimestamp;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "REVOCATION_STATE", nullable = false, length = 30)
+    private GrantRevocationState revocationState;
+
+    @Version
+    @Column(name = "VERSION", nullable = false)
+    private long version;
+
     protected AccessGrantEntity() {
     }
 
@@ -55,6 +65,8 @@ public class AccessGrantEntity {
         resourceId = grant.resourceId();
         origin = grant.origin();
         recordedTimestamp = grant.recordedAt().toEpochMilli();
+        revocationState = grant.revocationState();
+        version = grant.version();
     }
 
     static AccessGrantEntity from(AccessGrant grant) {
@@ -63,7 +75,7 @@ public class AccessGrantEntity {
 
     AccessGrant toDomain() {
         return new AccessGrant(requestId, realmId, requesterId, entitlementId, resourceType, resourceId,
-                origin, Instant.ofEpochMilli(recordedTimestamp));
+                origin, Instant.ofEpochMilli(recordedTimestamp), revocationState, version);
     }
 
     String realmId() {

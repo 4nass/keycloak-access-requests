@@ -9,4 +9,6 @@ public interface AccessGrantRepository {
     void create(AccessGrant grant);
 
     Optional<AccessGrant> findByRequestId(String realmId, String requestId);
+
+    Optional<AccessGrant> invalidateIfVersionMatches(String realmId, String requestId, long expectedVersion);
 }

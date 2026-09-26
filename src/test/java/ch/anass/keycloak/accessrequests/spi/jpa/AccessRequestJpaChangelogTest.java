@@ -27,13 +27,15 @@ class AccessRequestJpaChangelogTest {
     private static final String CHANGELOG_LOCATION = "META-INF/access-requests-changelog.xml";
 
     @Test
-    void createsTheAccessRequestHistoryAndEntitlementTablesIdempotently() throws Exception {
+    void createsTheCompleteSchemaFromOneIdempotentBaseline() throws Exception {
         String databaseUrl = databaseUrl();
 
         applyChangelog(databaseUrl);
         applyChangelog(databaseUrl);
 
         try (Connection connection = DriverManager.getConnection(databaseUrl)) {
+            assertEquals("1", valueOf(connection, "select count(*) from DATABASECHANGELOG"));
+            assertEquals("initial-schema", valueOf(connection, "select ID from DATABASECHANGELOG"));
             assertEquals(
                     Set.of(
                             "ID",
@@ -120,6 +122,11 @@ class AccessRequestJpaChangelogTest {
                             "DELIVERED_TIMESTAMP",
                             "VERSION"),
                     columnsOf(connection, "AR_NOTIFICATION_OUTBOX"));
+            assertEquals(Set.of(
+                            "REQUEST_ID", "REALM_ID", "REQUESTER_ID", "ENTITLEMENT_ID",
+                            "RESOURCE_TYPE", "RESOURCE_ID", "GRANT_ORIGIN", "RECORDED_TIMESTAMP",
+                            "REVOCATION_STATE", "VERSION"),
+                    columnsOf(connection, "AR_ACCESS_GRANT"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
                     .contains("IDX_ACCESS_REQUEST_REQUESTER_CREATED"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
@@ -137,6 +144,8 @@ class AccessRequestJpaChangelogTest {
                     .contains("IDX_NOTIFICATION_OUTBOX_DUE"));
             assertTrue(indexNamesOf(connection, "AR_NOTIFICATION_OUTBOX")
                     .contains("IDX_NOTIFICATION_OUTBOX_REALM_STATE_ATTEMPT"));
+            assertTrue(indexNamesOf(connection, "AR_ACCESS_GRANT")
+                    .contains("IDX_ACCESS_GRANT_RESOURCE"));
         }
     }
 
@@ -149,6 +158,36 @@ class AccessRequestJpaChangelogTest {
             insertPendingRequest(connection, "request-1");
 
             assertThrows(SQLException.class, () -> insertPendingRequest(connection, "request-2"));
+        }
+    }
+
+    @Test
+    void defaultsNewGrantRowsToUnverifiedRevocationState() throws Exception {
+        String databaseUrl = databaseUrl();
+        applyChangelog(databaseUrl);
+
+        try (Connection connection = DriverManager.getConnection(databaseUrl)) {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                    insert into AR_ACCESS_GRANT (
+                        REQUEST_ID, REALM_ID, REQUESTER_ID, ENTITLEMENT_ID,
+                        RESOURCE_TYPE, RESOURCE_ID, GRANT_ORIGIN, RECORDED_TIMESTAMP)
+                    values (?, ?, ?, ?, ?, ?, ?, ?)
+                    """)) {
+                statement.setString(1, "request-1");
+                statement.setString(2, "realm-1");
+                statement.setString(3, "user-1");
+                statement.setString(4, "entitlement-1");
+                statement.setString(5, "REALM_ROLE");
+                statement.setString(6, "role-1");
+                statement.setString(7, "CREATED_BY_EXTENSION");
+                statement.setLong(8, 1_700_000_000_000L);
+                statement.executeUpdate();
+            }
+
+            assertEquals("UNVERIFIED", valueOf(connection,
+                    "select REVOCATION_STATE from AR_ACCESS_GRANT where REQUEST_ID = 'request-1'"));
+            assertEquals("0", valueOf(connection,
+                    "select VERSION from AR_ACCESS_GRANT where REQUEST_ID = 'request-1'"));
         }
     }
 

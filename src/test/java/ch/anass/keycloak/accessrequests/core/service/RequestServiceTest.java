@@ -67,6 +67,11 @@ class RequestServiceTest {
             return Optional.ofNullable(savedGrants.get(requestId))
                     .filter(grant -> grant.realmId().equals(realmId));
         }
+
+        @Override
+        public Optional<AccessGrant> invalidateIfVersionMatches(String realmId, String requestId, long expectedVersion) {
+            throw new UnsupportedOperationException("Grant invalidation is not used by this test double.");
+        }
     };
     private final InMemoryEffectiveAccessChecker effectiveAccess = new InMemoryEffectiveAccessChecker();
     private final InMemoryUserStatusReader users = new InMemoryUserStatusReader();

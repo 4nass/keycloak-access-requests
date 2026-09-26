@@ -4,7 +4,7 @@
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.33.xsd">
 
-    <changeSet id="1" author="4nass">
+    <changeSet id="initial-schema" author="4nass">
         <createTable tableName="AR_ACCESS_REQUEST">
             <column name="ID" type="VARCHAR(36)">
                 <constraints nullable="false" primaryKey="true" primaryKeyName="PK_ACCESS_REQUEST"/>
@@ -45,6 +45,9 @@
                 <constraints nullable="false"/>
             </column>
             <column name="DECIDED_TIMESTAMP" type="BIGINT"/>
+            <column name="PROVISIONING_CLOSED_TIMESTAMP" type="BIGINT"/>
+            <column name="PROVISIONING_CLOSED_BY" type="VARCHAR(255)"/>
+            <column name="PROVISIONING_CLOSURE_REASON" type="TEXT"/>
             <column name="VERSION" type="BIGINT">
                 <constraints nullable="false"/>
             </column>
@@ -74,12 +77,11 @@
             <column name="EVENT_TIMESTAMP" type="BIGINT">
                 <constraints nullable="false"/>
             </column>
+            <column name="REQUEST_VERSION" type="BIGINT"/>
             <column name="COMMENT" type="TEXT"/>
             <column name="METADATA" type="TEXT"/>
         </createTable>
-    </changeSet>
 
-    <changeSet id="2" author="4nass">
         <createTable tableName="AR_ENTITLEMENT">
             <column name="ID" type="VARCHAR(36)">
                 <constraints nullable="false" primaryKey="true" primaryKeyName="PK_ENTITLEMENT"/>
@@ -123,27 +125,21 @@
                 tableName="AR_ENTITLEMENT"
                 columnNames="REALM_ID, RESOURCE_TYPE, RESOURCE_ID"
                 constraintName="UK_ENTITLEMENT_RESOURCE"/>
-    </changeSet>
 
-    <changeSet id="3" author="4nass">
         <createIndex indexName="IDX_ACCESS_REQUEST_REQUESTER_CREATED" tableName="AR_ACCESS_REQUEST">
             <column name="REALM_ID"/>
             <column name="REQUESTER_ID"/>
             <column name="CREATED_TIMESTAMP" descending="true"/>
             <column name="ID"/>
         </createIndex>
-    </changeSet>
 
-    <changeSet id="4" author="4nass">
         <createIndex indexName="IDX_ACCESS_REQUEST_APPROVAL_QUEUE" tableName="AR_ACCESS_REQUEST">
             <column name="REALM_ID"/>
             <column name="DECISION_STATUS"/>
             <column name="CREATED_TIMESTAMP" descending="true"/>
             <column name="ID"/>
         </createIndex>
-    </changeSet>
 
-    <changeSet id="5" author="4nass">
         <createTable tableName="AR_ENTITLEMENT_HISTORY">
             <column name="ID" type="VARCHAR(36)">
                 <constraints nullable="false" primaryKey="true" primaryKeyName="PK_ENTITLEMENT_HISTORY"/>
@@ -195,9 +191,7 @@
             <column name="EVENT_TIMESTAMP"/>
             <column name="ID"/>
         </createIndex>
-    </changeSet>
 
-    <changeSet id="6" author="4nass">
         <createTable tableName="AR_NOTIFICATION_OUTBOX">
             <column name="ID" type="VARCHAR(36)">
                 <constraints nullable="false" primaryKey="true" primaryKeyName="PK_NOTIFICATION_OUTBOX"/>
@@ -220,6 +214,9 @@
             <column name="RECIPIENT_ID" type="VARCHAR(255)">
                 <constraints nullable="false"/>
             </column>
+            <column name="RECIPIENT_TYPE" type="VARCHAR(20)" defaultValue="USER">
+                <constraints nullable="false"/>
+            </column>
             <column name="NOTIFICATION_TYPE" type="VARCHAR(50)">
                 <constraints nullable="false"/>
             </column>
@@ -232,6 +229,7 @@
             <column name="NEXT_ATTEMPT_TIMESTAMP" type="BIGINT">
                 <constraints nullable="false"/>
             </column>
+            <column name="LAST_ATTEMPT_TIMESTAMP" type="BIGINT"/>
             <column name="LEASE_UNTIL_TIMESTAMP" type="BIGINT"/>
             <column name="PROCESSOR_ID" type="VARCHAR(36)"/>
             <column name="DELIVERED_TIMESTAMP" type="BIGINT"/>
@@ -250,20 +248,6 @@
             <column name="NEXT_ATTEMPT_TIMESTAMP"/>
             <column name="LEASE_UNTIL_TIMESTAMP"/>
         </createIndex>
-    </changeSet>
-
-    <changeSet id="7" author="4nass">
-        <addColumn tableName="AR_NOTIFICATION_OUTBOX">
-            <column name="RECIPIENT_TYPE" type="VARCHAR(20)" defaultValue="USER">
-                <constraints nullable="false"/>
-            </column>
-        </addColumn>
-    </changeSet>
-
-    <changeSet id="8" author="4nass">
-        <addColumn tableName="AR_NOTIFICATION_OUTBOX">
-            <column name="LAST_ATTEMPT_TIMESTAMP" type="BIGINT"/>
-        </addColumn>
 
         <createIndex indexName="IDX_NOTIFICATION_OUTBOX_REALM_STATE_ATTEMPT" tableName="AR_NOTIFICATION_OUTBOX">
             <column name="REALM_ID"/>
@@ -271,9 +255,7 @@
             <column name="LAST_ATTEMPT_TIMESTAMP" descending="true"/>
             <column name="ID"/>
         </createIndex>
-    </changeSet>
 
-    <changeSet id="9" author="4nass">
         <createIndex indexName="IDX_ACCESS_REQUEST_HISTORY_FAILURE" tableName="AR_ACCESS_REQUEST_HISTORY">
             <column name="REALM_ID"/>
             <column name="REQUEST_ID"/>
@@ -281,22 +263,6 @@
             <column name="EVENT_TIMESTAMP" descending="true"/>
             <column name="ID" descending="true"/>
         </createIndex>
-    </changeSet>
-
-    <changeSet id="10" author="4nass">
-        <addColumn tableName="AR_ACCESS_REQUEST">
-            <column name="PROVISIONING_CLOSED_TIMESTAMP" type="BIGINT"/>
-            <column name="PROVISIONING_CLOSED_BY" type="VARCHAR(255)"/>
-            <column name="PROVISIONING_CLOSURE_REASON" type="TEXT"/>
-        </addColumn>
-    </changeSet>
-
-    <changeSet id="11" author="4nass">
-        <addColumn tableName="AR_ACCESS_REQUEST_HISTORY">
-            <column name="REQUEST_VERSION" type="BIGINT"/>
-        </addColumn>
-    </changeSet>
-    <changeSet id="12" author="4nass">
         <createIndex indexName="IDX_ACCESS_REQUEST_HISTORY_REALM_TIME" tableName="AR_ACCESS_REQUEST_HISTORY">
             <column name="REALM_ID"/>
             <column name="EVENT_TIMESTAMP" descending="true"/>
@@ -312,8 +278,6 @@
             <column name="ACTOR_ID"/>
             <column name="EVENT_TIMESTAMP" descending="true"/>
         </createIndex>
-    </changeSet>
-    <changeSet id="13" author="4nass">
         <createTable tableName="AR_ACCESS_GRANT">
             <column name="REQUEST_ID" type="VARCHAR(36)">
                 <constraints nullable="false" primaryKey="true" primaryKeyName="PK_ACCESS_GRANT"/>
@@ -337,6 +301,12 @@
                 <constraints nullable="false"/>
             </column>
             <column name="RECORDED_TIMESTAMP" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="REVOCATION_STATE" type="VARCHAR(30)" defaultValue="UNVERIFIED">
+                <constraints nullable="false"/>
+            </column>
+            <column name="VERSION" type="BIGINT" defaultValueNumeric="0">
                 <constraints nullable="false"/>
             </column>
         </createTable>
