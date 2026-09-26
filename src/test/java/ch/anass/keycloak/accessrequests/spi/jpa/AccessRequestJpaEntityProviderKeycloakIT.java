@@ -1223,6 +1223,12 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 managerToken,
                 approverId,
                 approverRoleId);
+        assertPreexistingGrantAfterApproval(
+                server, adminToken, accessRequestsEndpoint, requestsEndpoint,
+                requesterToken, approverToken, approverId, approverRoleId);
+        assertGrantPersistenceFailureRollsBackRoleAndRequest(
+                server, adminToken, accessRequestsEndpoint, requestsEndpoint,
+                requesterToken, approverToken, approverRoleId);
 
         HttpResponse<String> repeatedDecisionResponse = HttpClient.newHttpClient().send(
                 requestDecision(accessRequestsEndpoint, approverToken, approvedRequestId, "reject", "Too late."),
@@ -1468,6 +1474,118 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertTrue(requesterHistory.body().contains("\"type\":\"PROVISIONING_CLOSED\""));
         assertTrue(requesterHistory.body().contains("\"provisioningClosedAt\":"));
         assertFalse(requesterHistory.body().contains("The Keycloak role was permanently removed."));
+    }
+
+    private void assertPreexistingGrantAfterApproval(
+            GenericContainer<?> server,
+            String adminToken,
+            URI accessRequestsEndpoint,
+            URI requestsEndpoint,
+            String requesterToken,
+            String approverToken,
+            String approverId,
+            String approverRoleId) throws Exception {
+        String requesterId = subjectOf(requesterToken);
+        String roleName = "preexisting-role-" + UUID.randomUUID();
+        String roleId = createRealmRole(server, adminToken, roleName);
+        String entitlementId = UUID.randomUUID().toString();
+        insertEntitlement(entitlementId, "REALM_ROLE", roleId, approverRoleId, true);
+
+        HttpResponse<String> created = HttpClient.newHttpClient().send(
+                requestSubmission(requestsEndpoint, requesterToken, entitlementId, "Temporary access needed."),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, created.statusCode());
+        String requestId = responseId(created.body());
+        assertRealmRoleNotAssigned(server, adminToken, requesterId, roleId);
+
+        assertEquals(roleId, ensureRealmRoleAndAssignToUser(server, adminToken, requesterId, roleName));
+        assertRealmRoleAssigned(server, adminToken, requesterId, roleId);
+
+        HttpResponse<String> approval = HttpClient.newHttpClient().send(
+                requestDecision(accessRequestsEndpoint, approverToken, requestId, "approve", "Approved."),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, approval.statusCode());
+        assertTrue(approval.body().contains("\"provisioningStatus\":\"SUCCEEDED\""));
+        assertProvisioningResultAndAuditEvents(
+                requestId, "SUCCEEDED", "PROVISIONING_SUCCEEDED", approverId, "PREEXISTING");
+        assertRealmRoleAssigned(server, adminToken, requesterId, roleId);
+    }
+
+    private void assertGrantPersistenceFailureRollsBackRoleAndRequest(
+            GenericContainer<?> server,
+            String adminToken,
+            URI accessRequestsEndpoint,
+            URI requestsEndpoint,
+            String requesterToken,
+            String approverToken,
+            String approverRoleId) throws Exception {
+        String requesterId = subjectOf(requesterToken);
+        String roleId = createRealmRole(server, adminToken, "rollback-role-" + UUID.randomUUID());
+        String entitlementId = UUID.randomUUID().toString();
+        insertEntitlement(entitlementId, "REALM_ROLE", roleId, approverRoleId, true);
+        String justification = "Temporary access for rollback verification.";
+
+        HttpResponse<String> created = HttpClient.newHttpClient().send(
+                requestSubmission(requestsEndpoint, requesterToken, entitlementId, justification),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, created.statusCode());
+        String requestId = responseId(created.body());
+        assertRealmRoleNotAssigned(server, adminToken, requesterId, roleId);
+
+        // Force the grant INSERT to fail after Keycloak has attempted the role assignment.
+        rejectGrantInsertForRequest(requestId);
+        HttpResponse<String> approval;
+        try {
+            approval = HttpClient.newHttpClient().send(
+                    requestDecision(accessRequestsEndpoint, approverToken, requestId, "approve", "Approved."),
+                    HttpResponse.BodyHandlers.ofString());
+        } finally {
+            allowGrantInsertForRequest();
+        }
+        assertEquals(409, approval.statusCode(),
+                "Keycloak maps the injected grant constraint violation to a conflict response.");
+        assertRealmRoleNotAssigned(server, adminToken, requesterId, roleId);
+        assertPendingRequestAndCreatedAuditEvent(requestId, entitlementId, requesterId, justification);
+        assertNoGrantForRequest(requestId);
+
+        HttpResponse<String> recoveredApproval = HttpClient.newHttpClient().send(
+                requestDecision(accessRequestsEndpoint, approverToken, requestId, "approve", "Approved."),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, recoveredApproval.statusCode(),
+                "The same pending request must succeed after the grant storage fault is removed.");
+        assertProvisioningAndAuditEvents(requestId, subjectOf(approverToken));
+        assertRealmRoleAssigned(server, adminToken, requesterId, roleId);
+    }
+
+    private void rejectGrantInsertForRequest(String requestId) throws SQLException {
+        String safeRequestId = UUID.fromString(requestId).toString();
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var statement = connection.createStatement()) {
+            statement.execute("alter table AR_ACCESS_GRANT add constraint CK_AR_GRANT_ROLLBACK_IT "
+                    + "check (REQUEST_ID <> '" + safeRequestId + "')");
+        }
+    }
+
+    private void allowGrantInsertForRequest() throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var statement = connection.createStatement()) {
+            statement.execute("alter table AR_ACCESS_GRANT drop constraint CK_AR_GRANT_ROLLBACK_IT");
+        }
+    }
+
+    private void assertNoGrantForRequest(String requestId) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var statement = connection.prepareStatement(
+                     "select count(*) from AR_ACCESS_GRANT where REQUEST_ID = ?")) {
+            statement.setString(1, requestId);
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                assertEquals(0, result.getLong(1), "A rolled-back approval must not persist a grant.");
+            }
+        }
     }
 
     private void assertProvisioningRetryEndpoint(
@@ -1878,6 +1996,16 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             String provisioningStatus,
             String completionEventType,
             String approverId) throws SQLException {
+        assertProvisioningResultAndAuditEvents(
+                requestId, provisioningStatus, completionEventType, approverId, "CREATED_BY_EXTENSION");
+    }
+
+    private void assertProvisioningResultAndAuditEvents(
+            String requestId,
+            String provisioningStatus,
+            String completionEventType,
+            String approverId,
+            String expectedGrantOrigin) throws SQLException {
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var requestStatement = connection.prepareStatement("""
@@ -1903,7 +2031,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 try (ResultSet grant = grantStatement.executeQuery()) {
                     if ("SUCCEEDED".equals(provisioningStatus)) {
                         assertTrue(grant.next(), "Successful provisioning must persist grant provenance.");
-                        assertEquals("CREATED_BY_EXTENSION", grant.getString("GRANT_ORIGIN"));
+                        assertEquals(expectedGrantOrigin, grant.getString("GRANT_ORIGIN"));
                         assertEquals("UNVERIFIED", grant.getString("REVOCATION_STATE"));
                         assertTrue(grant.getString("REALM_ID") != null);
                         assertTrue(grant.getString("REQUESTER_ID") != null);
@@ -2387,6 +2515,24 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             String adminToken,
             String userId,
             String roleId) throws Exception {
+        assertTrue(hasRealmRoleAssignment(server, adminToken, userId, roleId),
+                "Provisioning must grant the configured realm role to the requester.");
+    }
+
+    private void assertRealmRoleNotAssigned(
+            GenericContainer<?> server,
+            String adminToken,
+            String userId,
+            String roleId) throws Exception {
+        assertFalse(hasRealmRoleAssignment(server, adminToken, userId, roleId),
+                "A role not granted or rolled back must not appear in the requester's direct mappings.");
+    }
+
+    private boolean hasRealmRoleAssignment(
+            GenericContainer<?> server,
+            String adminToken,
+            String userId,
+            String roleId) throws Exception {
         URI roleMappingsEndpoint = URI.create("http://%s:%d/admin/realms/master/users/%s/role-mappings/realm"
                 .formatted(server.getHost(), server.getMappedPort(8080), userId));
         HttpResponse<String> response = HttpClient.newHttpClient().send(
@@ -2396,8 +2542,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, response.statusCode());
-        assertTrue(response.body().contains("\"id\":\"" + roleId + "\""),
-                "Provisioning must grant the configured realm role to the requester.");
+        return response.body().contains("\"id\":\"" + roleId + "\"");
     }
 
     private void assertClientRoleAssigned(
