@@ -274,6 +274,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
             assertTrue(tableExists(connection, "ar_access_request"));
+            assertTrue(tableExists(connection, "ar_access_grant"));
             assertTrue(tableExists(connection, "ar_access_request_history"));
             try (ResultSet columns = connection.getMetaData().getColumns(
                     null, "public", "ar_access_request_history", "request_version")) {
@@ -282,7 +283,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertTrue(tableExists(connection, "ar_entitlement"));
             assertTrue(tableExists(connection, "ar_entitlement_history"));
             assertTrue(tableExists(connection, "ar_notification_outbox"));
-            assertEquals(12, providerChangeSetCount(connection));
+            assertEquals(13, providerChangeSetCount(connection));
         }
     }
 
@@ -1893,6 +1894,26 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
             assertProvisioningAuditEvent(connection, requestId, "PROVISIONING_STARTED", approverId);
             assertProvisioningAuditEvent(connection, requestId, completionEventType, approverId);
+            try (var grantStatement = connection.prepareStatement("""
+                    select GRANT_ORIGIN, REALM_ID, REQUESTER_ID, RESOURCE_TYPE, RESOURCE_ID
+                      from AR_ACCESS_GRANT
+                     where REQUEST_ID = ?
+                    """)) {
+                grantStatement.setString(1, requestId);
+                try (ResultSet grant = grantStatement.executeQuery()) {
+                    if ("SUCCEEDED".equals(provisioningStatus)) {
+                        assertTrue(grant.next(), "Successful provisioning must persist grant provenance.");
+                        assertEquals("CREATED_BY_EXTENSION", grant.getString("GRANT_ORIGIN"));
+                        assertTrue(grant.getString("REALM_ID") != null);
+                        assertTrue(grant.getString("REQUESTER_ID") != null);
+                        assertTrue(grant.getString("RESOURCE_TYPE") != null);
+                        assertTrue(grant.getString("RESOURCE_ID") != null);
+                        assertFalse(grant.next(), "A request must have exactly one grant record.");
+                    } else {
+                        assertFalse(grant.next(), "Failed provisioning must not persist a grant record.");
+                    }
+                }
+            }
         }
     }
 

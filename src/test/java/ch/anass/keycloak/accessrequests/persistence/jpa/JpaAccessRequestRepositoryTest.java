@@ -563,6 +563,7 @@ class JpaAccessRequestRepositoryTest {
         return new RequestService(
                 entitlementRepository,
                 new JpaAccessRequestRepository(entityManager),
+                new JpaAccessGrantRepository(entityManager),
                 (realmId, requesterId, requestedEntitlement) -> false,
                 (realmId, requesterId) -> true,
                 new RequestPolicy(10, 2000),
@@ -577,7 +578,7 @@ class JpaAccessRequestRepositoryTest {
 
                     @Override
                     public ProvisioningResult grant(String realmId, String requesterId, Entitlement entitlement) {
-                        return ProvisioningResult.succeeded();
+                        return ProvisioningResult.granted();
                     }
                 }));
     }
@@ -648,6 +649,7 @@ class JpaAccessRequestRepositoryTest {
 
     private void clearDatabase() {
         EntityTransactionSupport.execute(entityManager, () -> {
+            entityManager.createQuery("delete from AccessGrantEntity").executeUpdate();
             entityManager.createQuery("delete from AccessRequestEventEntity").executeUpdate();
             entityManager.createQuery("delete from AccessRequestEntity").executeUpdate();
             entityManager.createQuery("delete from EntitlementEntity").executeUpdate();

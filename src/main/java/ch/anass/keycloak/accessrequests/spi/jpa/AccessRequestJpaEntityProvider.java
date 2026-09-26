@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.spi.jpa;
 
 import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.AccessGrantEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestEventEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestNotificationOutboxEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.EntitlementEntity;
@@ -22,6 +23,7 @@ public final class AccessRequestJpaEntityProvider implements JpaEntityProvider, 
     private static final String CHANGELOG_LOCATION = "META-INF/access-requests-changelog.xml";
     private static final List<Class<?>> ENTITIES = List.of(
             AccessRequestEntity.class,
+            AccessGrantEntity.class,
             AccessRequestEventEntity.class,
             AccessRequestNotificationOutboxEntity.class,
             EntitlementEntity.class,

@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotification;
@@ -18,6 +19,7 @@ import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
+import ch.anass.keycloak.accessrequests.core.port.AccessGrantRepository;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestNotificationPublisher;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
@@ -51,6 +53,21 @@ class RequestServiceTest {
 
     private final InMemoryEntitlementRepository entitlements = new InMemoryEntitlementRepository();
     private final InMemoryAccessRequestRepository requests = new InMemoryAccessRequestRepository();
+    private final Map<String, AccessGrant> savedGrants = new HashMap<>();
+    private final AccessGrantRepository grants = new AccessGrantRepository() {
+        @Override
+        public void create(AccessGrant grant) {
+            if (savedGrants.putIfAbsent(grant.requestId(), grant) != null) {
+                throw new IllegalStateException("A request can only produce one grant record");
+            }
+        }
+
+        @Override
+        public Optional<AccessGrant> findByRequestId(String realmId, String requestId) {
+            return Optional.ofNullable(savedGrants.get(requestId))
+                    .filter(grant -> grant.realmId().equals(realmId));
+        }
+    };
     private final InMemoryEffectiveAccessChecker effectiveAccess = new InMemoryEffectiveAccessChecker();
     private final InMemoryUserStatusReader users = new InMemoryUserStatusReader();
     private final InMemoryAccessRequestEventPublisher events = new InMemoryAccessRequestEventPublisher();
@@ -63,6 +80,7 @@ class RequestServiceTest {
     private final RequestService service = new RequestService(
             entitlements,
             requests,
+            grants,
             effectiveAccess,
             users,
             new RequestPolicy(10, 2000),
@@ -1014,7 +1032,7 @@ class RequestServiceTest {
 
     private static final class InMemoryEntitlementProvisioner implements EntitlementProvisioner {
 
-        private ProvisioningResult result = ProvisioningResult.succeeded();
+        private ProvisioningResult result = ProvisioningResult.granted();
 
         void failWith(String reason) {
             result = ProvisioningResult.failed(reason);

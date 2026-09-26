@@ -1,6 +1,8 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.AccessGrant;
+import ch.anass.keycloak.accessrequests.core.domain.GrantOrigin;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
@@ -19,6 +21,7 @@ import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
+import ch.anass.keycloak.accessrequests.core.port.AccessGrantRepository;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
 import ch.anass.keycloak.accessrequests.core.port.ApprovalAuthorizer;
@@ -67,6 +70,10 @@ class RequestProvisioningTest {
                         "PROVISIONING_SUCCEEDED"),
                 fixture.eventTypes());
         assertEquals(ProvisioningStatus.SUCCEEDED, fixture.persistedRequest().provisioningStatus());
+        AccessGrant grant = fixture.grants().findByRequestId("realm-1", fixture.request().id()).orElseThrow();
+        assertEquals(GrantOrigin.CREATED_BY_EXTENSION, grant.origin());
+        assertEquals(fixture.request().requesterId(), grant.requesterId());
+        assertEquals(fixture.entitlement().resourceId(), grant.resourceId());
     }
 
     @Test
@@ -79,6 +86,7 @@ class RequestProvisioningTest {
         assertEquals(DecisionStatus.APPROVED, approved.decisionStatus());
         assertEquals(ProvisioningStatus.FAILED, approved.provisioningStatus());
         assertEquals(1, fixture.provisioner().grantAttempts());
+        assertEquals(0, fixture.grants().size());
         assertEquals(List.of(
                         "REQUEST_APPROVED",
                         "PROVISIONING_STARTED",
@@ -86,6 +94,20 @@ class RequestProvisioningTest {
                 fixture.eventTypes());
         assertEquals(DecisionStatus.APPROVED, fixture.persistedRequest().decisionStatus());
         assertEquals(ProvisioningStatus.FAILED, fixture.persistedRequest().provisioningStatus());
+        assertTrue(fixture.grants().findByRequestId("realm-1", fixture.request().id()).isEmpty());
+    }
+
+    @Test
+    void recordsPreexistingAccessWithoutClaimingOwnership() {
+        Fixture fixture = fixture(ResourceType.GROUP, ProvisioningOutcome.ALREADY_PRESENT);
+
+        AccessRequest approved = fixture.service().approve(
+                fixture.request().realmId(), fixture.request().id(), "approver-1", "Approved.");
+
+        assertEquals(ProvisioningStatus.SUCCEEDED, approved.provisioningStatus());
+        AccessGrant grant = fixture.grants().findByRequestId("realm-1", approved.id()).orElseThrow();
+        assertEquals(GrantOrigin.PREEXISTING, grant.origin());
+        assertTrue(!grant.ownedByExtension());
     }
 
     @Test
@@ -111,6 +133,7 @@ class RequestProvisioningTest {
         assertThrows(InvalidRequestStateException.class, () -> fixture.service().approve(
                 fixture.request().realmId(), fixture.request().id(), "approver-1", "Approved again."));
         assertEquals(1, fixture.provisioner().grantAttempts());
+        assertEquals(1, fixture.grants().size());
         assertEquals(List.of(
                         "REQUEST_APPROVED",
                         "PROVISIONING_STARTED",
@@ -165,6 +188,8 @@ class RequestProvisioningTest {
         assertEquals("Sensitive provider diagnostic", records.getFirst().getThrown().getMessage());
         assertEquals(2, fixture.provisioner().grantAttempts());
         assertEquals(ProvisioningStatus.SUCCEEDED, fixture.persistedRequest().provisioningStatus());
+        assertEquals(GrantOrigin.CREATED_BY_EXTENSION,
+                fixture.grants().findByRequestId("realm-1", fixture.request().id()).orElseThrow().origin());
         assertEquals(List.of("REQUEST_APPROVED", "PROVISIONING_STARTED", "PROVISIONING_FAILED",
                 "PROVISIONING_STARTED", "PROVISIONING_SUCCEEDED"), fixture.eventTypes());
         assertEquals(List.of("UNEXPECTED_FAILURE"), fixture.events().published().stream()
@@ -200,6 +225,23 @@ class RequestProvisioningTest {
         assertEquals(List.of(1L, 1L, 2L, 2L, 3L), fixture.events().published().stream()
                 .map(AccessRequestEvent::requestVersion).toList());
         assertEquals(ProvisioningStatus.SUCCEEDED, fixture.persistedRequest().provisioningStatus());
+        assertEquals(GrantOrigin.CREATED_BY_EXTENSION,
+                fixture.grants().findByRequestId("realm-1", fixture.request().id()).orElseThrow().origin());
+    }
+
+    @Test
+    void recordsPreexistingAccessWhenAProvisioningRetryFindsAnExternalGrant() {
+        Fixture fixture = fixture(ResourceType.REALM_ROLE,
+                List.of(ProvisioningOutcome.FAILED, ProvisioningOutcome.ALREADY_PRESENT));
+
+        fixture.service().approve(fixture.request().realmId(), fixture.request().id(), "approver-1", "Approved.");
+        assertTrue(fixture.grants().findByRequestId("realm-1", fixture.request().id()).isEmpty());
+
+        AccessRequest retried = fixture.service().retryProvisioning("realm-1", fixture.request().id(), "manager-1");
+
+        assertEquals(ProvisioningStatus.SUCCEEDED, retried.provisioningStatus());
+        assertEquals(GrantOrigin.PREEXISTING,
+                fixture.grants().findByRequestId("realm-1", fixture.request().id()).orElseThrow().origin());
     }
 
     @Test
@@ -294,7 +336,8 @@ class RequestProvisioningTest {
                 unpublished,
                 unpublishedFixture.requests(),
                 unpublishedFixture.events(),
-                unpublishedFixture.provisioner());
+                unpublishedFixture.provisioner(),
+                unpublishedFixture.grants());
 
         AccessRequest retried = retryService.retryProvisioning(
                 unpublishedFixture.request().realmId(), unpublishedFixture.request().id(), "realm-admin-1");
@@ -327,7 +370,8 @@ class RequestProvisioningTest {
                 changedTarget,
                 changedTargetFixture.requests(),
                 changedTargetFixture.events(),
-                changedTargetFixture.provisioner());
+                changedTargetFixture.provisioner(),
+                changedTargetFixture.grants());
 
         assertThrows(InvalidProvisioningRetryException.class, () -> changedTargetService.retryProvisioning(
                 changedTargetFixture.request().realmId(),
@@ -415,6 +459,7 @@ class RequestProvisioningTest {
         RequestService service = new RequestService(
                 entitlementRepository,
                 fixture.requests(),
+                fixture.grants(),
                 (realmId, requesterId, currentEntitlement) -> false,
                 (realmId, userId) -> true,
                 new RequestPolicy(10, 2_000),
@@ -499,27 +544,31 @@ class RequestProvisioningTest {
         InMemoryAccessRequestRepository requests = new InMemoryAccessRequestRepository(request);
         RecordingEventPublisher events = new RecordingEventPublisher();
         RecordingProvisioner provisioner = new RecordingProvisioner(outcomes);
-        RequestService service = provisioningEnabledService(entitlement, requests, events, provisioner);
-        return new Fixture(service, entitlement, request, requests, events, provisioner);
+        RecordingGrantRepository grants = new RecordingGrantRepository();
+        RequestService service = provisioningEnabledService(entitlement, requests, events, provisioner, grants);
+        return new Fixture(service, entitlement, request, requests, events, provisioner, grants);
     }
 
     private static RequestService provisioningEnabledService(
             Entitlement entitlement,
             InMemoryAccessRequestRepository requests,
             RecordingEventPublisher events,
-            RecordingProvisioner provisioner) {
+            RecordingProvisioner provisioner,
+            RecordingGrantRepository grants) {
         return provisioningEnabledService(
-                new SingleEntitlementRepository(entitlement), requests, events, provisioner);
+                new SingleEntitlementRepository(entitlement), requests, events, provisioner, grants);
     }
 
     private static RequestService provisioningEnabledService(
             EntitlementRepository entitlementRepository,
             InMemoryAccessRequestRepository requests,
             RecordingEventPublisher events,
-            RecordingProvisioner provisioner) {
+            RecordingProvisioner provisioner,
+            RecordingGrantRepository grants) {
         return new RequestService(
                 entitlementRepository,
                 requests,
+                grants,
                 (EffectiveAccessChecker) (realmId, requesterId, currentEntitlement) -> false,
                 (UserStatusReader) (realmId, userId) -> true,
                 new RequestPolicy(10, 2_000),
@@ -541,7 +590,8 @@ class RequestProvisioningTest {
             AccessRequest request,
             InMemoryAccessRequestRepository requests,
             RecordingEventPublisher events,
-            RecordingProvisioner provisioner) {
+            RecordingProvisioner provisioner,
+            RecordingGrantRepository grants) {
 
         private List<String> eventTypes() {
             return events.published().stream().map(event -> event.type().name()).toList();
@@ -554,6 +604,7 @@ class RequestProvisioningTest {
 
     private enum ProvisioningOutcome {
         SUCCEEDED,
+        ALREADY_PRESENT,
         FAILED,
         THROWS
     }
@@ -583,7 +634,8 @@ class RequestProvisioningTest {
             this.entitlement = entitlement;
             ProvisioningOutcome outcome = outcomes.get(Math.min(grantAttempts - 1, outcomes.size() - 1));
             return switch (outcome) {
-                case SUCCEEDED -> ProvisioningResult.succeeded();
+                case SUCCEEDED -> ProvisioningResult.granted();
+                case ALREADY_PRESENT -> ProvisioningResult.alreadyPresent();
                 case FAILED -> ProvisioningResult.failed(ProvisioningFailureCode.RESOURCE_MISSING,
                         "The target resource could not be resolved.");
                 case THROWS -> throw new IllegalStateException("Sensitive provider diagnostic");
@@ -699,6 +751,30 @@ class RequestProvisioningTest {
 
         List<AccessRequestEvent> published() {
             return List.copyOf(events);
+        }
+    }
+
+    private static final class RecordingGrantRepository implements AccessGrantRepository {
+
+        private final List<AccessGrant> grants = new ArrayList<>();
+
+        @Override
+        public void create(AccessGrant grant) {
+            if (grants.stream().anyMatch(existing -> existing.requestId().equals(grant.requestId()))) {
+                throw new IllegalStateException("A request can only produce one grant record");
+            }
+            grants.add(grant);
+        }
+
+        @Override
+        public Optional<AccessGrant> findByRequestId(String realmId, String requestId) {
+            return grants.stream()
+                    .filter(grant -> grant.realmId().equals(realmId) && grant.requestId().equals(requestId))
+                    .findFirst();
+        }
+
+        int size() {
+            return grants.size();
         }
     }
 }

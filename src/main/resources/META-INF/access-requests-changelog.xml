@@ -313,4 +313,39 @@
             <column name="EVENT_TIMESTAMP" descending="true"/>
         </createIndex>
     </changeSet>
+    <changeSet id="13" author="4nass">
+        <createTable tableName="AR_ACCESS_GRANT">
+            <column name="REQUEST_ID" type="VARCHAR(36)">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="PK_ACCESS_GRANT"/>
+            </column>
+            <column name="REALM_ID" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="REQUESTER_ID" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="ENTITLEMENT_ID" type="VARCHAR(36)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="RESOURCE_TYPE" type="VARCHAR(30)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="RESOURCE_ID" type="VARCHAR(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="GRANT_ORIGIN" type="VARCHAR(30)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="RECORDED_TIMESTAMP" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex indexName="IDX_ACCESS_GRANT_RESOURCE" tableName="AR_ACCESS_GRANT">
+            <column name="REALM_ID"/>
+            <column name="REQUESTER_ID"/>
+            <column name="RESOURCE_TYPE"/>
+            <column name="RESOURCE_ID"/>
+        </createIndex>
+    </changeSet>
 </databaseChangeLog>

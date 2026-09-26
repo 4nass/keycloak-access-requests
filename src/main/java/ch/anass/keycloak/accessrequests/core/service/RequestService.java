@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
@@ -14,6 +15,7 @@ import ch.anass.keycloak.accessrequests.core.domain.SelfApprovalException;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedApprovalException;
 import ch.anass.keycloak.accessrequests.core.domain.UnauthorizedRequestActionException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
+import ch.anass.keycloak.accessrequests.core.port.AccessGrantRepository;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestNotificationPublisher;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
@@ -40,6 +42,7 @@ public final class RequestService {
 
     private final EntitlementRepository entitlementRepository;
     private final AccessRequestRepository accessRequestRepository;
+    private final AccessGrantRepository accessGrantRepository;
     private final EffectiveAccessChecker effectiveAccessChecker;
     private final UserStatusReader userStatusReader;
     private final RequestPolicy requestPolicy;
@@ -54,6 +57,7 @@ public final class RequestService {
     public RequestService(
             EntitlementRepository entitlementRepository,
             AccessRequestRepository accessRequestRepository,
+            AccessGrantRepository accessGrantRepository,
             EffectiveAccessChecker effectiveAccessChecker,
             UserStatusReader userStatusReader,
             RequestPolicy requestPolicy,
@@ -61,7 +65,7 @@ public final class RequestService {
             ApprovalAuthorizer approvalAuthorizer,
             AccessRequestTransaction transaction,
             List<EntitlementProvisioner> provisioners) {
-        this(entitlementRepository, accessRequestRepository, effectiveAccessChecker, userStatusReader,
+        this(entitlementRepository, accessRequestRepository, accessGrantRepository, effectiveAccessChecker, userStatusReader,
                 requestPolicy, eventPublisher, approvalAuthorizer, transaction, provisioners,
                 NO_OP_NOTIFICATION_PUBLISHER, Clock.systemUTC());
     }
@@ -69,6 +73,7 @@ public final class RequestService {
     public RequestService(
             EntitlementRepository entitlementRepository,
             AccessRequestRepository accessRequestRepository,
+            AccessGrantRepository accessGrantRepository,
             EffectiveAccessChecker effectiveAccessChecker,
             UserStatusReader userStatusReader,
             RequestPolicy requestPolicy,
@@ -77,7 +82,7 @@ public final class RequestService {
             AccessRequestTransaction transaction,
             List<EntitlementProvisioner> provisioners,
             Clock clock) {
-        this(entitlementRepository, accessRequestRepository, effectiveAccessChecker, userStatusReader,
+        this(entitlementRepository, accessRequestRepository, accessGrantRepository, effectiveAccessChecker, userStatusReader,
                 requestPolicy, eventPublisher, approvalAuthorizer, transaction, provisioners,
                 NO_OP_NOTIFICATION_PUBLISHER, clock);
     }
@@ -85,6 +90,7 @@ public final class RequestService {
     public RequestService(
             EntitlementRepository entitlementRepository,
             AccessRequestRepository accessRequestRepository,
+            AccessGrantRepository accessGrantRepository,
             EffectiveAccessChecker effectiveAccessChecker,
             UserStatusReader userStatusReader,
             RequestPolicy requestPolicy,
@@ -93,7 +99,7 @@ public final class RequestService {
             AccessRequestTransaction transaction,
             List<EntitlementProvisioner> provisioners,
             AccessRequestNotificationPublisher notificationPublisher) {
-        this(entitlementRepository, accessRequestRepository, effectiveAccessChecker, userStatusReader,
+        this(entitlementRepository, accessRequestRepository, accessGrantRepository, effectiveAccessChecker, userStatusReader,
                 requestPolicy, eventPublisher, approvalAuthorizer, transaction, provisioners, notificationPublisher,
                 Clock.systemUTC());
     }
@@ -101,6 +107,7 @@ public final class RequestService {
     public RequestService(
             EntitlementRepository entitlementRepository,
             AccessRequestRepository accessRequestRepository,
+            AccessGrantRepository accessGrantRepository,
             EffectiveAccessChecker effectiveAccessChecker,
             UserStatusReader userStatusReader,
             RequestPolicy requestPolicy,
@@ -112,6 +119,7 @@ public final class RequestService {
             Clock clock) {
         this.entitlementRepository = Objects.requireNonNull(entitlementRepository);
         this.accessRequestRepository = Objects.requireNonNull(accessRequestRepository);
+        this.accessGrantRepository = Objects.requireNonNull(accessGrantRepository);
         this.effectiveAccessChecker = Objects.requireNonNull(effectiveAccessChecker);
         this.userStatusReader = Objects.requireNonNull(userStatusReader);
         this.requestPolicy = Objects.requireNonNull(requestPolicy);
@@ -217,6 +225,9 @@ public final class RequestService {
                 completed.markProvisioningFailed(completedAt);
             }
             AccessRequest persisted = updateOrThrow(completed, approved.version());
+            if (result.isSuccessful()) {
+                accessGrantRepository.create(AccessGrant.from(persisted, entitlement, result.grantOrigin(), completedAt));
+            }
             AccessRequestEvent provisioningEvent = result.isSuccessful()
                     ? AccessRequestEvent.provisioningSucceeded(persisted, approverId, completedAt)
                     : AccessRequestEvent.provisioningFailed(
@@ -253,6 +264,9 @@ public final class RequestService {
                     result.isSuccessful() ? ProvisioningStatus.SUCCEEDED : ProvisioningStatus.FAILED,
                     completedAt);
             AccessRequest persisted = updateOrThrow(candidate, request.version());
+            if (result.isSuccessful()) {
+                accessGrantRepository.create(AccessGrant.from(persisted, entitlement, result.grantOrigin(), completedAt));
+            }
             AccessRequestEvent event = result.isSuccessful()
                     ? AccessRequestEvent.provisioningSucceeded(persisted, actorId, completedAt)
                     : AccessRequestEvent.provisioningFailed(

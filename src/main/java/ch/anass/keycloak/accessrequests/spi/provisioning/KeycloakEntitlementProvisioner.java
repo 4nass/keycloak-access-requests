@@ -98,10 +98,11 @@ public final class KeycloakEntitlementProvisioner implements EntitlementProvisio
     }
 
     private ProvisioningResult grantRole(UserModel requester, RoleModel role) {
-        if (!requester.hasRole(role)) {
-            requester.grantRole(role);
+        if (requester.hasRole(role)) {
+            return ProvisioningResult.alreadyPresent();
         }
-        return ProvisioningResult.succeeded();
+        requester.grantRole(role);
+        return ProvisioningResult.granted();
     }
 
     private ProvisioningResult joinGroup(UserModel requester, String groupId) {
@@ -111,9 +112,10 @@ public final class KeycloakEntitlementProvisioner implements EntitlementProvisio
                     ProvisioningFailureCode.RESOURCE_MISSING,
                     "The configured Keycloak group no longer exists.");
         }
-        if (!requester.isMemberOf(group)) {
-            requester.joinGroup(group);
+        if (requester.isMemberOf(group)) {
+            return ProvisioningResult.alreadyPresent();
         }
-        return ProvisioningResult.succeeded();
+        requester.joinGroup(group);
+        return ProvisioningResult.granted();
     }
 }

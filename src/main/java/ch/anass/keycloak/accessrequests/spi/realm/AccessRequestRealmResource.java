@@ -45,6 +45,7 @@ import ch.anass.keycloak.accessrequests.core.service.UserDisabledException;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestEventPublisher;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestHistoryReader;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestRepository;
+import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessGrantRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestNotificationOutboxRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaEntitlementRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaEntitlementAuditEventPublisher;
@@ -758,6 +759,7 @@ public final class AccessRequestRealmResource {
         return new RequestService(
                 entitlementRepository,
                 new JpaAccessRequestRepository(entityManager),
+                new JpaAccessGrantRepository(entityManager),
                 new KeycloakEffectiveAccessChecker(session, realm, user),
                 new KeycloakUserStatusReader(realm, user),
                 REQUEST_POLICY,

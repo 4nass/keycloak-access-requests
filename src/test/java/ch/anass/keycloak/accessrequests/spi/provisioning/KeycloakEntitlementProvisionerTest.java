@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.spi.provisioning;
 
 import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.GrantOrigin;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningFailureCode;
 import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
@@ -47,6 +48,7 @@ class KeycloakEntitlementProvisionerTest {
 
         assertTrue(provisioner(fixture).supports(resourceType));
         assertEquals(ProvisioningStatus.SUCCEEDED, result.status());
+        assertEquals(GrantOrigin.CREATED_BY_EXTENSION, result.grantOrigin());
         fixture.assertSingleGrant(resourceType);
     }
 
@@ -56,8 +58,10 @@ class KeycloakEntitlementProvisionerTest {
         KeycloakFixture fixture = KeycloakFixture.withTarget(resourceType);
         EntitlementProvisioner provisioner = provisioner(fixture);
 
-        assertEquals(ProvisioningStatus.SUCCEEDED, grant(provisioner, fixture.entitlement()).status());
-        assertEquals(ProvisioningStatus.SUCCEEDED, grant(provisioner, fixture.entitlement()).status());
+        assertEquals(GrantOrigin.CREATED_BY_EXTENSION,
+                grant(provisioner, fixture.entitlement()).grantOrigin());
+        assertEquals(GrantOrigin.PREEXISTING,
+                grant(provisioner, fixture.entitlement()).grantOrigin());
 
         fixture.assertSingleGrant(resourceType);
     }
@@ -70,6 +74,7 @@ class KeycloakEntitlementProvisionerTest {
         ProvisioningResult result = grant(provisioner(fixture), fixture.entitlement());
 
         assertEquals(ProvisioningStatus.FAILED, result.status());
+        assertEquals(null, result.grantOrigin());
         assertEquals(ProvisioningFailureCode.RESOURCE_MISSING, result.failureCode());
         fixture.assertNoGrant();
     }

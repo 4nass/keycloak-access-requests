@@ -6,11 +6,7 @@ import java.util.Objects;
  * The outcome of assigning an entitlement to a requester.
  */
 public record ProvisioningResult(
-        ProvisioningStatus status, String failureReason, ProvisioningFailureCode failureCode) {
-
-    public ProvisioningResult(ProvisioningStatus status, String failureReason) {
-        this(status, failureReason, status == ProvisioningStatus.FAILED ? ProvisioningFailureCode.UNKNOWN : null);
-    }
+        ProvisioningStatus status, String failureReason, ProvisioningFailureCode failureCode, GrantOrigin grantOrigin) {
 
     public ProvisioningResult {
         status = Objects.requireNonNull(status, "status must not be null");
@@ -20,14 +16,24 @@ public record ProvisioningResult(
         if (status == ProvisioningStatus.SUCCEEDED && (failureReason != null || failureCode != null)) {
             throw new IllegalArgumentException("A successful provisioning result must not have failure details");
         }
+        if (status == ProvisioningStatus.SUCCEEDED && grantOrigin == null) {
+            throw new IllegalArgumentException("A successful provisioning result must identify the grant origin");
+        }
         if (status == ProvisioningStatus.FAILED) {
             failureReason = requireText(failureReason, "failureReason");
             failureCode = Objects.requireNonNull(failureCode, "failureCode must not be null");
+            if (grantOrigin != null) {
+                throw new IllegalArgumentException("A failed provisioning result must not have a grant origin");
+            }
         }
     }
 
-    public static ProvisioningResult succeeded() {
-        return new ProvisioningResult(ProvisioningStatus.SUCCEEDED, null, null);
+    public static ProvisioningResult granted() {
+        return new ProvisioningResult(ProvisioningStatus.SUCCEEDED, null, null, GrantOrigin.CREATED_BY_EXTENSION);
+    }
+
+    public static ProvisioningResult alreadyPresent() {
+        return new ProvisioningResult(ProvisioningStatus.SUCCEEDED, null, null, GrantOrigin.PREEXISTING);
     }
 
     public static ProvisioningResult failed(String failureReason) {
@@ -35,7 +41,7 @@ public record ProvisioningResult(
     }
 
     public static ProvisioningResult failed(ProvisioningFailureCode code, String failureReason) {
-        return new ProvisioningResult(ProvisioningStatus.FAILED, failureReason, code);
+        return new ProvisioningResult(ProvisioningStatus.FAILED, failureReason, code, null);
     }
 
     public boolean isSuccessful() {
