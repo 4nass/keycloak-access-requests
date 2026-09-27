@@ -27,17 +27,17 @@ import org.keycloak.models.KeycloakSession;
 
 public final class AccessRequestRealmResource {
 
-    private final AccessRequestCatalogResource catalogResource;
-    private final AccessRequestRequesterResource requesterResource;
-    private final AccessRequestApprovalResource approvalResource;
-    private final AccessRequestAdminResource adminResource;
+    private final AccessRequestCatalogHandler catalogHandler;
+    private final AccessRequestRequesterHandler requesterHandler;
+    private final AccessRequestApprovalHandler approvalHandler;
+    private final AccessRequestAdminHandler adminHandler;
 
     public AccessRequestRealmResource(KeycloakSession session) {
         AccessRequestServiceFactory services = new AccessRequestServiceFactory(session);
-        this.catalogResource = new AccessRequestCatalogResource(services);
-        this.requesterResource = new AccessRequestRequesterResource(services);
-        this.approvalResource = new AccessRequestApprovalResource(services);
-        this.adminResource = new AccessRequestAdminResource(services);
+        this.catalogHandler = new AccessRequestCatalogHandler(services);
+        this.requesterHandler = new AccessRequestRequesterHandler(services);
+        this.approvalHandler = new AccessRequestApprovalHandler(services);
+        this.adminHandler = new AccessRequestAdminHandler(services);
     }
 
     @GET
@@ -49,13 +49,13 @@ public final class AccessRequestRealmResource {
             @QueryParam("riskLevel") RiskLevel riskLevel,
             @DefaultValue("0") @QueryParam("page") int page,
             @DefaultValue("20") @QueryParam("size") int size) {
-        return catalogResource.catalog(resourceType, search, riskLevel, page, size);
+        return catalogHandler.catalog(resourceType, search, riskLevel, page, size);
     }
 
     @OPTIONS
     @Path("catalog")
     public Response catalogOptions() {
-        return catalogResource.catalogOptions();
+        return catalogHandler.catalogOptions();
     }
 
     @GET
@@ -64,7 +64,7 @@ public final class AccessRequestRealmResource {
     public Response listCatalogEntitlements(
             @DefaultValue("0") @QueryParam("page") int page,
             @DefaultValue("20") @QueryParam("size") int size) {
-        return catalogResource.listCatalogEntitlements(page, size);
+        return catalogHandler.listCatalogEntitlements(page, size);
     }
 
     @POST
@@ -72,14 +72,14 @@ public final class AccessRequestRealmResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response createEntitlement(EntitlementCreation submission) {
-        return catalogResource.createEntitlement(submission);
+        return catalogHandler.createEntitlement(submission);
     }
 
     @GET
     @Path("admin/entitlements/{entitlementId}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getEntitlement(@PathParam("entitlementId") String entitlementId) {
-        return catalogResource.getEntitlement(entitlementId);
+        return catalogHandler.getEntitlement(entitlementId);
     }
 
     @PUT
@@ -89,7 +89,7 @@ public final class AccessRequestRealmResource {
     public Response updateEntitlement(
             @PathParam("entitlementId") String entitlementId,
             EntitlementUpdate submission) {
-        return catalogResource.updateEntitlement(entitlementId, submission);
+        return catalogHandler.updateEntitlement(entitlementId, submission);
     }
 
     @POST
@@ -97,7 +97,7 @@ public final class AccessRequestRealmResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response submitRequest(RequestSubmission submission) {
-        return requesterResource.submitRequest(submission);
+        return requesterHandler.submitRequest(submission);
     }
 
     @GET
@@ -110,14 +110,14 @@ public final class AccessRequestRealmResource {
             @QueryParam("to") String to,
             @DefaultValue("0") @QueryParam("page") int page,
             @DefaultValue("20") @QueryParam("size") int size) {
-        return requesterResource.listRequests(decisionStatus, resourceType, from, to, page, size);
+        return requesterHandler.listRequests(decisionStatus, resourceType, from, to, page, size);
     }
 
     @GET
     @Path("admin/capabilities")
     @Produces(MediaType.APPLICATION_JSON)
     public AdminCapabilitiesResponse adminCapabilities() {
-        return adminResource.adminCapabilities();
+        return adminHandler.adminCapabilities();
     }
 
     @GET
@@ -131,7 +131,7 @@ public final class AccessRequestRealmResource {
             @QueryParam("requestId") String requestId,
             @DefaultValue("0") @QueryParam("page") int page,
             @DefaultValue("20") @QueryParam("size") int size) {
-        return adminResource.listAuditEvents(from, to, type, actorId, requestId, page, size);
+        return adminHandler.listAuditEvents(from, to, type, actorId, requestId, page, size);
     }
 
     @GET
@@ -140,7 +140,7 @@ public final class AccessRequestRealmResource {
     public Response administrativeRequestDetails(@PathParam("requestId") String requestId,
             @DefaultValue("0") @QueryParam("historyPage") int historyPage,
             @DefaultValue("20") @QueryParam("historySize") int historySize) {
-        return adminResource.administrativeRequestDetails(requestId, historyPage, historySize);
+        return adminHandler.administrativeRequestDetails(requestId, historyPage, historySize);
     }
 
     @GET
@@ -149,7 +149,7 @@ public final class AccessRequestRealmResource {
     public Response listFailedNotificationDeliveries(
             @DefaultValue("0") @QueryParam("page") int page,
             @DefaultValue("20") @QueryParam("size") int size) {
-        return adminResource.listFailedNotificationDeliveries(page, size);
+        return adminHandler.listFailedNotificationDeliveries(page, size);
     }
 
     @GET
@@ -159,27 +159,27 @@ public final class AccessRequestRealmResource {
             @DefaultValue("0") @QueryParam("page") int page,
             @DefaultValue("20") @QueryParam("size") int size,
             @DefaultValue("OPEN") @QueryParam("state") String state) {
-        return adminResource.listFailedProvisioningRequests(page, size, state);
+        return adminHandler.listFailedProvisioningRequests(page, size, state);
     }
 
     @GET
     @Path("admin/notification-deliveries/summary")
     @Produces(MediaType.APPLICATION_JSON)
     public NotificationDeliverySummaryResponse notificationDeliverySummary() {
-        return adminResource.notificationDeliverySummary();
+        return adminHandler.notificationDeliverySummary();
     }
 
     @POST
     @Path("admin/notification-deliveries/{deliveryId}/retry")
     public Response retryFailedNotificationDelivery(@PathParam("deliveryId") String deliveryId) {
-        return adminResource.retryFailedNotificationDelivery(deliveryId);
+        return adminHandler.retryFailedNotificationDelivery(deliveryId);
     }
 
     @POST
     @Path("admin/requests/{requestId}/provisioning/retry")
     @Produces(MediaType.APPLICATION_JSON)
     public Response retryFailedProvisioning(@PathParam("requestId") String requestId) {
-        return adminResource.retryFailedProvisioning(requestId);
+        return adminHandler.retryFailedProvisioning(requestId);
     }
 
     @POST
@@ -188,7 +188,7 @@ public final class AccessRequestRealmResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response closeFailedProvisioning(
             @PathParam("requestId") String requestId, ProvisioningClosureSubmission submission) {
-        return adminResource.closeFailedProvisioning(requestId, submission);
+        return adminHandler.closeFailedProvisioning(requestId, submission);
     }
 
     @GET
@@ -198,14 +198,14 @@ public final class AccessRequestRealmResource {
             @QueryParam("type") ResourceType resourceType,
             @QueryParam("search") String search,
             @DefaultValue("50") @QueryParam("max") int max) {
-        return catalogResource.listKeycloakReferences(resourceType, search, max);
+        return catalogHandler.listKeycloakReferences(resourceType, search, max);
     }
 
     @GET
     @Path("mine/{requestId}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response requestDetails(@PathParam("requestId") String requestId) {
-        return requesterResource.requestDetails(requestId);
+        return requesterHandler.requestDetails(requestId);
     }
 
     @GET
@@ -214,21 +214,21 @@ public final class AccessRequestRealmResource {
     public Response listPendingRequests(
             @DefaultValue("0") @QueryParam("page") int page,
             @DefaultValue("20") @QueryParam("size") int size) {
-        return approvalResource.listPendingRequests(page, size);
+        return approvalHandler.listPendingRequests(page, size);
     }
 
     @GET
     @Path("capabilities")
     @Produces(MediaType.APPLICATION_JSON)
     public CapabilitiesResponse capabilities() {
-        return approvalResource.capabilities();
+        return approvalHandler.capabilities();
     }
 
     @POST
     @Path("{requestId}/cancel")
     @Produces(MediaType.APPLICATION_JSON)
     public Response cancelRequest(@PathParam("requestId") String requestId) {
-        return requesterResource.cancelRequest(requestId);
+        return requesterHandler.cancelRequest(requestId);
     }
 
     @POST
@@ -238,7 +238,7 @@ public final class AccessRequestRealmResource {
     public Response approveRequest(
             @PathParam("requestId") String requestId,
             DecisionSubmission submission) {
-        return approvalResource.approveRequest(requestId, submission);
+        return approvalHandler.approveRequest(requestId, submission);
     }
 
     @POST
@@ -248,7 +248,7 @@ public final class AccessRequestRealmResource {
     public Response rejectRequest(
             @PathParam("requestId") String requestId,
             DecisionSubmission submission) {
-        return approvalResource.rejectRequest(requestId, submission);
+        return approvalHandler.rejectRequest(requestId, submission);
     }
 
 }

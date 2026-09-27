@@ -17,23 +17,23 @@ class AccessRequestServiceFactoryWiringTest {
                 (proxy, method, arguments) -> null);
         AccessRequestRealmResource resource = new AccessRequestRealmResource(session);
 
-        AccessRequestServiceFactory catalog = services(handler(resource, "catalogResource"));
+        AccessRequestServiceFactory catalog = services(handler(resource, "catalogHandler"));
         assertSame(session, catalog.session());
-        assertSame(catalog, services(handler(resource, "requesterResource")));
-        assertSame(catalog, services(handler(resource, "approvalResource")));
-        assertSame(catalog, services(handler(resource, "adminResource")));
+        assertSame(catalog, services(handler(resource, "requesterHandler")));
+        assertSame(catalog, services(handler(resource, "approvalHandler")));
+        assertSame(catalog, services(handler(resource, "adminHandler")));
     }
 
-    private static AccessRequestEndpointSupport handler(AccessRequestRealmResource resource, String name)
+    private static AccessRequestHandlerSupport handler(AccessRequestRealmResource resource, String name)
             throws ReflectiveOperationException {
         Field field = AccessRequestRealmResource.class.getDeclaredField(name);
         field.setAccessible(true);
-        return (AccessRequestEndpointSupport) field.get(resource);
+        return (AccessRequestHandlerSupport) field.get(resource);
     }
 
-    private static AccessRequestServiceFactory services(AccessRequestEndpointSupport handler)
+    private static AccessRequestServiceFactory services(AccessRequestHandlerSupport handler)
             throws ReflectiveOperationException {
-        Field field = AccessRequestEndpointSupport.class.getDeclaredField("services");
+        Field field = AccessRequestHandlerSupport.class.getDeclaredField("services");
         field.setAccessible(true);
         return (AccessRequestServiceFactory) field.get(handler);
     }

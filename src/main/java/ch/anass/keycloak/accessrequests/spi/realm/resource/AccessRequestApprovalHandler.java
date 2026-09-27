@@ -16,9 +16,11 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.PendingRequest
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RequestDto.RequestResponse;
 import jakarta.ws.rs.core.Response;
 
-final class AccessRequestApprovalResource extends AccessRequestEndpointSupport {
+import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestErrors.error;
 
-    AccessRequestApprovalResource(AccessRequestServiceFactory services) {
+final class AccessRequestApprovalHandler extends AccessRequestHandlerSupport {
+
+    AccessRequestApprovalHandler(AccessRequestServiceFactory services) {
         super(services);
     }
 

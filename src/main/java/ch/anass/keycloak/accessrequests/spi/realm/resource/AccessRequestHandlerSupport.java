@@ -1,7 +1,6 @@
 package ch.anass.keycloak.accessrequests.spi.realm.resource;
 
-import ch.anass.keycloak.accessrequests.core.domain.request.DecisionStatus;
-import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
 import ch.anass.keycloak.accessrequests.core.service.ApprovalQueueService;
 import ch.anass.keycloak.accessrequests.core.service.CatalogService;
 import ch.anass.keycloak.accessrequests.core.service.RequestDetailsService;
@@ -12,11 +11,8 @@ import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequ
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlementRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlementAuditEventPublisher;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakAccessRequestManagerAuthorizer;
-import ch.anass.keycloak.accessrequests.spi.realm.dto.ApiDto.ErrorResponse;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.NotAuthorizedException;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
@@ -26,18 +22,16 @@ import org.keycloak.services.resources.admin.AdminAuth;
 import org.keycloak.services.resources.admin.AdminRoot;
 import org.keycloak.services.resources.admin.fgap.AdminPermissions;
 
-import java.time.Instant;
-import java.time.format.DateTimeParseException;
 import java.util.Objects;
 
-abstract class AccessRequestEndpointSupport {
+abstract class AccessRequestHandlerSupport {
 
     private static final String ACCESS_REQUESTS_API_AUDIENCE = "access-requests-api";
     protected final KeycloakSession session;
     private final AccessRequestServiceFactory services;
     private final KeycloakAccessRequestManagerAuthorizer accessRequestManagerAuthorizer;
 
-    AccessRequestEndpointSupport(AccessRequestServiceFactory services) {
+    AccessRequestHandlerSupport(AccessRequestServiceFactory services) {
         this.services = Objects.requireNonNull(services, "services must not be null");
         this.session = services.session();
         this.accessRequestManagerAuthorizer = new KeycloakAccessRequestManagerAuthorizer();
@@ -94,9 +88,10 @@ abstract class AccessRequestEndpointSupport {
         return services.entitlementAuditEventPublisher();
     }
 
-    protected ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction transaction() {
+    protected AccessRequestTransaction transaction() {
         return services.transaction();
     }
+
     protected CatalogService catalogService(AuthenticatedRequest authenticatedRequest) {
         return services.catalogService(authenticatedRequest.realm(), authenticatedRequest.user());
     }
@@ -115,47 +110,6 @@ abstract class AccessRequestEndpointSupport {
 
     protected RequestDetailsService requestDetailsService() {
         return services.requestDetailsService();
-    }
-
-    protected static boolean isBlank(String value) {
-        return value == null || value.isBlank();
-    }
-
-    protected static DecisionStatus parseDecisionStatus(String value) {
-        return parseEnum(DecisionStatus.class, value, "status");
-    }
-
-    protected static ResourceType parseResourceType(String value) {
-        return parseEnum(ResourceType.class, value, "resourceType");
-    }
-
-    protected static <T extends Enum<T>> T parseEnum(Class<T> enumType, String value, String parameter) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return Enum.valueOf(enumType, value);
-        } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException(parameter + " is invalid", exception);
-        }
-    }
-
-    protected static Instant parseInstant(String value, String parameter) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            return Instant.parse(value);
-        } catch (DateTimeParseException exception) {
-            throw new IllegalArgumentException(parameter + " must be an ISO-8601 instant", exception);
-        }
-    }
-
-    protected static Response error(Response.Status status, String code, String message, String requestId) {
-        return Response.status(status)
-                .type(MediaType.APPLICATION_JSON)
-                .entity(new ErrorResponse(code, message, requestId))
-                .build();
     }
 
     protected record AuthenticatedRequest(RealmModel realm, UserModel user) {

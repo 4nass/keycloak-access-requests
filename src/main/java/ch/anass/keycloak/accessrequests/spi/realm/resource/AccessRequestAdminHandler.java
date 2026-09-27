@@ -17,9 +17,13 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.RequestDto.RequestResponse
 import jakarta.ws.rs.core.Response;
 import java.time.Instant;
 
-final class AccessRequestAdminResource extends AccessRequestEndpointSupport {
+import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestErrors.error;
+import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestQueryParameters.parseEnum;
+import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestQueryParameters.parseInstant;
 
-    AccessRequestAdminResource(AccessRequestServiceFactory services) {
+final class AccessRequestAdminHandler extends AccessRequestHandlerSupport {
+
+    AccessRequestAdminHandler(AccessRequestServiceFactory services) {
         super(services);
     }
 

@@ -24,9 +24,14 @@ import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.Response;
 
-final class AccessRequestRequesterResource extends AccessRequestEndpointSupport {
+import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestErrors.error;
+import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestQueryParameters.parseDecisionStatus;
+import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestQueryParameters.parseInstant;
+import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestQueryParameters.parseResourceType;
 
-    AccessRequestRequesterResource(AccessRequestServiceFactory services) {
+final class AccessRequestRequesterHandler extends AccessRequestHandlerSupport {
+
+    AccessRequestRequesterHandler(AccessRequestServiceFactory services) {
         super(services);
     }
 

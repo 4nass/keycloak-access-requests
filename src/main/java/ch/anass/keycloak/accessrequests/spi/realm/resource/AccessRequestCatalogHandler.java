@@ -34,9 +34,11 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Stream;
 
-final class AccessRequestCatalogResource extends AccessRequestEndpointSupport {
+import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestErrors.error;
 
-    AccessRequestCatalogResource(AccessRequestServiceFactory services) {
+final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
+
+    AccessRequestCatalogHandler(AccessRequestServiceFactory services) {
         super(services);
     }
 
@@ -173,6 +175,10 @@ final class AccessRequestCatalogResource extends AccessRequestEndpointSupport {
                     "resourceType, resourceId, displayName, description, riskLevel, and approverRoleId must be provided");
         }
         return submission;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private static EntitlementUpdate requireEntitlementUpdate(EntitlementUpdate submission) {
