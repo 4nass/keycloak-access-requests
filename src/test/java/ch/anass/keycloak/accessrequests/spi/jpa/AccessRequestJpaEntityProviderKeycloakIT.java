@@ -400,6 +400,12 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(201, creationResponse.statusCode());
         assertTrue(creationResponse.body().contains("\"requestable\":false"));
         String entitlementId = responseId(creationResponse.body());
+        HttpResponse<String> defaultEntitlementPage = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(entitlementEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertDefaultJsonPage(defaultEntitlementPage);
+        assertTrue(defaultEntitlementPage.body().contains("\"id\":\"" + entitlementId + "\""));
 
         URI entitlementByIdEndpoint = URI.create(entitlementEndpoint + "/" + entitlementId);
         HttpResponse<String> updateResponse = HttpClient.newHttpClient().send(
@@ -576,6 +582,10 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertTrue(filteredPage.path("total").asInt() >= 1);
         assertTrue(java.util.stream.StreamSupport.stream(filteredPage.path("items").spliterator(), false)
                 .anyMatch(event -> eventId.equals(event.path("id").asText())));
+        HttpResponse<String> defaultAuditPage = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(endpoint).header("Authorization", "Bearer " + adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertDefaultJsonPage(defaultAuditPage);
 
         URI fractionalWindow = URI.create(endpoint + "?requestId=" + requestId
                 + "&from=" + occurredAt.plusNanos(1)
@@ -850,6 +860,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.ofString());
 
         assertEquals(200, catalogResponse.statusCode());
+        assertDefaultJsonPage(catalogResponse);
         assertTrue(catalogResponse.body().contains("\"id\":\"" + entitlementId + "\""));
         assertTrue(catalogResponse.body().contains("\"type\":\"CLIENT_ROLE\""));
         assertTrue(catalogResponse.body().contains("\"name\":\"Finance Reader\""));
@@ -924,6 +935,13 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(201, secondCreatedResponse.statusCode());
         String secondRequestId = responseId(secondCreatedResponse.body());
+        HttpResponse<String> defaultRequestPage = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(myRequestsEndpoint)
+                        .header("Authorization", "Bearer " + requesterToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertDefaultJsonPage(defaultRequestPage);
+        assertTrue(defaultRequestPage.body().contains(firstRequestId));
+        assertTrue(defaultRequestPage.body().contains(secondRequestId));
 
         HttpResponse<String> firstPageResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(URI.create(myRequestsEndpoint + "?page=0&size=1"))
@@ -1164,6 +1182,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 pendingRequests(pendingRequestsEndpoint, approverToken),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, approverQueueResponse.statusCode());
+        assertDefaultJsonPage(approverQueueResponse);
         assertTrue(approverQueueResponse.body().contains("\"total\":1"));
         assertTrue(approverQueueResponse.body().contains(approvedRequestId));
         assertTrue(approverQueueResponse.body().contains("\"requesterId\":\""
@@ -1732,6 +1751,17 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertTrue(approvalResponse.body().contains("\"provisioningStatus\":\"SUCCEEDED\""));
         assertDecisionAndAuditEvent(requestId, "APPROVED", "REQUEST_APPROVED", approverId, approvalComment);
         assertProvisioningAndAuditEvents(requestId, approverId);
+    }
+
+    private void assertDefaultJsonPage(HttpResponse<String> response) throws Exception {
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.headers().firstValue("Content-Type")
+                .map(contentType -> contentType.startsWith("application/json"))
+                .orElse(false), "A successful page must use the JSON media type.");
+        JsonNode page = new ObjectMapper().readTree(response.body());
+        assertEquals(0, page.path("page").asInt(-1));
+        assertEquals(20, page.path("size").asInt(-1));
+        assertTrue(page.path("items").isArray());
     }
 
     private void assertRequestPage(
