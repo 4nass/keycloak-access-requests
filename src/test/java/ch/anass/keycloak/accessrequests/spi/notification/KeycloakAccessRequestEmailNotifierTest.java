@@ -1,13 +1,13 @@
 package ch.anass.keycloak.accessrequests.spi.notification;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotification;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationRecipientType;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationType;
-import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
-import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
-import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotification;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotificationRecipientType;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotificationType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -295,7 +295,7 @@ class KeycloakAccessRequestEmailNotifierTest {
                         "The configured Keycloak role no longer exists.");
                 case PROVISIONING_CLOSED -> AccessRequestEvent.rehydrate(
                         "closure-event-1", request.id(), request.realmId(),
-                        ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType.PROVISIONING_CLOSED,
+                        ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEventType.PROVISIONING_CLOSED,
                         "manager-1", occurredAt, "The original role was removed.", null);
             };
         }

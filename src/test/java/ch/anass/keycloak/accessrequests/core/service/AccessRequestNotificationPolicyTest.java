@@ -1,13 +1,13 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotification;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationRecipientType;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationType;
-import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
-import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
-import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotification;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotificationRecipientType;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotificationType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -95,7 +95,7 @@ class AccessRequestNotificationPolicyTest {
         Entitlement entitlement = entitlement();
         AccessRequestEvent event = AccessRequestEvent.rehydrate(
                 "closure-1", request.id(), request.realmId(),
-                ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType.PROVISIONING_CLOSED,
+                ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEventType.PROVISIONING_CLOSED,
                 "manager-1", CREATED_AT, "The original resource was removed.", null);
 
         List<AccessRequestNotification> notifications = policy.notificationsFor(request, entitlement, event);

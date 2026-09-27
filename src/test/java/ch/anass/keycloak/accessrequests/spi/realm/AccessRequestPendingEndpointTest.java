@@ -1,5 +1,7 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
+import ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestRealmResource;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -42,12 +44,12 @@ class AccessRequestPendingEndpointTest {
 
     @Test
     void returnsTheContextRequiredToApproveEachPendingRequest() {
-        assertTrue(AccessRequestRealmResource.PendingRequestSummaryResponse.class.isRecord());
+        assertTrue(ApprovalDto.PendingRequestSummaryResponse.class.isRecord());
         assertArrayEquals(
                 new String[]{
                         "id", "requesterId", "entitlementId", "resourceType", "resourceName",
                         "riskLevel", "justification", "createdAt"},
-                Arrays.stream(AccessRequestRealmResource.PendingRequestSummaryResponse.class.getRecordComponents())
+                Arrays.stream(ApprovalDto.PendingRequestSummaryResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));
     }

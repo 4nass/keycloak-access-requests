@@ -1,7 +1,8 @@
-package ch.anass.keycloak.accessrequests.persistence.jpa;
+package ch.anass.keycloak.accessrequests.persistence.jpa.repository;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEventEntity;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEventType;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.Persistence;

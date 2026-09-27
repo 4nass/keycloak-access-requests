@@ -1,8 +1,11 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType;
-import ch.anass.keycloak.accessrequests.core.domain.ProvisioningFailureCode;
+import ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestRealmResource;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.AuditDto;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.RequestDto;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEventType;
+import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureCode;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -58,8 +61,8 @@ class AccessRequestAuditEventsEndpointTest {
 
     @Test
     void returnsOnlySafeEventSummaryFieldsAndARealPagingEnvelope() throws Exception {
-        Class<?> page = responseType("AuditEventListResponse");
-        Class<?> event = responseType("AuditEventResponse");
+        Class<?> page = AuditDto.AuditEventListResponse.class;
+        Class<?> event = AuditDto.AuditEventResponse.class;
 
         assertTrue(page.isRecord());
         assertEquals(java.util.List.of("items", "page", "size", "total"), fields(page));
@@ -92,44 +95,44 @@ class AccessRequestAuditEventsEndpointTest {
         assertEquals(java.util.List.of("id", "requesterId", "entitlementId", "resourceType", "resourceName",
                 "decisionStatus", "provisioningStatus", "createdAt", "provisioningClosedAt", "justification",
                 "decision", "history", "historyPage", "historySize", "historyTotal"),
-                fields(responseType("AdminRequestDetailResponse")));
+                fields(AuditDto.AdminRequestDetailResponse.class));
         assertEquals(java.util.List.of("type", "actorId", "occurredAt", "failureCode", "closureReason"),
-                fields(responseType("AdminRequestHistoryEntryResponse")));
-        assertTrue(!fields(responseType("RequestDetailResponse")).contains("requesterId"));
-        assertTrue(!fields(responseType("RequestHistoryEntryResponse")).contains("actorId"));
+                fields(AuditDto.AdminRequestHistoryEntryResponse.class));
+        assertTrue(!fields(RequestDto.RequestDetailResponse.class).contains("requesterId"));
+        assertTrue(!fields(RequestDto.RequestHistoryEntryResponse.class).contains("actorId"));
     }
 
     @Test
     void exposesOnlySafeFailureCodesAndClosureReasonsInAdministrativeHistory() {
         Instant occurredAt = Instant.parse("2026-09-24T10:00:00Z");
-        var failure = AccessRequestRealmResource.AdminRequestHistoryEntryResponse.from(
+        var failure = AuditDto.AdminRequestHistoryEntryResponse.from(
                 AccessRequestEvent.rehydrate("failed", "request", "realm",
                         AccessRequestEventType.PROVISIONING_FAILED, "approver", occurredAt,
                         "Internal JDBC password=secret", "RESOURCE_MISSING", 2L));
         assertEquals(ProvisioningFailureCode.RESOURCE_MISSING, failure.failureCode());
         assertNull(failure.closureReason());
 
-        var unrecognized = AccessRequestRealmResource.AdminRequestHistoryEntryResponse.from(
+        var unrecognized = AuditDto.AdminRequestHistoryEntryResponse.from(
                 AccessRequestEvent.rehydrate("unknown", "request", "realm",
                         AccessRequestEventType.PROVISIONING_FAILED, "approver", occurredAt,
                         "Internal exception", "password=secret", 3L));
         assertEquals(ProvisioningFailureCode.UNKNOWN, unrecognized.failureCode());
 
-        var closure = AccessRequestRealmResource.AdminRequestHistoryEntryResponse.from(
+        var closure = AuditDto.AdminRequestHistoryEntryResponse.from(
                 AccessRequestEvent.rehydrate("closed", "request", "realm",
                         AccessRequestEventType.PROVISIONING_CLOSED, "manager", occurredAt,
                         "The role was permanently removed.", "unexpected metadata", 4L));
         assertNull(closure.failureCode());
         assertEquals("The role was permanently removed.", closure.closureReason());
 
-        var approval = AccessRequestRealmResource.AdminRequestHistoryEntryResponse.from(
+        var approval = AuditDto.AdminRequestHistoryEntryResponse.from(
                 AccessRequestEvent.rehydrate("approved", "request", "realm",
                         AccessRequestEventType.REQUEST_APPROVED, "approver", occurredAt,
                         "Decision comment", "RESOURCE_MISSING", 1L));
         assertNull(approval.failureCode());
         assertNull(approval.closureReason());
-        assertTrue(!fields(AccessRequestRealmResource.AdminRequestHistoryEntryResponse.class).contains("comment"));
-        assertTrue(!fields(AccessRequestRealmResource.AdminRequestHistoryEntryResponse.class).contains("metadata"));
+        assertTrue(!fields(AuditDto.AdminRequestHistoryEntryResponse.class).contains("comment"));
+        assertTrue(!fields(AuditDto.AdminRequestHistoryEntryResponse.class).contains("metadata"));
     }
 
     private static String defaultValue(Method handler, String name) {
@@ -138,10 +141,6 @@ class AccessRequestAuditEventsEndpointTest {
                 .findFirst()
                 .orElseThrow()
                 .getAnnotation(DefaultValue.class).value();
-    }
-
-    private static Class<?> responseType(String name) throws ClassNotFoundException {
-        return Class.forName(AccessRequestRealmResource.class.getName() + "$" + name);
     }
 
     private static java.util.List<String> fields(Class<?> record) {

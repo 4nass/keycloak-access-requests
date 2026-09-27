@@ -1,5 +1,6 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
+import ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestRealmResource;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.OPTIONS;
@@ -31,7 +32,7 @@ class AccessRequestRealmResourceProviderTest {
     private static final String FACTORY_CLASS_NAME =
             "ch.anass.keycloak.accessrequests.spi.realm.AccessRequestRealmResourceProviderFactory";
     private static final String RESOURCE_CLASS_NAME =
-            "ch.anass.keycloak.accessrequests.spi.realm.AccessRequestRealmResource";
+            "ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestRealmResource";
     private static final String SERVICE_CONFIGURATION =
             "META-INF/services/org.keycloak.services.resource.RealmResourceProviderFactory";
 

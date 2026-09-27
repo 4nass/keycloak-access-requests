@@ -1,4 +1,4 @@
-package ch.anass.keycloak.accessrequests.core.domain;
+package ch.anass.keycloak.accessrequests.core.domain.entitlement;
 
 import org.junit.jupiter.api.Test;
 

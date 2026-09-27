@@ -1,5 +1,11 @@
-package ch.anass.keycloak.accessrequests.core.domain;
+package ch.anass.keycloak.accessrequests.core.domain.grant;
 
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureCode;
+import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningStatus;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;

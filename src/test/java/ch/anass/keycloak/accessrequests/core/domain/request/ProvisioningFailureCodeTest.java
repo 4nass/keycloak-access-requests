@@ -1,5 +1,6 @@
-package ch.anass.keycloak.accessrequests.core.domain;
+package ch.anass.keycloak.accessrequests.core.domain.request;
 
+import ch.anass.keycloak.accessrequests.core.domain.grant.ProvisioningResult;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

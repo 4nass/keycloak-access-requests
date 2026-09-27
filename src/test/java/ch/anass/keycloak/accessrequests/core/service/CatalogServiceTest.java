@@ -1,14 +1,14 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
-import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
-import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
-import ch.anass.keycloak.accessrequests.core.domain.CatalogResult;
-import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
-import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
-import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestPage;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestQuery;
+import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogPage;
+import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogQuery;
+import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogResult;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.EffectiveAccessChecker;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
@@ -137,8 +137,8 @@ class CatalogServiceTest {
         }
 
         @Override
-        public ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage findPendingForApprover(
-                ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery query) {
+        public ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalQueuePage findPendingForApprover(
+                ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalQueueQuery query) {
             throw new UnsupportedOperationException("Approval queue reads are not used by this test double.");
         }
 

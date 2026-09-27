@@ -1,12 +1,12 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
-import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage;
-import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery;
-import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestPage;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestQuery;
+import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalQueuePage;
+import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalQueueQuery;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import org.junit.jupiter.api.Test;
 

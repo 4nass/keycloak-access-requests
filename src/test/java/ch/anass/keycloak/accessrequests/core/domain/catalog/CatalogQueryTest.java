@@ -1,5 +1,7 @@
-package ch.anass.keycloak.accessrequests.core.domain;
+package ch.anass.keycloak.accessrequests.core.domain.catalog;
 
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

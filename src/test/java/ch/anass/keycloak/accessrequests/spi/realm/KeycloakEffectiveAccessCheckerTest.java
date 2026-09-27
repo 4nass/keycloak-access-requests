@@ -1,8 +1,8 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
-import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
-import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
-import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.GroupProvider;

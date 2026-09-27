@@ -1,13 +1,15 @@
-package ch.anass.keycloak.accessrequests.persistence.jpa;
+package ch.anass.keycloak.accessrequests.persistence.jpa.repository;
 
-import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
-import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
-import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
-import ch.anass.keycloak.accessrequests.core.domain.EntitlementAuditEvent;
-import ch.anass.keycloak.accessrequests.core.domain.EntitlementPage;
-import ch.anass.keycloak.accessrequests.core.domain.EntitlementQuery;
-import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
-import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementAuditEventEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementEntity;
+import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogPage;
+import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogQuery;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementAuditEvent;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementPage;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementQuery;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.Persistence;

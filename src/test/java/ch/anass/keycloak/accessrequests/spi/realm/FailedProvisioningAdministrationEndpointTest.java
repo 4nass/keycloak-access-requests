@@ -1,5 +1,7 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
+import ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestRealmResource;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.ProvisioningDto;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -35,7 +37,7 @@ class FailedProvisioningAdministrationEndpointTest {
     void returnsThePagingEnvelopeAndOnlyActionableRequestMetadata() throws Exception {
         assertArrayEquals(
                 new String[]{"items", "page", "size", "total"},
-                Arrays.stream(responseType("FailedProvisioningRequestListResponse").getRecordComponents())
+                Arrays.stream(ProvisioningDto.FailedProvisioningRequestListResponse.class.getRecordComponents())
                         .map(component -> component.getName())
                         .toArray(String[]::new));
         assertArrayEquals(
@@ -43,7 +45,7 @@ class FailedProvisioningAdministrationEndpointTest {
                         "id", "requesterId", "entitlementId", "resourceType", "resourceName",
                         "decisionStatus", "provisioningStatus", "updatedAt", "failureCode",
                         "closedAt", "closedBy", "closureReason"},
-                Arrays.stream(responseType("FailedProvisioningRequestResponse").getRecordComponents())
+                Arrays.stream(ProvisioningDto.FailedProvisioningRequestResponse.class.getRecordComponents())
                         .map(component -> component.getName())
                         .toArray(String[]::new));
     }
@@ -55,12 +57,8 @@ class FailedProvisioningAdministrationEndpointTest {
         assertEquals("admin/requests/{requestId}/provisioning/close", handler.getAnnotation(Path.class).value());
         assertEquals(MediaType.APPLICATION_JSON, handler.getAnnotation(Consumes.class).value()[0]);
         assertEquals(Response.class, handler.getReturnType());
-        assertArrayEquals(new String[]{"reason"}, Arrays.stream(responseType("ProvisioningClosureSubmission")
+        assertArrayEquals(new String[]{"reason"}, Arrays.stream(ProvisioningDto.ProvisioningClosureSubmission.class
                 .getRecordComponents()).map(component -> component.getName()).toArray(String[]::new));
-    }
-
-    private static Class<?> responseType(String name) throws ClassNotFoundException {
-        return Class.forName(AccessRequestRealmResource.class.getName() + "$" + name);
     }
 
     private static Method handler(String name) {

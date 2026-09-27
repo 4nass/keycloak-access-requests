@@ -1,5 +1,8 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
+import ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestRealmResource;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.ApiDto;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.NotificationDto;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -41,10 +44,10 @@ class NotificationDeliveryAdministrationEndpointTest {
         assertTrue(handler.isAnnotationPresent(GET.class));
         assertEquals("admin/notification-deliveries/summary", handler.getAnnotation(Path.class).value());
         assertEquals(MediaType.APPLICATION_JSON, handler.getAnnotation(Produces.class).value()[0]);
-        assertEquals(AccessRequestRealmResource.NotificationDeliverySummaryResponse.class, handler.getReturnType());
+        assertEquals(NotificationDto.NotificationDeliverySummaryResponse.class, handler.getReturnType());
         assertArrayEquals(
                 new String[]{"pending", "processing", "delivered", "discarded", "failed"},
-                Arrays.stream(AccessRequestRealmResource.NotificationDeliverySummaryResponse.class.getRecordComponents())
+                Arrays.stream(NotificationDto.NotificationDeliverySummaryResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));
     }
@@ -67,7 +70,7 @@ class NotificationDeliveryAdministrationEndpointTest {
                 new String[]{
                         "id", "requestId", "entitlementId", "recipientId", "recipientType",
                         "notificationType", "attemptCount", "lastAttemptAt"},
-                Arrays.stream(AccessRequestRealmResource.NotificationDeliveryResponse.class.getRecordComponents())
+                Arrays.stream(NotificationDto.NotificationDeliveryResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));
     }
@@ -76,7 +79,7 @@ class NotificationDeliveryAdministrationEndpointTest {
     void advertisesNotificationOperationsAlongsideCatalogManagement() {
         assertArrayEquals(
                 new String[]{"canManageCatalog", "canManageNotifications", "canManageProvisioningFailures"},
-                Arrays.stream(AccessRequestRealmResource.AdminCapabilitiesResponse.class.getRecordComponents())
+                Arrays.stream(ApiDto.AdminCapabilitiesResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));
     }

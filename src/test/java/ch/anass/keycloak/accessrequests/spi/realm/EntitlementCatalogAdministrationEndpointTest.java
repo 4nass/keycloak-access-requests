@@ -1,7 +1,9 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
-import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
-import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
+import ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestRealmResource;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
@@ -27,10 +29,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class EntitlementCatalogAdministrationEndpointTest {
 
     private static final Class<?> RESOURCE_TYPE = AccessRequestRealmResource.class;
-    private static final String ENTITLEMENT_CREATION_TYPE =
-            "ch.anass.keycloak.accessrequests.spi.realm.AccessRequestRealmResource$EntitlementCreation";
-    private static final String ENTITLEMENT_UPDATE_TYPE =
-            "ch.anass.keycloak.accessrequests.spi.realm.AccessRequestRealmResource$EntitlementUpdate";
 
     @Test
     void exposesAPaginatedJsonGetHandlerForTheCompleteAdministrativeCatalog() throws Exception {
@@ -49,7 +47,7 @@ class EntitlementCatalogAdministrationEndpointTest {
 
         assertTrue(handler.isAnnotationPresent(POST.class));
         assertEquals("admin/entitlements", handler.getAnnotation(Path.class).value());
-        assertJsonInputAndOutput(handler, 1, ENTITLEMENT_CREATION_TYPE);
+        assertJsonInputAndOutput(handler, 1, CatalogDto.EntitlementCreation.class);
     }
 
     @Test
@@ -68,7 +66,7 @@ class EntitlementCatalogAdministrationEndpointTest {
 
         assertTrue(handler.isAnnotationPresent(PUT.class));
         assertEquals("admin/entitlements/{entitlementId}", handler.getAnnotation(Path.class).value());
-        assertJsonInputAndOutput(handler, 2, ENTITLEMENT_UPDATE_TYPE);
+        assertJsonInputAndOutput(handler, 2, CatalogDto.EntitlementUpdate.class);
         assertPathParameter(handler, 0);
     }
 
@@ -91,7 +89,7 @@ class EntitlementCatalogAdministrationEndpointTest {
 
     @Test
     void usesAnExplicitCreationPayloadForTheImmutableKeycloakResource() throws Exception {
-        Class<?> creation = Class.forName(ENTITLEMENT_CREATION_TYPE);
+        Class<?> creation = CatalogDto.EntitlementCreation.class;
 
         assertTrue(creation.isRecord());
         assertArrayEquals(
@@ -109,7 +107,7 @@ class EntitlementCatalogAdministrationEndpointTest {
 
     @Test
     void usesAnUpdatePayloadThatControlsRequestabilityAndGuardsAgainstStaleWrites() throws Exception {
-        Class<?> update = Class.forName(ENTITLEMENT_UPDATE_TYPE);
+        Class<?> update = CatalogDto.EntitlementUpdate.class;
 
         assertTrue(update.isRecord());
         assertArrayEquals(
@@ -141,22 +139,22 @@ class EntitlementCatalogAdministrationEndpointTest {
 
     @Test
     void returnsAllAdministrativeMetadataIncludingPublicationStateAndVersion() {
-        assertTrue(AccessRequestRealmResource.EntitlementResponse.class.isRecord());
+        assertTrue(CatalogDto.EntitlementResponse.class.isRecord());
         assertArrayEquals(
                 new String[]{
                         "id", "resourceType", "resourceId", "displayName", "description", "riskLevel",
                         "approverRoleId", "requestable", "createdAt", "updatedAt", "version"},
-                Arrays.stream(AccessRequestRealmResource.EntitlementResponse.class.getRecordComponents())
+                Arrays.stream(CatalogDto.EntitlementResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));
     }
 
     @Test
     void returnsOnlySafeKeycloakReferenceFieldsForTheSelector() {
-        assertTrue(AccessRequestRealmResource.KeycloakReferenceResponse.class.isRecord());
+        assertTrue(CatalogDto.KeycloakReferenceResponse.class.isRecord());
         assertArrayEquals(
                 new String[]{"type", "id", "name", "description"},
-                Arrays.stream(AccessRequestRealmResource.KeycloakReferenceResponse.class.getRecordComponents())
+                Arrays.stream(CatalogDto.KeycloakReferenceResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));
     }
@@ -169,11 +167,11 @@ class EntitlementCatalogAdministrationEndpointTest {
                         "The entitlement catalog administration API must expose a " + name + " handler."));
     }
 
-    private static void assertJsonInputAndOutput(Method handler, int parameterCount, String payloadType) throws Exception {
+    private static void assertJsonInputAndOutput(Method handler, int parameterCount, Class<?> payloadType) {
         assertJsonResponse(handler);
         assertEquals(MediaType.APPLICATION_JSON, handler.getAnnotation(Consumes.class).value()[0]);
         assertEquals(parameterCount, handler.getParameterCount());
-        assertEquals(Class.forName(payloadType), handler.getParameterTypes()[parameterCount - 1]);
+        assertEquals(payloadType, handler.getParameterTypes()[parameterCount - 1]);
     }
 
     private static void assertJsonResponse(Method handler) {

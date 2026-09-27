@@ -1,5 +1,7 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
+import ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestRealmResource;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -20,8 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AccessRequestApprovalEndpointTest {
 
     private static final Class<?> RESOURCE_TYPE = AccessRequestRealmResource.class;
-    private static final String DECISION_SUBMISSION_TYPE =
-            "ch.anass.keycloak.accessrequests.spi.realm.AccessRequestRealmResource$DecisionSubmission";
 
     @Test
     void exposesAJsonPostHandlerForRequestApproval() throws Exception {
@@ -49,7 +49,7 @@ class AccessRequestApprovalEndpointTest {
 
     @Test
     void usesOneJsonDecisionPayloadForApprovalAndRejection() throws Exception {
-        Class<?> decisionSubmission = Class.forName(DECISION_SUBMISSION_TYPE);
+        Class<?> decisionSubmission = ApprovalDto.DecisionSubmission.class;
 
         assertTrue(decisionSubmission.isRecord());
         assertArrayEquals(
@@ -74,6 +74,6 @@ class AccessRequestApprovalEndpointTest {
         assertEquals(
                 "requestId",
                 handler.getParameters()[0].getAnnotation(PathParam.class).value());
-        assertEquals(Class.forName(DECISION_SUBMISSION_TYPE), handler.getParameterTypes()[1]);
+        assertEquals(ApprovalDto.DecisionSubmission.class, handler.getParameterTypes()[1]);
     }
 }

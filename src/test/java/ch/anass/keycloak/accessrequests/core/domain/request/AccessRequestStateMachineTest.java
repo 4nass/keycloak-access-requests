@@ -1,5 +1,6 @@
-package ch.anass.keycloak.accessrequests.core.domain;
+package ch.anass.keycloak.accessrequests.core.domain.request;
 
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;

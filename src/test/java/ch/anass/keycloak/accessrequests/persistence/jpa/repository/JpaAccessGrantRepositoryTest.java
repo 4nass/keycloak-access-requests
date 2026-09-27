@@ -1,9 +1,10 @@
-package ch.anass.keycloak.accessrequests.persistence.jpa;
+package ch.anass.keycloak.accessrequests.persistence.jpa.repository;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessGrant;
-import ch.anass.keycloak.accessrequests.core.domain.GrantOrigin;
-import ch.anass.keycloak.accessrequests.core.domain.GrantRevocationState;
-import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessGrantEntity;
+import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
+import ch.anass.keycloak.accessrequests.core.domain.grant.GrantOrigin;
+import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationState;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.Persistence;

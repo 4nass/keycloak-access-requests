@@ -1,12 +1,12 @@
 package ch.anass.keycloak.accessrequests.spi.provisioning;
 
-import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
-import ch.anass.keycloak.accessrequests.core.domain.GrantOrigin;
-import ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult;
-import ch.anass.keycloak.accessrequests.core.domain.ProvisioningFailureCode;
-import ch.anass.keycloak.accessrequests.core.domain.ProvisioningStatus;
-import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
-import ch.anass.keycloak.accessrequests.core.domain.RiskLevel;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.grant.GrantOrigin;
+import ch.anass.keycloak.accessrequests.core.domain.grant.ProvisioningResult;
+import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureCode;
+import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningStatus;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementProvisioner;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
