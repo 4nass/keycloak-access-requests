@@ -1,9 +1,9 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
-import ch.anass.keycloak.accessrequests.core.domain.CatalogPage;
-import ch.anass.keycloak.accessrequests.core.domain.CatalogEntry;
-import ch.anass.keycloak.accessrequests.core.domain.CatalogQuery;
-import ch.anass.keycloak.accessrequests.core.domain.CatalogResult;
+import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogPage;
+import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogEntry;
+import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogQuery;
+import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogResult;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.EffectiveAccessChecker;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;

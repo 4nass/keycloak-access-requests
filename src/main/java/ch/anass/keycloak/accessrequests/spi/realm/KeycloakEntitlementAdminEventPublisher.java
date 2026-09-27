@@ -1,6 +1,6 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
-import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
 import org.keycloak.events.admin.OperationType;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -13,24 +13,24 @@ import java.util.Objects;
  * Mirrors catalog mutations into the realm's configured Keycloak Admin Event store.
  * The extension's entitlement history remains the durable source of truth.
  */
-final class KeycloakEntitlementAdminEventPublisher {
+public final class KeycloakEntitlementAdminEventPublisher {
 
     private static final String RESOURCE_TYPE = "ACCESS_REQUEST_ENTITLEMENT";
     private final KeycloakSession session;
     private final RealmModel realm;
     private final AdminAuth auth;
 
-    KeycloakEntitlementAdminEventPublisher(KeycloakSession session, RealmModel realm, AdminAuth auth) {
+    public KeycloakEntitlementAdminEventPublisher(KeycloakSession session, RealmModel realm, AdminAuth auth) {
         this.session = Objects.requireNonNull(session);
         this.realm = Objects.requireNonNull(realm);
         this.auth = Objects.requireNonNull(auth);
     }
 
-    void created(Entitlement entitlement) {
+    public void created(Entitlement entitlement) {
         publish(entitlement, OperationType.CREATE);
     }
 
-    void updated(Entitlement entitlement) {
+    public void updated(Entitlement entitlement) {
         publish(entitlement, OperationType.UPDATE);
     }
 

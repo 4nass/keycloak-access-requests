@@ -1,6 +1,6 @@
 package ch.anass.keycloak.accessrequests.core.port;
 
-import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
 
 public interface EffectiveAccessChecker {
 

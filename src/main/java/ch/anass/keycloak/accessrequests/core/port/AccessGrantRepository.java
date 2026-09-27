@@ -1,6 +1,6 @@
 package ch.anass.keycloak.accessrequests.core.port;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessGrant;
+import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
 
 import java.util.Optional;
 

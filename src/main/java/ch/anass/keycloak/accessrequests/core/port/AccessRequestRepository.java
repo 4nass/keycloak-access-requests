@@ -1,10 +1,10 @@
 package ch.anass.keycloak.accessrequests.core.port;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestPage;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestQuery;
-import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage;
-import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestPage;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestQuery;
+import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalQueuePage;
+import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalQueueQuery;
 
 import java.util.Optional;
 import java.util.Set;

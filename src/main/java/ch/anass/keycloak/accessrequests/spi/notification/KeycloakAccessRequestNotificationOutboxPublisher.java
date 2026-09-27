@@ -1,9 +1,9 @@
 package ch.anass.keycloak.accessrequests.spi.notification;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotification;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationRecipientType;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotification;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotificationRecipientType;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestNotificationPublisher;
-import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestNotificationOutboxRepository;
+import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestNotificationOutboxRepository;
 import jakarta.persistence.EntityManager;
 import org.keycloak.models.RealmModel;
 

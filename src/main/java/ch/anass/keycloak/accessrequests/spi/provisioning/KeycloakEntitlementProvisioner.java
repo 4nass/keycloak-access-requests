@@ -1,9 +1,9 @@
 package ch.anass.keycloak.accessrequests.spi.provisioning;
 
-import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
-import ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult;
-import ch.anass.keycloak.accessrequests.core.domain.ProvisioningFailureCode;
-import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.grant.ProvisioningResult;
+import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureCode;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementProvisioner;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;

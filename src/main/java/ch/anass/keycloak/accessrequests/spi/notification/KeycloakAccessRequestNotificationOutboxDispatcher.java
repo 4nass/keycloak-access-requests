@@ -1,16 +1,16 @@
 package ch.anass.keycloak.accessrequests.spi.notification;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotification;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationRecipientType;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationType;
-import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
-import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestEventEntity;
-import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestNotificationOutboxEntity;
-import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestNotificationOutboxRepository;
-import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestRepository;
-import ch.anass.keycloak.accessrequests.persistence.jpa.JpaEntitlementRepository;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotification;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotificationRecipientType;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotificationType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEventEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestNotificationOutboxEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestNotificationOutboxRepository;
+import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestRepository;
+import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlementRepository;
 import jakarta.persistence.EntityManager;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;

@@ -13,12 +13,12 @@ import java.util.stream.Collectors;
 /**
  * Reads effective realm role membership for the authenticated user.
  */
-final class KeycloakRoleMembershipReader implements RoleMembershipReader {
+public final class KeycloakRoleMembershipReader implements RoleMembershipReader {
 
     private final RealmModel realm;
     private final UserModel user;
 
-    KeycloakRoleMembershipReader(RealmModel realm, UserModel user) {
+    public KeycloakRoleMembershipReader(RealmModel realm, UserModel user) {
         this.realm = Objects.requireNonNull(realm, "realm must not be null");
         this.user = Objects.requireNonNull(user, "user must not be null");
     }

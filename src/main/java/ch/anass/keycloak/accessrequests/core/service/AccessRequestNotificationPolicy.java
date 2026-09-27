@@ -1,12 +1,12 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEvent;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestEventType;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotification;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationRecipientType;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationType;
-import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEventType;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotification;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotificationRecipientType;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotificationType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
 
 import java.util.List;
 import java.util.Objects;

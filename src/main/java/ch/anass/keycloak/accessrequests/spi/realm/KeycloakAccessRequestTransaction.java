@@ -10,11 +10,11 @@ import java.util.function.Supplier;
 /**
  * Participates in Keycloak's request transaction when one is already active.
  */
-final class KeycloakAccessRequestTransaction implements AccessRequestTransaction {
+public final class KeycloakAccessRequestTransaction implements AccessRequestTransaction {
 
     private final KeycloakTransactionManager transactionManager;
 
-    KeycloakAccessRequestTransaction(KeycloakSession session) {
+    public KeycloakAccessRequestTransaction(KeycloakSession session) {
         this.transactionManager = Objects.requireNonNull(session, "session must not be null").getTransactionManager();
     }
 

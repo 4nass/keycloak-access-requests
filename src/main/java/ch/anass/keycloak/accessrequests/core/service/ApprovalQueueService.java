@@ -1,7 +1,7 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
-import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueuePage;
-import ch.anass.keycloak.accessrequests.core.domain.ApprovalQueueQuery;
+import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalQueuePage;
+import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalQueueQuery;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
 import ch.anass.keycloak.accessrequests.core.port.RoleMembershipReader;

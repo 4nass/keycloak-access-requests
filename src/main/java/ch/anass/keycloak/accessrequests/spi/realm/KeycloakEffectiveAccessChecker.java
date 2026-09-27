@@ -1,6 +1,6 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
-import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
 import ch.anass.keycloak.accessrequests.core.port.EffectiveAccessChecker;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;
@@ -13,13 +13,13 @@ import java.util.Objects;
 /**
  * Resolves effective access for the authenticated user in the current realm.
  */
-final class KeycloakEffectiveAccessChecker implements EffectiveAccessChecker {
+public final class KeycloakEffectiveAccessChecker implements EffectiveAccessChecker {
 
     private final KeycloakSession session;
     private final RealmModel realm;
     private final UserModel user;
 
-    KeycloakEffectiveAccessChecker(KeycloakSession session, RealmModel realm, UserModel user) {
+    public KeycloakEffectiveAccessChecker(KeycloakSession session, RealmModel realm, UserModel user) {
         this.session = Objects.requireNonNull(session, "session must not be null");
         this.realm = Objects.requireNonNull(realm, "realm must not be null");
         this.user = Objects.requireNonNull(user, "user must not be null");

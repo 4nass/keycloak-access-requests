@@ -1,7 +1,7 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequest;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestDetails;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestDetails;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestHistoryReader;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 

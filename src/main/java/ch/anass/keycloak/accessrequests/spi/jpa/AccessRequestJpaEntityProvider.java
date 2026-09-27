@@ -1,11 +1,11 @@
 package ch.anass.keycloak.accessrequests.spi.jpa;
 
-import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestEntity;
-import ch.anass.keycloak.accessrequests.persistence.jpa.AccessGrantEntity;
-import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestEventEntity;
-import ch.anass.keycloak.accessrequests.persistence.jpa.AccessRequestNotificationOutboxEntity;
-import ch.anass.keycloak.accessrequests.persistence.jpa.EntitlementEntity;
-import ch.anass.keycloak.accessrequests.persistence.jpa.EntitlementAuditEventEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessGrantEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEventEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestNotificationOutboxEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementAuditEventEntity;
 import ch.anass.keycloak.accessrequests.spi.notification.KeycloakAccessRequestNotificationOutboxDispatcher;
 import org.keycloak.Config;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProvider;

@@ -1,7 +1,7 @@
 package ch.anass.keycloak.accessrequests.spi.notification;
 
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotification;
-import ch.anass.keycloak.accessrequests.core.domain.AccessRequestNotificationType;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotification;
+import ch.anass.keycloak.accessrequests.core.domain.notification.AccessRequestNotificationType;
 import org.keycloak.email.EmailException;
 import org.keycloak.email.EmailTemplateProvider;
 import org.keycloak.models.KeycloakSession;

@@ -1,8 +1,8 @@
 package ch.anass.keycloak.accessrequests.core.port;
 
-import ch.anass.keycloak.accessrequests.core.domain.Entitlement;
-import ch.anass.keycloak.accessrequests.core.domain.ProvisioningResult;
-import ch.anass.keycloak.accessrequests.core.domain.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.grant.ProvisioningResult;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 
 /**
  * Assigns a current entitlement to a requester in its target system.

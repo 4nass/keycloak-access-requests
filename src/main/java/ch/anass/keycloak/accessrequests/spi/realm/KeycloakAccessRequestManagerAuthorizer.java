@@ -9,11 +9,11 @@ import java.util.Objects;
 /**
  * Authorizes the dedicated realm role that manages access request configuration.
  */
-final class KeycloakAccessRequestManagerAuthorizer {
+public final class KeycloakAccessRequestManagerAuthorizer {
 
     static final String ROLE_NAME = "manage-access-requests";
 
-    boolean canManage(RealmModel realm, UserModel user) {
+    public boolean canManage(RealmModel realm, UserModel user) {
         Objects.requireNonNull(realm, "realm must not be null");
         Objects.requireNonNull(user, "user must not be null");
         RoleModel managerRole = realm.getRole(ROLE_NAME);

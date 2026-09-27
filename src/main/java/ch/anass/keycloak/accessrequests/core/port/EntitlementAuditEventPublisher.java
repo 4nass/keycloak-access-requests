@@ -1,6 +1,6 @@
 package ch.anass.keycloak.accessrequests.core.port;
 
-import ch.anass.keycloak.accessrequests.core.domain.EntitlementAuditEvent;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementAuditEvent;
 
 public interface EntitlementAuditEventPublisher {
 

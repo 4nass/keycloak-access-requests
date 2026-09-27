@@ -1,5 +1,6 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
+import ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestRealmResource;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.services.resource.RealmResourceProvider;
 

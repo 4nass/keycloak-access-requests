@@ -9,12 +9,12 @@ import java.util.Objects;
 /**
  * Reads the enabled state of the authenticated user in the current realm.
  */
-final class KeycloakUserStatusReader implements UserStatusReader {
+public final class KeycloakUserStatusReader implements UserStatusReader {
 
     private final RealmModel realm;
     private final UserModel user;
 
-    KeycloakUserStatusReader(RealmModel realm, UserModel user) {
+    public KeycloakUserStatusReader(RealmModel realm, UserModel user) {
         this.realm = Objects.requireNonNull(realm, "realm must not be null");
         this.user = Objects.requireNonNull(user, "user must not be null");
     }
