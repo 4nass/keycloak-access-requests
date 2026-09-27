@@ -28,6 +28,7 @@ import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementProvisioner;
 import ch.anass.keycloak.accessrequests.core.service.RequestPolicy;
 import ch.anass.keycloak.accessrequests.core.service.RequestService;
+import ch.anass.keycloak.accessrequests.core.service.EntitlementNotRequestableException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.Persistence;
@@ -407,6 +408,82 @@ class JpaAccessRequestRepositoryTest {
     }
 
     @Test
+    void creationWaitsForConcurrentCatalogDeactivationAndRejectsTheDisabledEntitlement() throws Exception {
+        String realmId = "realm-disable-" + UUID.randomUUID();
+        String entitlementId = "entitlement-1";
+        transaction().execute(() -> {
+            entityManager.persist(EntitlementEntity.from(entitlement(
+                    realmId, entitlementId, "access-request-approver")));
+            return null;
+        });
+
+        CountDownLatch deactivationWritten = new CountDownLatch(1);
+        CountDownLatch commitDeactivation = new CountDownLatch(1);
+        CountDownLatch creationReachedLock = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> deactivation = executor.submit(() -> {
+                EntityManager manager = entityManagerFactory.createEntityManager();
+                try {
+                    new JpaAccessRequestTransaction(manager).execute(() -> {
+                        JpaEntitlementRepository catalog = new JpaEntitlementRepository(manager);
+                        Entitlement current = catalog.findByIdForUpdate(realmId, entitlementId).orElseThrow();
+                        catalog.updateIfVersionMatches(current.unpublish(Instant.now()), current.version()).orElseThrow();
+                        deactivationWritten.countDown();
+                        await(commitDeactivation);
+                        return null;
+                    });
+                } finally {
+                    manager.close();
+                }
+            });
+            assertTrue(deactivationWritten.await(10, TimeUnit.SECONDS));
+
+            Future<?> creation = executor.submit(() -> {
+                EntityManager manager = entityManagerFactory.createEntityManager();
+                try {
+                    JpaEntitlementRepository catalog = new JpaEntitlementRepository(manager);
+                    EntitlementRepository signaledCatalog = new EntitlementRepository() {
+                        @Override
+                        public Optional<Entitlement> findById(String requestedRealmId, String requestedEntitlementId) {
+                            return catalog.findById(requestedRealmId, requestedEntitlementId);
+                        }
+
+                        @Override
+                        public Optional<Entitlement> findByIdForUpdate(String requestedRealmId,
+                                String requestedEntitlementId) {
+                            creationReachedLock.countDown();
+                            return catalog.findByIdForUpdate(requestedRealmId, requestedEntitlementId);
+                        }
+
+                        @Override
+                        public CatalogPage findRequestable(CatalogQuery query) {
+                            return catalog.findRequestable(query);
+                        }
+                    };
+                    return service(manager, signaledCatalog, new JpaAccessRequestEventPublisher(manager))
+                            .create(realmId, "requester-1", entitlementId, "Access is needed for the project.");
+                } finally {
+                    manager.close();
+                }
+            });
+            assertTrue(creationReachedLock.await(10, TimeUnit.SECONDS));
+            assertThrows(TimeoutException.class, () -> creation.get(250, TimeUnit.MILLISECONDS));
+
+            commitDeactivation.countDown();
+            deactivation.get(10, TimeUnit.SECONDS);
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> creation.get(10, TimeUnit.SECONDS));
+            assertTrue(failure.getCause() instanceof EntitlementNotRequestableException);
+            assertEquals(0, countRequests(realmId));
+            assertEquals(0, countEvents(realmId));
+        } finally {
+            commitDeactivation.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void optimisticLockRejectsStaleConcurrentUpdate() {
         JpaAccessRequestRepository repository = new JpaAccessRequestRepository(entityManager);
         AccessRequest request = transaction().execute(() -> repository.createIfNoPending(
@@ -565,16 +642,21 @@ class JpaAccessRequestRepositoryTest {
                 throw new UnsupportedOperationException("Catalog reads are not used by this test double.");
             }
         };
+        return service(entityManager, entitlementRepository, publisher);
+    }
+
+    private static RequestService service(EntityManager manager, EntitlementRepository entitlementRepository,
+            AccessRequestEventPublisher publisher) {
         return new RequestService(
                 entitlementRepository,
-                new JpaAccessRequestRepository(entityManager),
-                new JpaAccessGrantRepository(entityManager),
+                new JpaAccessRequestRepository(manager),
+                new JpaAccessGrantRepository(manager),
                 (realmId, requesterId, requestedEntitlement) -> false,
                 (realmId, requesterId) -> true,
                 new RequestPolicy(10, 2000),
                 publisher,
                 (realmId, actorId, entitlementId) -> true,
-                new JpaAccessRequestTransaction(entityManager),
+                new JpaAccessRequestTransaction(manager),
                 List.of(new EntitlementProvisioner() {
                     @Override
                     public boolean supports(ResourceType resourceType) {

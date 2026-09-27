@@ -137,37 +137,27 @@ public final class RequestService {
             String requesterId,
             String entitlementId,
             String justification) {
-        Entitlement entitlement = entitlementRepository.findById(realmId, entitlementId)
-                .orElseThrow(() -> new EntitlementNotFoundException(entitlementId));
-
-        if (!realmId.equals(entitlement.realmId())) {
-            throw new EntitlementNotFoundException(entitlementId);
-        }
-        if (!entitlement.requestable()) {
-            throw new EntitlementNotRequestableException(entitlementId);
-        }
-        if (!userStatusReader.isEnabled(realmId, requesterId)) {
-            throw new UserDisabledException(requesterId);
-        }
-
-        requestPolicy.validateJustification(justification);
-
-        if (effectiveAccessChecker.hasAccess(realmId, requesterId, entitlement)) {
-            throw new AccessAlreadyGrantedException(entitlementId);
-        }
-        Instant occurredAt = Instant.now(clock);
-        AccessRequest request = AccessRequest.create(
-                UUID.randomUUID().toString(),
-                realmId,
-                requesterId,
-                entitlement.id(),
-                entitlement.resourceType(),
-                entitlement.resourceId(),
-                entitlement.displayName(),
-                justification,
-                occurredAt);
         try {
             return transaction.execute(() -> {
+                Entitlement entitlement = requireCurrentEntitlementForUpdate(realmId, entitlementId);
+                if (!userStatusReader.isEnabled(realmId, requesterId)) {
+                    throw new UserDisabledException(requesterId);
+                }
+                requestPolicy.validateJustification(justification);
+                if (effectiveAccessChecker.hasAccess(realmId, requesterId, entitlement)) {
+                    throw new AccessAlreadyGrantedException(entitlementId);
+                }
+                Instant occurredAt = Instant.now(clock);
+                AccessRequest request = AccessRequest.create(
+                        UUID.randomUUID().toString(),
+                        realmId,
+                        requesterId,
+                        entitlement.id(),
+                        entitlement.resourceType(),
+                        entitlement.resourceId(),
+                        entitlement.displayName(),
+                        justification,
+                        occurredAt);
                 AccessRequest persisted = accessRequestRepository.createIfNoPending(request)
                         .orElseThrow(() -> new RequestAlreadyPendingException(entitlementId));
                 AccessRequestEvent event = AccessRequestEvent.created(persisted, requesterId, occurredAt);
@@ -333,18 +323,12 @@ public final class RequestService {
         }
     }
 
-    private Entitlement requireCurrentEntitlement(String realmId, String entitlementId) {
-        Entitlement entitlement = entitlementRepository.findById(realmId, entitlementId)
-                .orElseThrow(() -> new EntitlementNotFoundException(entitlementId));
-        if (!entitlement.requestable()) {
-            throw new EntitlementNotRequestableException(entitlementId);
-        }
-        return entitlement;
-    }
-
     private Entitlement requireCurrentEntitlementForUpdate(String realmId, String entitlementId) {
         Entitlement entitlement = entitlementRepository.findByIdForUpdate(realmId, entitlementId)
                 .orElseThrow(() -> new EntitlementNotFoundException(entitlementId));
+        if (!realmId.equals(entitlement.realmId())) {
+            throw new EntitlementNotFoundException(entitlementId);
+        }
         if (!entitlement.requestable()) {
             throw new EntitlementNotRequestableException(entitlementId);
         }
