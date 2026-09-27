@@ -205,7 +205,9 @@ describe("Access Request Account Console route pages", () => {
 
         await waitFor(() => expect(mocks.api.submitRequest).toHaveBeenCalledWith({
             entitlementId: "finance-reader",
-            justification: "I need month-end reports."
+            justification: "I need month-end reports.",
+            durationSeconds: 30 * 86400,
+            permanent: false
         }));
         await waitFor(() => expect(mocks.api.catalog).toHaveBeenCalledTimes(2));
         expect(mocks.addAlert).toHaveBeenCalledWith("Access request submitted.");

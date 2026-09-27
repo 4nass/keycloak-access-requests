@@ -14,9 +14,9 @@ Teams that keep their own theme can integrate the realm API and reproduce the re
 
 The Account Console is the end-user experience. It adds an **Access requests** navigation group with:
 
-- **Request access**: browse the requestable catalog, search it, and submit a justification;
+- **Request access**: browse the requestable catalog, search it, and submit a justification and requested duration (or permanent access when allowed);
 - **My Requests**: view request status, decision details, and immutable history; cancel pending requests;
-- **Approvals**: view and decide requests only when the signed-in user can approve at least one entitlement.
+- **Approvals**: view the requested duration and decide requests only when the signed-in user can approve at least one entitlement.
 
 The theme extends `keycloak.v3`, uses Keycloak Account Console components and PatternFly patterns, and obtains data from the realm API. Dates, request states, history, risk levels, and feedback messages are localized.
 
@@ -29,7 +29,7 @@ The Admin Console owns entitlement configuration. **Configure → Access request
 - a paged catalog including drafts and published entitlements;
 - search-backed Keycloak resource and approver-role selectors;
 - creation of draft entitlements;
-- metadata, risk, approver-role, and requestable-state updates;
+- metadata, risk, approver-role, duration-policy, and requestable-state updates;
 - optimistic-lock feedback when another administrator changed the same entitlement.
 
 **Configure → Failed provisioning** lists approved requests whose Keycloak grant failed. It shows a

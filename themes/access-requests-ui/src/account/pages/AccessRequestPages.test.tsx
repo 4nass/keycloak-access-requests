@@ -103,6 +103,10 @@ describe("Access Request account console pages", () => {
             "accessRequestsDecidedAt",
             "accessRequestsDecision",
             "accessRequestsDecisionComment",
+            "accessRequestsDays",
+            "accessRequestsDuration",
+            "accessRequestsDurationUnit",
+            "accessRequestsDurationUnknown",
             "accessRequestsErrorConflict",
             "accessRequestsErrorForbidden",
             "accessRequestsErrorInvalidRequest",
@@ -121,11 +125,13 @@ describe("Access Request account console pages", () => {
             "accessRequestsHistoryRequestCanceled",
             "accessRequestsHistoryRequestCreated",
             "accessRequestsHistoryRequestRejected",
+            "accessRequestsHours",
             "accessRequestsItems",
             "accessRequestsItemsPerPage",
             "accessRequestsJustification",
             "accessRequestsLastPage",
             "accessRequestsLoading",
+            "accessRequestsMaximumDuration",
             "accessRequestsLoadError",
             "accessRequestsMyRequests",
             "accessRequestsMyRequestsDescription",
@@ -140,6 +146,7 @@ describe("Access Request account console pages", () => {
             "accessRequestsPageLabel",
             "accessRequestsNav",
             "accessRequestsPagination",
+            "accessRequestsPermanent",
             "accessRequestsPending",
             "accessRequestsPerPage",
             "accessRequestsPages",
@@ -173,6 +180,7 @@ describe("Access Request account console pages", () => {
             "accessRequestsRiskLow",
             "accessRequestsRiskMedium",
             "accessRequestsSearchCatalog",
+            "accessRequestsSeconds",
             "accessRequestsSearchCatalogPlaceholder",
             "accessRequestsClearSearch",
             "accessRequestsStatus",
@@ -391,7 +399,9 @@ describe("Access Request account console pages", () => {
 
         await waitFor(() => expect(requestAccess).toHaveBeenCalledWith({
             entitlementId: "finance-reader",
-            justification
+            justification,
+            durationSeconds: 30 * 86400,
+            permanent: false
         }));
         expect(accountAlerts.addAlert).toHaveBeenCalledWith("Access request submitted.");
         expect(within(screen.getByRole("listitem", { name: "Finance Administrator" }))
@@ -415,6 +425,44 @@ describe("Access Request account console pages", () => {
         await user.click(screen.getByRole("button", { name: "Request access" }));
         expect(screen.getByRole("dialog", { name: "Request access to VPN Production" })).toBeVisible();
         expect(screen.queryByText(warning)).not.toBeInTheDocument();
+    });
+
+    it("enforces the configured maximum locally and only offers permanent access when allowed", async () => {
+        const user = userEvent.setup();
+        const onRequest = vi.fn().mockResolvedValue(undefined);
+        renderAccessRequestUi(<RequestAccessPage
+            entries={[
+                { id: "limited", name: "Limited", description: "Limited access", resourceType: "REALM_ROLE",
+                    riskLevel: "LOW", alreadyGranted: false, pendingRequest: false,
+                    defaultDurationSeconds: 3600, maxDurationSeconds: 7200, allowPermanent: false },
+                { id: "exception", name: "Exception", description: "Permanent option", resourceType: "REALM_ROLE",
+                    riskLevel: "LOW", alreadyGranted: false, pendingRequest: false,
+                    defaultDurationSeconds: 3600, maxDurationSeconds: 7200, allowPermanent: true }
+            ]}
+            onRequest={onRequest}
+        />);
+
+        await user.click(within(screen.getByRole("listitem", { name: "Limited" }))
+            .getByRole("button", { name: "Request access" }));
+        let dialog = screen.getByRole("dialog", { name: "Request access to Limited" });
+        expect(within(dialog).queryByLabelText("Permanent access")).not.toBeInTheDocument();
+        expect(within(dialog).getByText("Maximum: 2 hours")).toBeVisible();
+        await user.type(within(dialog).getByLabelText("Justification"), "A valid justification.");
+        await user.clear(within(dialog).getByLabelText("Requested duration"));
+        await user.type(within(dialog).getByLabelText("Requested duration"), "3");
+        expect(within(dialog).getByRole("button", { name: "Submit request" })).toBeDisabled();
+        await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+        await user.click(within(screen.getByRole("listitem", { name: "Exception" }))
+            .getByRole("button", { name: "Request access" }));
+        dialog = screen.getByRole("dialog", { name: "Request access to Exception" });
+        await user.type(within(dialog).getByLabelText("Justification"), "A valid justification.");
+        await user.click(within(dialog).getByLabelText("Permanent access"));
+        await user.click(within(dialog).getByRole("button", { name: "Submit request" }));
+        await waitFor(() => expect(onRequest).toHaveBeenCalledWith({
+            entitlementId: "exception", justification: "A valid justification.",
+            durationSeconds: null, permanent: true
+        }));
     });
 
     it("keeps the request dialog open, prevents duplicate submission, and refreshes only after a successful request", async () => {
@@ -767,7 +815,9 @@ describe("Access Request account console pages", () => {
                         resourceType: "CLIENT_ROLE",
                         riskLevel: "HIGH",
                         justification: "I need to reconcile finance data before closing.",
-                        requestedAt: "26 Aug 2026"
+                        requestedAt: "26 Aug 2026",
+                        durationSeconds: 8 * 3600,
+                        permanent: false
                     }
                 ]}
                 onApprove={approve}
@@ -778,9 +828,11 @@ describe("Access Request account console pages", () => {
         const pendingRequest = screen.getByRole("listitem", { name: "Finance Reader requested by Anass Chahbouni" });
         expect(within(pendingRequest).getByText("High").closest(".pf-v5-c-label")).toHaveClass("pf-m-orange");
         expect(within(pendingRequest).getByText("I need to reconcile finance data before closing.")).toBeVisible();
+        expect(within(pendingRequest).getByText("8 hours")).toBeVisible();
 
         await user.click(within(pendingRequest).getByRole("button", { name: "Approve" }));
         const approvalDialog = screen.getByRole("dialog", { name: "Approve Finance Reader" });
+        expect(approvalDialog).toHaveTextContent("Requested duration: 8 hours");
         await user.type(within(approvalDialog).getByLabelText("Decision comment"), "Approved for month-end close.");
         await user.click(within(approvalDialog).getByRole("button", { name: "Confirm approval" }));
         expect(approve).toHaveBeenCalledWith({

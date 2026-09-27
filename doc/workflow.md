@@ -12,11 +12,14 @@ An entitlement is a realm-scoped, requestable access item. It has the following 
 | Risk level | `LOW`, `MEDIUM`, `HIGH`, or `CRITICAL` |
 | Approver role | The realm role required to approve the entitlement |
 | Requestable | Whether new requests are allowed |
+| Duration policy | Default and maximum request duration, and whether permanent access is allowed |
 | Version | The optimistic-lock version used when updating the entitlement |
 
 An entitlement is unique per realm, resource type, and resource. Its target resource cannot be changed after creation; create a new entitlement instead when the target must change.
 
 New entitlements are drafts (`requestable=false`). Setting `requestable=true` publishes the entitlement to the requester catalog. Setting it back to `false` stops new requests while preserving the entitlement and its history. There is no hard-delete endpoint.
+
+The initial duration policy depends on risk: LOW 30/90 days, MEDIUM 7/30 days, HIGH 8/24 hours, and CRITICAL 1/4 hours (default/maximum). Administrators can change these values for each entitlement. Permanent access is disabled by default and must be allowed explicitly. Changing a policy affects new requests only; the duration selected on an existing request remains recorded.
 
 ### Separate birthright and just-in-time access
 
@@ -55,8 +58,11 @@ The service rejects a request when any of these conditions is true:
 - the justification is missing, blank, or outside the configured size policy;
 - the requester already has the selected role or group effectively granted;
 - the requester already has a pending request for the same entitlement.
+- the selected finite duration is not positive or exceeds the entitlement's maximum, or permanent access was not allowed.
 
-The database uniqueness constraint and transaction handling protect the last rule even when requests arrive concurrently.
+The database uniqueness constraint and transaction handling protect the one-pending-request rule even when requests arrive concurrently.
+
+The requester may select a finite duration or, when configured, permanent access. Omitting a duration uses the entitlement's default. This increment records and validates the selected duration; it does **not yet** schedule expiration or revoke granted access. Do not rely on the recorded duration as an enforcement deadline until the grant-lifecycle and revocation work is delivered.
 
 Only the requester may cancel their own `PENDING` request. A completed request cannot be canceled, approved, or rejected again.
 

@@ -56,7 +56,10 @@ function catalogEntries(page: { items: CatalogItem[] }): RequestableEntitlement[
         name: item.displayName,
         pendingRequest: item.pendingRequest,
         resourceType: item.resourceType,
-        riskLevel: item.riskLevel
+        riskLevel: item.riskLevel,
+        defaultDurationSeconds: item.defaultDurationSeconds,
+        maxDurationSeconds: item.maxDurationSeconds,
+        allowPermanent: item.allowPermanent
     }));
 }
 

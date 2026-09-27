@@ -27,6 +27,7 @@ import {
     HistoryEventLabel,
     ProvisioningStatusLabel,
     formatDateTime,
+    requestedDurationLabel,
     resourceTypeLabel
 } from "./AccessRequestPresentation";
 import { useAccessRequestAlerts } from "./useAccessRequestAlerts";
@@ -53,9 +54,12 @@ export type AccessRequest = {
     justification: string;
     decision?: RequestDecision;
     history: RequestHistoryEntry[];
+    durationSeconds?: number | null;
+    permanent?: boolean;
 };
 
-export type AccessRequestDetails = Pick<AccessRequest, "justification" | "decision" | "history">;
+export type AccessRequestDetails = Pick<AccessRequest,
+    "justification" | "decision" | "history" | "durationSeconds" | "permanent">;
 
 type MyRequestsPageProps = {
     requests: AccessRequest[];
@@ -205,6 +209,12 @@ export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh
                                 <DescriptionListGroup>
                                     <DescriptionListTerm>{t("accessRequestsJustification")}</DescriptionListTerm>
                                     <DescriptionListDescription>{selectedRequest.justification}</DescriptionListDescription>
+                                </DescriptionListGroup>
+                                <DescriptionListGroup>
+                                    <DescriptionListTerm>{t("accessRequestsDuration")}</DescriptionListTerm>
+                                    <DescriptionListDescription>
+                                        {requestedDurationLabel(selectedRequest.durationSeconds, selectedRequest.permanent, t)}
+                                    </DescriptionListDescription>
                                 </DescriptionListGroup>
                                 <DescriptionListGroup>
                                     <DescriptionListTerm>{t("accessRequestsDecision")}</DescriptionListTerm>

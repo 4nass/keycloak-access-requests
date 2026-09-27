@@ -81,6 +81,16 @@ export function resourceTypeLabel(resourceType: string, t: TFunction) {
     return translate(t, resourceTypes[resourceType] ?? resourceType, fallback(resourceType));
 }
 
+export function requestedDurationLabel(durationSeconds: number | null | undefined,
+        permanent: boolean | undefined, t: TFunction): string {
+    if (permanent) return t("accessRequestsPermanent");
+    if (durationSeconds == null) return t("accessRequestsDurationUnknown");
+    const unit = durationSeconds % 86400 === 0 ? "accessRequestsDays"
+        : durationSeconds % 3600 === 0 ? "accessRequestsHours" : "accessRequestsSeconds";
+    const divisor = unit === "accessRequestsDays" ? 86400 : unit === "accessRequestsHours" ? 3600 : 1;
+    return `${durationSeconds / divisor} ${t(unit)}`;
+}
+
 export function formatDateTime(value: string, locale: string) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) {

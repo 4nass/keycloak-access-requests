@@ -33,6 +33,9 @@ export type CatalogItem = {
     riskLevel: string;
     alreadyGranted: boolean;
     pendingRequest: boolean;
+    defaultDurationSeconds?: number;
+    maxDurationSeconds?: number;
+    allowPermanent?: boolean;
 };
 
 export type RequestSummary = {
@@ -44,6 +47,8 @@ export type RequestSummary = {
     provisioningStatus: string;
     createdAt: string;
     provisioningClosedAt?: string | null;
+    durationSeconds?: number | null;
+    permanent?: boolean;
 };
 
 export type RequestDetails = RequestSummary & {
@@ -68,6 +73,8 @@ export type PendingRequest = {
     riskLevel: string;
     justification: string;
     createdAt: string;
+    durationSeconds?: number | null;
+    permanent?: boolean;
 };
 
 export type AccessRequestCapabilities = {
@@ -76,7 +83,7 @@ export type AccessRequestCapabilities = {
 
 export type AccessRequestsApi = {
     catalog(query?: { page?: number; size?: number; search?: string }): Promise<Page<CatalogItem>>;
-    submitRequest(submission: { entitlementId: string; justification: string }): Promise<{
+    submitRequest(submission: { entitlementId: string; justification: string; durationSeconds?: number | null; permanent?: boolean }): Promise<{
         id: string;
         entitlementId: string;
         decisionStatus: string;

@@ -23,7 +23,7 @@ import { useTranslation } from "react-i18next";
 
 import { AccessRequestEmptyState } from "./AccessRequestEmptyState";
 import { AccessRequestPagination, type AccessRequestPaginationState } from "./AccessRequestPagination";
-import { RiskLevelLabel, formatDateTime, resourceTypeLabel } from "./AccessRequestPresentation";
+import { RiskLevelLabel, formatDateTime, requestedDurationLabel, resourceTypeLabel } from "./AccessRequestPresentation";
 import { useAccessRequestAlerts } from "./useAccessRequestAlerts";
 
 export type PendingApproval = {
@@ -34,6 +34,8 @@ export type PendingApproval = {
     riskLevel: string;
     justification: string;
     requestedAt: string;
+    durationSeconds?: number | null;
+    permanent?: boolean;
 };
 
 type ApprovalDecision = {
@@ -159,6 +161,12 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagina
                                                                 </time>
                                                             </DescriptionListDescription>
                                                         </DescriptionListGroup>
+                                                        <DescriptionListGroup>
+                                                            <DescriptionListTerm>{t("accessRequestsDuration")}</DescriptionListTerm>
+                                                            <DescriptionListDescription>
+                                                                {requestedDurationLabel(request.durationSeconds, request.permanent, t)}
+                                                            </DescriptionListDescription>
+                                                        </DescriptionListGroup>
                                                     </DescriptionList>
                                                 </DataListCell>
                                             ]}
@@ -215,6 +223,8 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagina
                         {pendingDecision.type === "approve" && pendingDecision.request.resourceType === "GROUP" && (
                             <Alert isInline variant="warning" title={t("accessRequestsGroupApprovalWarning")} />
                         )}
+                        <p>{t("accessRequestsDuration")}: {requestedDurationLabel(
+                            pendingDecision.request.durationSeconds, pendingDecision.request.permanent, t)}</p>
                         <FormGroup fieldId="access-request-decision-comment" label={t("accessRequestsDecisionComment")}>
                             <TextArea
                                 aria-label={t("accessRequestsDecisionComment")}

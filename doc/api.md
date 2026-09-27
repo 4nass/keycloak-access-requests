@@ -62,18 +62,19 @@ Optional query parameters:
 | `riskLevel` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
 | `page`, `size` | Pagination controls |
 
-Each item contains its entitlement ID, resource type, display name, description, risk level, and flags indicating whether the user already has the access or has a pending request.
+Each item contains its entitlement ID, resource type, display name, description, risk level, `defaultDurationSeconds`, `maxDurationSeconds`, `allowPermanent`, and flags indicating whether the user already has the access or has a pending request.
 
 ### `POST /requests`
 
 ```json
 {
   "entitlementId": "a7e3761d-8f1f-4fbd-8c52-43d8e5c0e5c8",
-  "justification": "I need read access to support the finance close."
+  "justification": "I need read access to support the finance close.",
+  "durationSeconds": 604800
 }
 ```
 
-`justification` must contain 10 to 2,000 characters. A successful submission returns `201 Created` and the request ID with its decision and provisioning status.
+`justification` must contain 10 to 2,000 characters. `durationSeconds` must be a positive integer no greater than the entitlement's maximum; omit it to use the current default. To request permanent access, send `"permanent": true` and omit `durationSeconds`; this is accepted only if `allowPermanent=true`. Invalid combinations return `400 Bad Request`. A successful submission returns `201 Created` and the request ID, decision and provisioning status, and selected duration/permanent flag. Requester and approver reads include that selection. Expiration is not enforced yet.
 
 The server returns `409 Conflict` when the entitlement is not requestable, the user already has the resource, or a request for the same entitlement is already pending.
 
@@ -140,11 +141,14 @@ An empty or one-character `search` does not enumerate the realm; without `select
   "displayName": "Finance reporting",
   "description": "Read access to finance reporting.",
   "riskLevel": "MEDIUM",
-  "approverRoleId": "c91e7a3f-2e0f-4e87-b0f7-6bb74c431bd2"
+  "approverRoleId": "c91e7a3f-2e0f-4e87-b0f7-6bb74c431bd2",
+  "defaultDurationSeconds": 604800,
+  "maxDurationSeconds": 2592000,
+  "allowPermanent": false
 }
 ```
 
-The selected resource must exist and match `resourceType`. The approver role must exist in the same realm. Creation always produces a draft with `requestable=false` and returns `201 Created`. A duplicate resource in the same realm returns `409 Conflict`.
+The selected resource must exist and match `resourceType`. The approver role must exist in the same realm. The duration values are configurable per entitlement; omitting them on creation applies the risk-level defaults and `allowPermanent=false`. Creation always produces a draft with `requestable=false` and returns `201 Created`. A duplicate resource in the same realm returns `409 Conflict`.
 
 ### `PUT /admin/entitlements/{entitlementId}`
 
@@ -155,15 +159,18 @@ The selected resource must exist and match `resourceType`. The approver role mus
   "riskLevel": "MEDIUM",
   "approverRoleId": "c91e7a3f-2e0f-4e87-b0f7-6bb74c431bd2",
   "requestable": true,
+  "defaultDurationSeconds": 604800,
+  "maxDurationSeconds": 2592000,
+  "allowPermanent": false,
   "version": 3
 }
 ```
 
-The resource type and resource ID are intentionally absent: the target resource is immutable. The client must send the version returned by the most recent read. A concurrent modification returns `409 Conflict`; reload the entitlement before retrying. Setting `requestable=false` is the supported soft-disable operation.
+The resource type and resource ID are intentionally absent: the target resource is immutable. The client must send the version returned by the most recent read. Duration values must be positive whole seconds with default no greater than maximum. A concurrent modification returns `409 Conflict`; reload the entitlement before retrying. Setting `requestable=false` is the supported soft-disable operation.
 
 Successful catalog creates and updates also emit Keycloak Admin Events with resource type
 `ACCESS_REQUEST_ENTITLEMENT` and resource path `access-requests/entitlements/{id}`. The event
-details contain the new `requestable`, `riskLevel`, and `approverRoleId` values, but not the full
+details contain the new `requestable`, `riskLevel`, `approverRoleId`, and duration-policy values, but not the full
 entitlement representation. A soft-disable is an `UPDATE` event, not `DELETE`. Keycloak stores
 these events only when Admin Events are enabled for the realm; the extension's own catalog
 history is persisted regardless of that setting.

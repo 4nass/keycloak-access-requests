@@ -46,7 +46,9 @@ function requestEntries(page: { items: RequestSummary[] }): AccessRequest[] {
         provisioningStatus: item.provisioningStatus,
         provisioningClosedAt: item.provisioningClosedAt,
         requestedAt: item.createdAt,
-        resourceType: item.resourceType
+        resourceType: item.resourceType,
+        durationSeconds: item.durationSeconds,
+        permanent: item.permanent
     }));
 }
 
@@ -60,7 +62,9 @@ function requestDetails(details: RequestDetails) {
                 }
             : undefined,
         history: details.history,
-        justification: details.justification
+        justification: details.justification,
+        durationSeconds: details.durationSeconds,
+        permanent: details.permanent
     };
 }
 

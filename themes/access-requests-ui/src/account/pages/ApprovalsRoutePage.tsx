@@ -44,7 +44,9 @@ function pendingEntries(page: { items: PendingRequest[] }): PendingApproval[] {
         requestedAt: item.createdAt,
         requester: item.requesterId,
         resourceType: item.resourceType,
-        riskLevel: item.riskLevel
+        riskLevel: item.riskLevel,
+        durationSeconds: item.durationSeconds,
+        permanent: item.permanent
     }));
 }
 
