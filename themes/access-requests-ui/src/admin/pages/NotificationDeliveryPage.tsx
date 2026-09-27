@@ -28,7 +28,7 @@ import {
     ToolbarContent,
     ToolbarItem
 } from "@patternfly/react-core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -43,35 +43,47 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50].map((value) => ({ title: String(value), v
 export function NotificationDeliveryPage() {
     const { t } = useTranslation();
     const api = useEntitlementsAdminApi();
-    const [deliveries, setDeliveries] = useState<{ items: NotificationDelivery[]; total: number }>();
+    const [deliveries, setDeliveries] = useState<{ items: NotificationDelivery[]; total: number; page: number; size: number }>();
     const [summary, setSummary] = useState<NotificationDeliverySummary>();
     const [page, setPage] = useState(0);
     const [size, setSize] = useState(20);
-    const [initialLoading, setInitialLoading] = useState(true);
+    const [loading, setLoading] = useState(true);
     const [refreshError, setRefreshError] = useState<unknown>();
     const [retryTarget, setRetryTarget] = useState<NotificationDelivery>();
     const [retryError, setRetryError] = useState<unknown>();
     const [isRetrying, setRetrying] = useState(false);
     const [actionNotice, setActionNotice] = useState<string>();
+    const latestLoad = useRef(0);
 
     const load = useCallback(async () => {
+        const loadId = ++latestLoad.current;
+        setLoading(true);
         setRefreshError(undefined);
         try {
             const [nextSummary, failedDeliveries] = await Promise.all([
                 api.notificationDeliverySummary(),
                 api.notificationDeliveries({ page, size })
             ]);
-            setSummary(nextSummary);
-            setDeliveries({ items: failedDeliveries.items, total: failedDeliveries.total });
+            if (loadId === latestLoad.current) {
+                setSummary(nextSummary);
+                setDeliveries({ items: failedDeliveries.items, total: failedDeliveries.total, page, size });
+            }
         } catch (error) {
-            setRefreshError(error);
+            if (loadId === latestLoad.current) {
+                setRefreshError(error);
+            }
         } finally {
-            setInitialLoading(false);
+            if (loadId === latestLoad.current) {
+                setLoading(false);
+            }
         }
     }, [api, page, size]);
 
     useEffect(() => {
         void load();
+        return () => {
+            latestLoad.current++;
+        };
     }, [load]);
 
     const openRetry = (delivery: NotificationDelivery) => {
@@ -107,6 +119,7 @@ export function NotificationDeliveryPage() {
 
     const refreshMessage = refreshError ? errorText(refreshError, t) : undefined;
     const retryMessage = retryError ? errorText(retryError, t) : undefined;
+    const visibleDeliveries = deliveries?.page === page && deliveries.size === size ? deliveries : undefined;
 
     return (
         <>
@@ -152,20 +165,20 @@ export function NotificationDeliveryPage() {
                         )}
                     </ToolbarContent>
                 </Toolbar>
-                {initialLoading && !deliveries ? (
+                {!visibleDeliveries && (loading || !refreshError) ? (
                     <EmptyState><Spinner aria-label={t("loading")} /></EmptyState>
-                ) : deliveries?.items.length ? (
+                ) : visibleDeliveries?.items.length ? (
                     <DataList aria-label={t("accessRequestsAdminNotificationDeliveryFailed")}>
-                        {deliveries.items.map((delivery) => (
+                        {visibleDeliveries.items.map((delivery) => (
                             <NotificationDeliveryListItem delivery={delivery} key={delivery.id} onRetry={openRetry} />
                         ))}
                     </DataList>
-                ) : (
+                ) : visibleDeliveries ? (
                     <EmptyState>
                         <EmptyStateHeader headingLevel="h2" titleText={t("accessRequestsAdminNotificationDeliveryEmpty")} />
                         <EmptyStateBody>{t("accessRequestsAdminNotificationDeliveryDescription")}</EmptyStateBody>
                     </EmptyState>
-                )}
+                ) : null}
                 {deliveries && deliveries.total > 0 && (
                     <DeliveryPagination
                         onPageChange={setPage}

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,6 +29,16 @@ const entitlement = {
     updatedAt: "2026-09-04T10:00:00Z",
     version: 4
 };
+
+function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((onResolve, onReject) => {
+        resolve = onResolve;
+        reject = onReject;
+    });
+    return { promise, resolve, reject };
+}
 
 describe("EntitlementCatalogPage", () => {
     beforeEach(() => {
@@ -136,6 +146,84 @@ describe("EntitlementCatalogPage", () => {
         }));
         expect(screen.queryByRole("textbox", { name: "accessRequestsAdminResourceId" })).not.toBeInTheDocument();
         expect(screen.queryByRole("textbox", { name: "accessRequestsAdminApproverRole" })).not.toBeInTheDocument();
+    });
+
+    it("ignores an older page response that arrives after the current page", async () => {
+        const oldPage = deferred<{ items: typeof entitlement[]; total: number }>();
+        const currentPage = deferred<{ items: typeof entitlement[]; total: number }>();
+        api.list.mockReset()
+            .mockResolvedValueOnce({ items: [entitlement], total: 40 })
+            .mockReturnValueOnce(oldPage.promise)
+            .mockReturnValueOnce(currentPage.promise);
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        fireEvent.click(screen.getAllByRole("button", { name: "Go to next page" })[0]);
+        await waitFor(() => expect(api.list).toHaveBeenCalledWith({ page: 1, size: 20 }));
+        fireEvent.click(screen.getAllByRole("button", { name: "Go to previous page" })[0]);
+        await waitFor(() => expect(api.list).toHaveBeenCalledTimes(3));
+
+        await act(async () => currentPage.resolve({ items: [{ ...entitlement, displayName: "Current page" }], total: 40 }));
+        expect(screen.getByRole("heading", { name: "Current page" })).toBeVisible();
+        await act(async () => oldPage.resolve({ items: [{ ...entitlement, displayName: "Stale page" }], total: 40 }));
+        expect(screen.getByRole("heading", { name: "Current page" })).toBeVisible();
+        expect(screen.queryByRole("heading", { name: "Stale page" })).not.toBeInTheDocument();
+    });
+
+    it("hides the previous page and its edit action while the next page loads", async () => {
+        const nextPage = deferred<{ items: typeof entitlement[]; total: number }>();
+        api.list.mockReset()
+            .mockResolvedValueOnce({ items: [entitlement], total: 40 })
+            .mockReturnValueOnce(nextPage.promise);
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        fireEvent.click(screen.getAllByRole("button", { name: "Go to next page" })[0]);
+        await waitFor(() => expect(api.list).toHaveBeenCalledWith({ page: 1, size: 20 }));
+        expect(screen.queryByRole("heading", { name: "Finance Reader" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "accessRequestsAdminEditEntitlement" })).not.toBeInTheDocument();
+        expect(screen.getByLabelText("loading")).toBeVisible();
+
+        await act(async () => nextPage.resolve({
+            items: [{ ...entitlement, displayName: "Next page" }], total: 40
+        }));
+        expect(screen.getByRole("heading", { name: "Next page" })).toBeVisible();
+    });
+
+    it("retains the current page during an action-triggered refresh", async () => {
+        const refresh = deferred<{ items: typeof entitlement[]; total: number }>();
+        api.list.mockReset()
+            .mockResolvedValueOnce({ items: [entitlement], total: 1 })
+            .mockReturnValueOnce(refresh.promise);
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        fireEvent.click(screen.getByRole("button", { name: "accessRequestsAdminEditEntitlement" }));
+        fireEvent.click(screen.getByRole("button", { name: "accessRequestsAdminSave" }));
+        await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
+        expect(screen.getByRole("heading", { name: "Finance Reader" })).toBeVisible();
+
+        await act(async () => refresh.resolve({ items: [{ ...entitlement, displayName: "Updated" }], total: 1 }));
+        expect(screen.getByRole("heading", { name: "Updated" })).toBeVisible();
+    });
+
+    it("ignores an obsolete page error after a successful newer load", async () => {
+        const oldPage = deferred<{ items: typeof entitlement[]; total: number }>();
+        api.list.mockReset()
+            .mockResolvedValueOnce({ items: [entitlement], total: 40 })
+            .mockReturnValueOnce(oldPage.promise)
+            .mockResolvedValueOnce({ items: [{ ...entitlement, displayName: "Current page" }], total: 40 });
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        fireEvent.click(screen.getAllByRole("button", { name: "Go to next page" })[0]);
+        await waitFor(() => expect(api.list).toHaveBeenCalledWith({ page: 1, size: 20 }));
+        fireEvent.click(screen.getAllByRole("button", { name: "Go to previous page" })[0]);
+        await screen.findByRole("heading", { name: "Current page" });
+
+        await act(async () => oldPage.reject(new Error("Stale failure")));
+        expect(screen.getByRole("heading", { name: "Current page" })).toBeVisible();
+        expect(screen.queryByText("accessRequestsAdminErrorUnexpected")).not.toBeInTheDocument();
     });
 
     it("waits for a meaningful reference search and cancels a superseded lookup", async () => {

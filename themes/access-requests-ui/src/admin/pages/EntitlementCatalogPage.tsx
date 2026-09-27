@@ -35,7 +35,7 @@ import {
     ToolbarItem,
     Title
 } from "@patternfly/react-core";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -72,31 +72,43 @@ const emptyForm: FormValues = {
 export function EntitlementCatalogPage() {
     const { t } = useTranslation();
     const api = useEntitlementsAdminApi();
-    const [catalog, setCatalog] = useState<{ items: Entitlement[]; total: number }>();
+    const [catalog, setCatalog] = useState<{ items: Entitlement[]; total: number; page: number; size: number }>();
     const [page, setPage] = useState(0);
     const [size, setSize] = useState(20);
-    const [initialLoading, setInitialLoading] = useState(true);
+    const [loading, setLoading] = useState(true);
     const [refreshError, setRefreshError] = useState<unknown>();
     const [dialog, setDialog] = useState<DialogState>();
     const [form, setForm] = useState<FormValues>(emptyForm);
     const [formError, setFormError] = useState<unknown>();
     const [isSaving, setSaving] = useState(false);
     const [actionNotice, setActionNotice] = useState<string>();
+    const latestLoad = useRef(0);
 
     const load = useCallback(async () => {
+        const loadId = ++latestLoad.current;
+        setLoading(true);
         setRefreshError(undefined);
         try {
             const result = await api.list({ page, size });
-            setCatalog({ items: result.items, total: result.total });
+            if (loadId === latestLoad.current) {
+                setCatalog({ items: result.items, total: result.total, page, size });
+            }
         } catch (error) {
-            setRefreshError(error);
+            if (loadId === latestLoad.current) {
+                setRefreshError(error);
+            }
         } finally {
-            setInitialLoading(false);
+            if (loadId === latestLoad.current) {
+                setLoading(false);
+            }
         }
     }, [api, page, size]);
 
     useEffect(() => {
         void load();
+        return () => {
+            latestLoad.current++;
+        };
     }, [load]);
 
     const openCreate = () => {
@@ -173,6 +185,7 @@ export function EntitlementCatalogPage() {
 
     const refreshMessage = refreshError ? errorText(refreshError, t) : undefined;
     const formMessage = formError ? errorText(formError, t) : undefined;
+    const visibleCatalog = catalog?.page === page && catalog.size === size ? catalog : undefined;
 
     return (
         <>
@@ -219,20 +232,20 @@ export function EntitlementCatalogPage() {
                         )}
                     </ToolbarContent>
                 </Toolbar>
-                {initialLoading && !catalog ? (
+                {!visibleCatalog && (loading || !refreshError) ? (
                     <EmptyState><Spinner aria-label={t("loading")} /></EmptyState>
-                ) : catalog?.items.length ? (
+                ) : visibleCatalog?.items.length ? (
                     <DataList aria-label={t("accessRequestsAdminCatalog")}>
-                        {catalog.items.map((entitlement) => (
+                        {visibleCatalog.items.map((entitlement) => (
                             <EntitlementListItem entitlement={entitlement} key={entitlement.id} onEdit={openEdit} />
                         ))}
                     </DataList>
-                ) : (
+                ) : visibleCatalog ? (
                     <EmptyState>
                         <EmptyStateHeader headingLevel="h2" titleText={t("accessRequestsAdminEmpty")} />
                         <EmptyStateBody>{t("accessRequestsAdminCatalogDescription")}</EmptyStateBody>
                     </EmptyState>
-                )}
+                ) : null}
                 {catalog && catalog.total > 0 && (
                     <CatalogPagination
                         page={page}
