@@ -13,6 +13,7 @@ public final class Entitlement {
     private final String description;
     private final RiskLevel riskLevel;
     private final String approverRoleId;
+    private final DurationPolicy durationPolicy;
     private final boolean requestable;
     private final Instant createdAt;
     private final Instant updatedAt;
@@ -27,6 +28,7 @@ public final class Entitlement {
             String description,
             RiskLevel riskLevel,
             String approverRoleId,
+            DurationPolicy durationPolicy,
             boolean requestable,
             Instant createdAt,
             Instant updatedAt,
@@ -39,6 +41,7 @@ public final class Entitlement {
         this.description = requireText(description, "description");
         this.riskLevel = Objects.requireNonNull(riskLevel, "riskLevel must not be null");
         this.approverRoleId = requireText(approverRoleId, "approverRoleId");
+        this.durationPolicy = Objects.requireNonNull(durationPolicy, "durationPolicy must not be null");
         this.requestable = requestable;
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
@@ -61,6 +64,21 @@ public final class Entitlement {
             RiskLevel riskLevel,
             String approverRoleId,
             Instant createdAt) {
+        return create(id, realmId, resourceType, resourceId, displayName, description,
+                riskLevel, approverRoleId, DurationPolicy.defaultsFor(riskLevel), createdAt);
+    }
+
+    public static Entitlement create(
+            String id,
+            String realmId,
+            ResourceType resourceType,
+            String resourceId,
+            String displayName,
+            String description,
+            RiskLevel riskLevel,
+            String approverRoleId,
+            DurationPolicy durationPolicy,
+            Instant createdAt) {
         return new Entitlement(
                 id,
                 realmId,
@@ -70,6 +88,7 @@ public final class Entitlement {
                 description,
                 riskLevel,
                 approverRoleId,
+                durationPolicy,
                 false,
                 createdAt,
                 createdAt,
@@ -89,6 +108,25 @@ public final class Entitlement {
             Instant createdAt,
             Instant updatedAt,
             long version) {
+        return rehydrate(id, realmId, resourceType, resourceId, displayName, description,
+                riskLevel, approverRoleId, DurationPolicy.defaultsFor(riskLevel), requestable,
+                createdAt, updatedAt, version);
+    }
+
+    public static Entitlement rehydrate(
+            String id,
+            String realmId,
+            ResourceType resourceType,
+            String resourceId,
+            String displayName,
+            String description,
+            RiskLevel riskLevel,
+            String approverRoleId,
+            DurationPolicy durationPolicy,
+            boolean requestable,
+            Instant createdAt,
+            Instant updatedAt,
+            long version) {
         return new Entitlement(
                 id,
                 realmId,
@@ -98,6 +136,7 @@ public final class Entitlement {
                 description,
                 riskLevel,
                 approverRoleId,
+                durationPolicy,
                 requestable,
                 createdAt,
                 updatedAt,
@@ -134,6 +173,10 @@ public final class Entitlement {
 
     public String approverRoleId() {
         return approverRoleId;
+    }
+
+    public DurationPolicy durationPolicy() {
+        return durationPolicy;
     }
 
     public boolean requestable() {
@@ -174,6 +217,18 @@ public final class Entitlement {
             RiskLevel riskLevel,
             String approverRoleId,
             Instant occurredAt) {
+        DurationPolicy policy = riskLevel == this.riskLevel
+                ? durationPolicy : DurationPolicy.defaultsFor(riskLevel);
+        return updateDetails(displayName, description, riskLevel, approverRoleId, policy, occurredAt);
+    }
+
+    public Entitlement updateDetails(
+            String displayName,
+            String description,
+            RiskLevel riskLevel,
+            String approverRoleId,
+            DurationPolicy durationPolicy,
+            Instant occurredAt) {
         Instant timestamp = requireLifecycleTimestamp(occurredAt);
         return new Entitlement(
                 id,
@@ -184,6 +239,7 @@ public final class Entitlement {
                 description,
                 riskLevel,
                 approverRoleId,
+                durationPolicy,
                 requestable,
                 createdAt,
                 timestamp,
@@ -204,6 +260,7 @@ public final class Entitlement {
                 description,
                 riskLevel,
                 approverRoleId,
+                durationPolicy,
                 requestable,
                 createdAt,
                 updatedAt,

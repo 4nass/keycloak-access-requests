@@ -318,4 +318,46 @@
             <column name="RESOURCE_ID"/>
         </createIndex>
     </changeSet>
+    <changeSet id="entitlement-duration-policy" author="4nass">
+        <addColumn tableName="AR_ACCESS_REQUEST">
+            <column name="REQUESTED_DURATION_SECONDS" type="BIGINT"/>
+            <column name="PERMANENT" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <addColumn tableName="AR_ENTITLEMENT">
+            <column name="DEFAULT_DURATION_SECONDS" type="BIGINT"/>
+            <column name="MAX_DURATION_SECONDS" type="BIGINT"/>
+            <column name="ALLOW_PERMANENT" type="BOOLEAN"/>
+        </addColumn>
+        <addColumn tableName="AR_ENTITLEMENT_HISTORY">
+            <column name="DEFAULT_DURATION_SECONDS" type="BIGINT"/>
+            <column name="MAX_DURATION_SECONDS" type="BIGINT"/>
+            <column name="ALLOW_PERMANENT" type="BOOLEAN"/>
+        </addColumn>
+        <sql>
+            UPDATE AR_ENTITLEMENT SET
+                DEFAULT_DURATION_SECONDS = CASE RISK_LEVEL
+                    WHEN 'LOW' THEN 2592000 WHEN 'MEDIUM' THEN 604800
+                    WHEN 'HIGH' THEN 28800 WHEN 'CRITICAL' THEN 3600 END,
+                MAX_DURATION_SECONDS = CASE RISK_LEVEL
+                    WHEN 'LOW' THEN 7776000 WHEN 'MEDIUM' THEN 2592000
+                    WHEN 'HIGH' THEN 86400 WHEN 'CRITICAL' THEN 14400 END,
+                ALLOW_PERMANENT = FALSE;
+            UPDATE AR_ENTITLEMENT_HISTORY SET
+                DEFAULT_DURATION_SECONDS = CASE RISK_LEVEL
+                    WHEN 'LOW' THEN 2592000 WHEN 'MEDIUM' THEN 604800
+                    WHEN 'HIGH' THEN 28800 WHEN 'CRITICAL' THEN 3600 END,
+                MAX_DURATION_SECONDS = CASE RISK_LEVEL
+                    WHEN 'LOW' THEN 7776000 WHEN 'MEDIUM' THEN 2592000
+                    WHEN 'HIGH' THEN 86400 WHEN 'CRITICAL' THEN 14400 END,
+                ALLOW_PERMANENT = FALSE;
+        </sql>
+        <addNotNullConstraint tableName="AR_ENTITLEMENT" columnName="DEFAULT_DURATION_SECONDS" columnDataType="BIGINT"/>
+        <addNotNullConstraint tableName="AR_ENTITLEMENT" columnName="MAX_DURATION_SECONDS" columnDataType="BIGINT"/>
+        <addNotNullConstraint tableName="AR_ENTITLEMENT" columnName="ALLOW_PERMANENT" columnDataType="BOOLEAN"/>
+        <addNotNullConstraint tableName="AR_ENTITLEMENT_HISTORY" columnName="DEFAULT_DURATION_SECONDS" columnDataType="BIGINT"/>
+        <addNotNullConstraint tableName="AR_ENTITLEMENT_HISTORY" columnName="MAX_DURATION_SECONDS" columnDataType="BIGINT"/>
+        <addNotNullConstraint tableName="AR_ENTITLEMENT_HISTORY" columnName="ALLOW_PERMANENT" columnDataType="BOOLEAN"/>
+    </changeSet>
 </databaseChangeLog>

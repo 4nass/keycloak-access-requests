@@ -14,6 +14,8 @@ public final class AccessRequest {
     private final ResourceType resourceType;
     private final String resourceId;
     private final String resourceNameSnapshot;
+    private final Long requestedDurationSeconds;
+    private final boolean permanent;
 
     private DecisionStatus decisionStatus;
     private String approverId;
@@ -36,6 +38,8 @@ public final class AccessRequest {
             ResourceType resourceType,
             String resourceId,
             String resourceNameSnapshot,
+            Long requestedDurationSeconds,
+            boolean permanent,
             Instant createdAt) {
         this.id = requireText(id, "id");
         this.realmId = requireText(realmId, "realmId");
@@ -45,6 +49,14 @@ public final class AccessRequest {
         this.resourceType = resourceType;
         this.resourceId = resourceId;
         this.resourceNameSnapshot = resourceNameSnapshot;
+        if (requestedDurationSeconds != null && requestedDurationSeconds <= 0) {
+            throw new IllegalArgumentException("requestedDurationSeconds must be positive");
+        }
+        if (permanent && requestedDurationSeconds != null) {
+            throw new IllegalArgumentException("Permanent requests must not have a finite duration");
+        }
+        this.requestedDurationSeconds = requestedDurationSeconds;
+        this.permanent = permanent;
         this.decisionStatus = DecisionStatus.PENDING;
         this.provisioningStatus = ProvisioningStatus.NOT_STARTED;
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
@@ -83,6 +95,29 @@ public final class AccessRequest {
             String justification,
             Instant createdAt) {
         return new AccessRequest(
+                id, realmId, requesterId, entitlementId, justification,
+                Objects.requireNonNull(resourceType, "resourceType must not be null"),
+                requireText(resourceId, "resourceId"),
+                requireText(resourceNameSnapshot, "resourceNameSnapshot"),
+                null, false, createdAt);
+    }
+
+    public static AccessRequest create(
+            String id,
+            String realmId,
+            String requesterId,
+            String entitlementId,
+            ResourceType resourceType,
+            String resourceId,
+            String resourceNameSnapshot,
+            String justification,
+            Instant createdAt,
+            Long requestedDurationSeconds,
+            boolean permanent) {
+        if (!permanent && requestedDurationSeconds == null) {
+            throw new IllegalArgumentException("A new temporary request must have a duration");
+        }
+        return new AccessRequest(
                 id,
                 realmId,
                 requesterId,
@@ -91,6 +126,8 @@ public final class AccessRequest {
                 Objects.requireNonNull(resourceType, "resourceType must not be null"),
                 requireText(resourceId, "resourceId"),
                 requireText(resourceNameSnapshot, "resourceNameSnapshot"),
+                requestedDurationSeconds,
+                permanent,
                 createdAt);
     }
 
@@ -123,16 +160,23 @@ public final class AccessRequest {
             String approverId, String decisionComment, Instant createdAt, Instant updatedAt,
             Instant decidedAt, long version, Instant provisioningClosedAt,
             String provisioningClosedBy, String provisioningClosureReason) {
-        AccessRequest request = create(
-                id,
-                realmId,
-                requesterId,
-                entitlementId,
-                resourceType,
-                resourceId,
-                resourceNameSnapshot,
-                justification,
-                createdAt);
+        return rehydrate(id, realmId, requesterId, entitlementId, resourceType, resourceId,
+                resourceNameSnapshot, justification, decisionStatus, provisioningStatus, approverId,
+                decisionComment, createdAt, updatedAt, decidedAt, version, provisioningClosedAt,
+                provisioningClosedBy, provisioningClosureReason, null, false);
+    }
+
+    public static AccessRequest rehydrate(
+            String id, String realmId, String requesterId, String entitlementId,
+            ResourceType resourceType, String resourceId, String resourceNameSnapshot,
+            String justification, DecisionStatus decisionStatus, ProvisioningStatus provisioningStatus,
+            String approverId, String decisionComment, Instant createdAt, Instant updatedAt,
+            Instant decidedAt, long version, Instant provisioningClosedAt,
+            String provisioningClosedBy, String provisioningClosureReason,
+            Long requestedDurationSeconds, boolean permanent) {
+        AccessRequest request = new AccessRequest(id, realmId, requesterId, entitlementId, justification,
+                resourceType, resourceId, resourceNameSnapshot,
+                requestedDurationSeconds, permanent, createdAt);
         request.decisionStatus = Objects.requireNonNull(decisionStatus, "decisionStatus must not be null");
         request.provisioningStatus = Objects.requireNonNull(provisioningStatus, "provisioningStatus must not be null");
         request.approverId = approverId;
@@ -176,6 +220,14 @@ public final class AccessRequest {
 
     public String resourceNameSnapshot() {
         return resourceNameSnapshot;
+    }
+
+    public Long requestedDurationSeconds() {
+        return requestedDurationSeconds;
+    }
+
+    public boolean permanent() {
+        return permanent;
     }
 
     public DecisionStatus decisionStatus() {
@@ -332,6 +384,8 @@ public final class AccessRequest {
                 resourceType,
                 resourceId,
                 resourceNameSnapshot,
+                requestedDurationSeconds,
+                permanent,
                 createdAt);
         copy.decisionStatus = decisionStatus;
         copy.approverId = approverId;

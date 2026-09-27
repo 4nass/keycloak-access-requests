@@ -10,6 +10,7 @@ import ch.anass.keycloak.accessrequests.core.service.AccessAlreadyGrantedExcepti
 import ch.anass.keycloak.accessrequests.core.service.EntitlementNotFoundException;
 import ch.anass.keycloak.accessrequests.core.service.EntitlementNotRequestableException;
 import ch.anass.keycloak.accessrequests.core.service.InvalidJustificationException;
+import ch.anass.keycloak.accessrequests.core.service.InvalidRequestedDurationException;
 import ch.anass.keycloak.accessrequests.core.service.ConcurrentRequestModificationException;
 import ch.anass.keycloak.accessrequests.core.service.RequestAlreadyPendingException;
 import ch.anass.keycloak.accessrequests.core.service.RequestNotFoundException;
@@ -43,11 +44,13 @@ final class AccessRequestRequesterHandler extends AccessRequestHandlerSupport {
                     authenticatedRequest.realm().getId(),
                     authenticatedRequest.user().getId(),
                     validatedSubmission.entitlementId(),
-                    validatedSubmission.justification());
+                    validatedSubmission.justification(),
+                    validatedSubmission.durationSeconds(),
+                    Boolean.TRUE.equals(validatedSubmission.permanent()));
             return Response.status(Response.Status.CREATED)
                     .entity(RequestResponse.from(created))
                     .build();
-        } catch (InvalidJustificationException exception) {
+        } catch (InvalidJustificationException | InvalidRequestedDurationException exception) {
             throw new BadRequestException(exception.getMessage(), exception);
         } catch (EntitlementNotFoundException exception) {
             throw new NotFoundException(exception.getMessage(), exception);

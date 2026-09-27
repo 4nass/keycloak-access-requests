@@ -16,15 +16,20 @@ public final class RequestDto {
     private RequestDto() {
     }
 
-    public record RequestSubmission(String entitlementId, String justification) {
+    public record RequestSubmission(String entitlementId, String justification,
+            Long durationSeconds, Boolean permanent) {
+        public RequestSubmission(String entitlementId, String justification) {
+            this(entitlementId, justification, null, null);
+        }
     }
 
     public record RequestResponse(
             String id, String entitlementId, DecisionStatus decisionStatus,
-            ProvisioningStatus provisioningStatus) {
+            ProvisioningStatus provisioningStatus, Long durationSeconds, boolean permanent) {
         public static RequestResponse from(AccessRequest request) {
             return new RequestResponse(request.id(), request.entitlementId(),
-                    request.decisionStatus(), request.provisioningStatus());
+                    request.decisionStatus(), request.provisioningStatus(),
+                    request.requestedDurationSeconds(), request.permanent());
         }
     }
 
@@ -38,12 +43,13 @@ public final class RequestDto {
     public record RequestSummaryResponse(
             String id, String entitlementId, ResourceType resourceType, String resourceName,
             DecisionStatus decisionStatus, ProvisioningStatus provisioningStatus,
-            String createdAt, String provisioningClosedAt) {
+            String createdAt, String provisioningClosedAt, Long durationSeconds, boolean permanent) {
         public static RequestSummaryResponse from(AccessRequest request) {
             return new RequestSummaryResponse(request.id(), request.entitlementId(), request.resourceType(),
                     request.resourceNameSnapshot(), request.decisionStatus(), request.provisioningStatus(),
                     request.createdAt().toString(),
-                    request.provisioningClosedAt() == null ? null : request.provisioningClosedAt().toString());
+                    request.provisioningClosedAt() == null ? null : request.provisioningClosedAt().toString(),
+                    request.requestedDurationSeconds(), request.permanent());
         }
     }
 
@@ -51,7 +57,7 @@ public final class RequestDto {
             String id, String entitlementId, ResourceType resourceType, String resourceName,
             DecisionStatus decisionStatus, ProvisioningStatus provisioningStatus, String createdAt,
             String provisioningClosedAt, String justification, DecisionResponse decision,
-            List<RequestHistoryEntryResponse> history) {
+            List<RequestHistoryEntryResponse> history, Long durationSeconds, boolean permanent) {
         public static RequestDetailResponse from(AccessRequestDetails details) {
             AccessRequest request = details.request();
             DecisionResponse decision = request.approverId() == null ? null
@@ -62,7 +68,8 @@ public final class RequestDto {
                     request.createdAt().toString(),
                     request.provisioningClosedAt() == null ? null : request.provisioningClosedAt().toString(),
                     request.justification(), decision,
-                    details.history().stream().map(RequestHistoryEntryResponse::from).toList());
+                    details.history().stream().map(RequestHistoryEntryResponse::from).toList(),
+                    request.requestedDurationSeconds(), request.permanent());
         }
     }
 

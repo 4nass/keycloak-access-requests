@@ -65,6 +65,15 @@ public class EntitlementAuditEventEntity {
     @Column(name = "REQUESTABLE", nullable = false)
     private boolean requestable;
 
+    @Column(name = "DEFAULT_DURATION_SECONDS", nullable = false)
+    private long defaultDurationSeconds;
+
+    @Column(name = "MAX_DURATION_SECONDS", nullable = false)
+    private long maxDurationSeconds;
+
+    @Column(name = "ALLOW_PERMANENT", nullable = false)
+    private boolean allowPermanent;
+
     @Column(name = "VERSION", nullable = false)
     private long version;
 
@@ -85,6 +94,9 @@ public class EntitlementAuditEventEntity {
         this.riskLevel = event.riskLevel();
         this.approverRoleId = event.approverRoleId();
         this.requestable = event.requestable();
+        this.defaultDurationSeconds = event.durationPolicy().defaultDuration().toSeconds();
+        this.maxDurationSeconds = event.durationPolicy().maxDuration().toSeconds();
+        this.allowPermanent = event.durationPolicy().allowPermanent();
         this.version = event.version();
     }
 }

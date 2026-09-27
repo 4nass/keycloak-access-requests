@@ -22,6 +22,7 @@ public final class EntitlementAuditEvent {
     private final RiskLevel riskLevel;
     private final String approverRoleId;
     private final boolean requestable;
+    private final DurationPolicy durationPolicy;
     private final long version;
 
     private EntitlementAuditEvent(
@@ -38,6 +39,7 @@ public final class EntitlementAuditEvent {
             RiskLevel riskLevel,
             String approverRoleId,
             boolean requestable,
+            DurationPolicy durationPolicy,
             long version) {
         this.id = requireText(id, "id");
         this.entitlementId = requireText(entitlementId, "entitlementId");
@@ -52,6 +54,7 @@ public final class EntitlementAuditEvent {
         this.riskLevel = Objects.requireNonNull(riskLevel, "riskLevel must not be null");
         this.approverRoleId = requireText(approverRoleId, "approverRoleId");
         this.requestable = requestable;
+        this.durationPolicy = Objects.requireNonNull(durationPolicy, "durationPolicy must not be null");
         if (version < 0) {
             throw new IllegalArgumentException("version must not be negative");
         }
@@ -85,6 +88,7 @@ public final class EntitlementAuditEvent {
                 entitlement.riskLevel(),
                 entitlement.approverRoleId(),
                 entitlement.requestable(),
+                entitlement.durationPolicy(),
                 entitlement.version());
     }
 
@@ -138,6 +142,10 @@ public final class EntitlementAuditEvent {
 
     public boolean requestable() {
         return requestable;
+    }
+
+    public DurationPolicy durationPolicy() {
+        return durationPolicy;
     }
 
     public long version() {

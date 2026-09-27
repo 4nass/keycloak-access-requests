@@ -48,7 +48,7 @@ class AccessRequestPendingEndpointTest {
         assertArrayEquals(
                 new String[]{
                         "id", "requesterId", "entitlementId", "resourceType", "resourceName",
-                        "riskLevel", "justification", "createdAt"},
+                        "riskLevel", "justification", "createdAt", "durationSeconds", "permanent"},
                 Arrays.stream(ApprovalDto.PendingRequestSummaryResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));

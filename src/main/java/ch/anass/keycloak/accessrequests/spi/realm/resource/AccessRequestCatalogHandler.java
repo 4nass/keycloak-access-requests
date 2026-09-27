@@ -3,6 +3,7 @@ package ch.anass.keycloak.accessrequests.spi.realm.resource;
 import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogResult;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementAuditEvent;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementPage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementQuery;
@@ -25,6 +26,7 @@ import org.keycloak.models.GroupModel;
 import org.keycloak.models.RoleModel;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -87,6 +89,7 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
                 validatedSubmission.description(),
                 validatedSubmission.riskLevel(),
                 validatedSubmission.approverRoleId(),
+                creationDurationPolicy(validatedSubmission),
                 Instant.now());
         try {
             Entitlement persisted = transaction().execute(() -> {
@@ -121,11 +124,13 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
         Entitlement current = findEntitlement(manager.realm(), entitlementId);
         try {
             Instant updatedAt = Instant.now();
+            DurationPolicy durationPolicy = updateDurationPolicy(current, validatedSubmission);
             Entitlement updated = current.updateDetails(
                     validatedSubmission.displayName(),
                     validatedSubmission.description(),
                     validatedSubmission.riskLevel(),
                     validatedSubmission.approverRoleId(),
+                    durationPolicy,
                     updatedAt);
             updated = validatedSubmission.requestable()
                     ? updated.publish(updatedAt)
@@ -177,6 +182,39 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static DurationPolicy creationDurationPolicy(EntitlementCreation submission) {
+        if (submission.defaultDurationSeconds() == null && submission.maxDurationSeconds() == null) {
+            DurationPolicy defaults = DurationPolicy.defaultsFor(submission.riskLevel());
+            return new DurationPolicy(defaults.defaultDuration(), defaults.maxDuration(),
+                    Boolean.TRUE.equals(submission.allowPermanent()));
+        }
+        return requireDurationPolicy(submission.defaultDurationSeconds(), submission.maxDurationSeconds(),
+                submission.allowPermanent());
+    }
+
+    private static DurationPolicy updateDurationPolicy(Entitlement current, EntitlementUpdate submission) {
+        if (submission.defaultDurationSeconds() == null && submission.maxDurationSeconds() == null
+                && submission.allowPermanent() == null) {
+            return submission.riskLevel() == current.riskLevel()
+                    ? current.durationPolicy() : DurationPolicy.defaultsFor(submission.riskLevel());
+        }
+        return requireDurationPolicy(submission.defaultDurationSeconds(), submission.maxDurationSeconds(),
+                submission.allowPermanent());
+    }
+
+    private static DurationPolicy requireDurationPolicy(Long defaultSeconds, Long maxSeconds, Boolean allowPermanent) {
+        if (defaultSeconds == null || maxSeconds == null) {
+            throw new BadRequestException("defaultDurationSeconds and maxDurationSeconds must be provided together");
+        }
+        try {
+            return new DurationPolicy(Duration.ofSeconds(defaultSeconds), Duration.ofSeconds(maxSeconds),
+                    Boolean.TRUE.equals(allowPermanent));
+        } catch (IllegalArgumentException exception) {
+            throw new BadRequestException("defaultDurationSeconds must be positive and no greater than maxDurationSeconds",
+                    exception);
+        }
     }
 
     private static EntitlementUpdate requireEntitlementUpdate(EntitlementUpdate submission) {

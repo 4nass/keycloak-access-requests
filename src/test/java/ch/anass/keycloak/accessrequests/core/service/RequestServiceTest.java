@@ -12,6 +12,7 @@ import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.request.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidRequestStateException;
 import ch.anass.keycloak.accessrequests.core.domain.grant.ProvisioningResult;
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningStatus;
@@ -31,6 +32,7 @@ import ch.anass.keycloak.accessrequests.core.port.UserStatusReader;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -112,11 +114,78 @@ class RequestServiceTest {
         assertEquals(ResourceType.REALM_ROLE, created.resourceType());
         assertEquals("finance-reader", created.resourceId());
         assertEquals("Finance Reader", created.resourceNameSnapshot());
+        assertEquals(Duration.ofDays(30).toSeconds(), created.requestedDurationSeconds());
+        assertFalse(created.permanent());
         assertEquals(1, requests.saved().size());
         assertEquals(1, events.published().size());
         assertEquals(AccessRequestEventType.REQUEST_CREATED, events.published().get(0).type());
         assertEquals(created.id(), events.published().get(0).requestId());
         assertEquals("requester-1", events.published().get(0).actorId());
+    }
+
+    @Test
+    void acceptsTheMaximumFiniteDurationAndRejectsAnExcessWithoutPersisting() {
+        entitlements.add(financeEntitlement());
+
+        assertThrows(InvalidRequestedDurationException.class, () -> service.create(
+                "realm-1", "requester-1", "entitlement-1", "Access is needed for the finance project.",
+                Duration.ofDays(91).toSeconds(), false));
+        assertFalse(requests.hasSavedRequests());
+
+        AccessRequest created = service.create(
+                "realm-1", "requester-1", "entitlement-1", "Access is needed for the finance project.",
+                Duration.ofDays(90).toSeconds(), false);
+        assertEquals(Duration.ofDays(90).toSeconds(), created.requestedDurationSeconds());
+        assertFalse(created.permanent());
+    }
+
+    @Test
+    void permanentAccessIsRejectedUnlessTheEntitlementExplicitlyAllowsIt() {
+        entitlements.add(financeEntitlement());
+        assertThrows(InvalidRequestedDurationException.class, () -> service.create(
+                "realm-1", "requester-1", "entitlement-1", "Access is needed for the finance project.",
+                null, true));
+        assertFalse(requests.hasSavedRequests());
+
+        Entitlement permanentAllowed = financeEntitlement().updateDetails(
+                "Finance Reader", "Read-only access to finance data.", RiskLevel.LOW,
+                "finance-access-approver",
+                new DurationPolicy(Duration.ofDays(30), Duration.ofDays(90), true),
+                Instant.EPOCH.plusSeconds(1));
+        entitlements.add(permanentAllowed);
+        AccessRequest created = service.create(
+                "realm-1", "requester-1", "entitlement-1", "Access is needed for the finance project.",
+                null, true);
+        assertTrue(created.permanent());
+        assertEquals(null, created.requestedDurationSeconds());
+    }
+
+    @Test
+    void rejectsInvalidFiniteAndConflictingPermanentSelections() {
+        entitlements.add(financeEntitlement());
+        String justification = "Access is needed for the finance project.";
+        assertThrows(InvalidRequestedDurationException.class, () -> service.create(
+                "realm-1", "requester-1", "entitlement-1", justification, 0L, false));
+        assertThrows(InvalidRequestedDurationException.class, () -> service.create(
+                "realm-1", "requester-1", "entitlement-1", justification, -1L, false));
+        assertThrows(InvalidRequestedDurationException.class, () -> service.create(
+                "realm-1", "requester-1", "entitlement-1", justification, 3600L, true));
+        assertFalse(requests.hasSavedRequests());
+    }
+
+    @Test
+    void snapshotsTheSelectedDurationEvenWhenTheEntitlementPolicyChangesLater() {
+        Entitlement entitlement = financeEntitlement();
+        entitlements.add(entitlement);
+        AccessRequest created = service.create("realm-1", "requester-1", "entitlement-1",
+                "Access is needed for the finance project.", Duration.ofDays(45).toSeconds(), false);
+
+        entitlements.add(entitlement.updateDetails("Finance Reader", "Read-only access to finance data.",
+                RiskLevel.LOW, "finance-access-approver",
+                new DurationPolicy(Duration.ofDays(1), Duration.ofDays(2), false), Instant.EPOCH.plusSeconds(1)));
+
+        assertEquals(Duration.ofDays(45).toSeconds(), requests.findById("realm-1", created.id())
+                .orElseThrow().requestedDurationSeconds());
     }
 
     @Test

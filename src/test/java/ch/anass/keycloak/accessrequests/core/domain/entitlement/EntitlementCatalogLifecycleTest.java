@@ -7,6 +7,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.time.Duration;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -43,6 +44,31 @@ class EntitlementCatalogLifecycleTest {
         assertEquals("Read-only access to the Finance Portal.", entitlement.description());
         assertEquals(RiskLevel.LOW, entitlement.riskLevel());
         assertEquals("finance-access-approver", entitlement.approverRoleId());
+        assertEquals(DurationPolicy.defaultsFor(RiskLevel.LOW), entitlement.durationPolicy());
+    }
+
+    @Test
+    void administratorCanReplaceTheDurationPolicyWithoutChangingThePreviousSnapshot() {
+        Entitlement entitlement = unpublishedEntitlement();
+        DurationPolicy custom = new DurationPolicy(Duration.ofDays(14), Duration.ofDays(60), true);
+
+        Entitlement updated = entitlement.updateDetails(
+                entitlement.displayName(), entitlement.description(), entitlement.riskLevel(),
+                entitlement.approverRoleId(), custom, UPDATED_AT);
+
+        assertEquals(custom, updated.durationPolicy());
+        assertEquals(DurationPolicy.defaultsFor(RiskLevel.LOW), entitlement.durationPolicy());
+        assertEquals(custom, updated.withVersion(3).durationPolicy());
+        assertEquals(custom, updated.publish(UNPUBLISHED_AT).durationPolicy());
+    }
+
+    @Test
+    void changingRiskWithoutAnExplicitPolicyResetsItsDurationToTheNewRiskDefaults() {
+        Entitlement updated = unpublishedEntitlement().updateDetails(
+                "Critical access", "Sensitive access.", RiskLevel.CRITICAL,
+                "finance-access-approver", UPDATED_AT);
+
+        assertEquals(DurationPolicy.defaultsFor(RiskLevel.CRITICAL), updated.durationPolicy());
     }
 
     @ParameterizedTest

@@ -54,6 +54,12 @@ public class AccessRequestEntity {
     @Column(name = "JUSTIFICATION", nullable = false, columnDefinition = "TEXT")
     private String justification;
 
+    @Column(name = "REQUESTED_DURATION_SECONDS")
+    private Long requestedDurationSeconds;
+
+    @Column(name = "PERMANENT", nullable = false)
+    private boolean permanent;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "DECISION_STATUS", nullable = false, length = 30)
     private DecisionStatus decisionStatus;
@@ -114,6 +120,8 @@ public class AccessRequestEntity {
         this.resourceId = request.resourceId();
         this.resourceNameSnapshot = request.resourceNameSnapshot();
         this.justification = request.justification();
+        this.requestedDurationSeconds = request.requestedDurationSeconds();
+        this.permanent = request.permanent();
         this.decisionStatus = request.decisionStatus();
         this.provisioningStatus = request.provisioningStatus();
         this.approverId = request.approverId();
@@ -148,7 +156,9 @@ public class AccessRequestEntity {
                 provisioningClosedTimestamp == null ? null
                         : java.time.Instant.ofEpochMilli(provisioningClosedTimestamp),
                 provisioningClosedBy,
-                provisioningClosureReason);
+                provisioningClosureReason,
+                requestedDurationSeconds,
+                permanent);
     }
 
     public String realmId() {

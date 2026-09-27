@@ -19,8 +19,10 @@ public record DurationPolicy(Duration defaultDuration, Duration maxDuration, boo
         Objects.requireNonNull(defaultDuration, "defaultDuration must not be null");
         Objects.requireNonNull(maxDuration, "maxDuration must not be null");
         if (!isPositive(defaultDuration) || !isPositive(maxDuration)
+                || defaultDuration.getNano() != 0 || maxDuration.getNano() != 0
                 || defaultDuration.compareTo(maxDuration) > 0) {
-            throw new IllegalArgumentException("Durations must be positive and defaultDuration must not exceed maxDuration");
+            throw new IllegalArgumentException(
+                    "Durations must be positive whole seconds and defaultDuration must not exceed maxDuration");
         }
     }
 
@@ -30,6 +32,7 @@ public record DurationPolicy(Duration defaultDuration, Duration maxDuration, boo
                 throw new IllegalArgumentException("Permanent access is not permitted by this entitlement");
             }
         } else if (requestedDuration == null || !isPositive(requestedDuration)
+                || requestedDuration.getNano() != 0
                 || requestedDuration.compareTo(maxDuration) > 0) {
             throw new IllegalArgumentException("Requested duration must be positive and within the configured maximum");
         }

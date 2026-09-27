@@ -99,12 +99,14 @@ class EntitlementCatalogAdministrationEndpointTest {
         assertTrue(creation.isRecord());
         assertArrayEquals(
                 new String[]{
-                        "resourceType", "resourceId", "displayName", "description", "riskLevel", "approverRoleId"},
+                        "resourceType", "resourceId", "displayName", "description", "riskLevel", "approverRoleId",
+                        "defaultDurationSeconds", "maxDurationSeconds", "allowPermanent"},
                 Arrays.stream(creation.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));
         assertArrayEquals(
-                new Class<?>[]{ResourceType.class, String.class, String.class, String.class, RiskLevel.class, String.class},
+                new Class<?>[]{ResourceType.class, String.class, String.class, String.class, RiskLevel.class,
+                        String.class, Long.class, Long.class, Boolean.class},
                 Arrays.stream(creation.getRecordComponents())
                         .map(RecordComponent::getType)
                         .toArray(Class<?>[]::new));
@@ -116,12 +118,14 @@ class EntitlementCatalogAdministrationEndpointTest {
 
         assertTrue(update.isRecord());
         assertArrayEquals(
-                new String[]{"displayName", "description", "riskLevel", "approverRoleId", "requestable", "version"},
+                new String[]{"displayName", "description", "riskLevel", "approverRoleId", "requestable", "version",
+                        "defaultDurationSeconds", "maxDurationSeconds", "allowPermanent"},
                 Arrays.stream(update.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));
         assertArrayEquals(
-                new Class<?>[]{String.class, String.class, RiskLevel.class, String.class, Boolean.class, Long.class},
+                new Class<?>[]{String.class, String.class, RiskLevel.class, String.class, Boolean.class,
+                        Long.class, Long.class, Long.class, Boolean.class},
                 Arrays.stream(update.getRecordComponents())
                         .map(RecordComponent::getType)
                         .toArray(Class<?>[]::new));
@@ -148,7 +152,8 @@ class EntitlementCatalogAdministrationEndpointTest {
         assertArrayEquals(
                 new String[]{
                         "id", "resourceType", "resourceId", "displayName", "description", "riskLevel",
-                        "approverRoleId", "requestable", "createdAt", "updatedAt", "version"},
+                        "approverRoleId", "requestable", "createdAt", "updatedAt", "version",
+                        "defaultDurationSeconds", "maxDurationSeconds", "allowPermanent"},
                 Arrays.stream(CatalogDto.EntitlementResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));

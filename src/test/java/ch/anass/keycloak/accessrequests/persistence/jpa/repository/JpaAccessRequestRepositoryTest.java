@@ -39,6 +39,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -405,6 +406,40 @@ class JpaAccessRequestRepositoryTest {
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void persistsTheSelectedDurationAcrossDecisionUpdates() {
+        AccessRequest request = AccessRequest.create("request-duration", "realm-duration", "requester-1",
+                "entitlement-1", ResourceType.REALM_ROLE, "resource-1", "Resource",
+                "Access is needed for the project.", Instant.parse("2026-09-27T10:00:00Z"),
+                Duration.ofHours(5).toSeconds(), false);
+        JpaAccessRequestRepository repository = new JpaAccessRequestRepository(entityManager);
+        AccessRequest created = transaction().execute(() -> repository.createIfNoPending(request).orElseThrow());
+        assertEquals(Duration.ofHours(5).toSeconds(), repository.findById("realm-duration", created.id())
+                .orElseThrow().requestedDurationSeconds());
+
+        AccessRequest approved = created.copy();
+        approved.approve("approver-1", "Approved.", Instant.parse("2026-09-27T10:01:00Z"));
+        transaction().execute(() -> repository.updateIfVersionMatches(approved, created.version()).orElseThrow());
+
+        AccessRequest reloaded = repository.findById("realm-duration", created.id()).orElseThrow();
+        assertEquals(Duration.ofHours(5).toSeconds(), reloaded.requestedDurationSeconds());
+        assertFalse(reloaded.permanent());
+    }
+
+    @Test
+    void persistsPermanentRequestsWithoutAFiniteDuration() {
+        AccessRequest request = AccessRequest.create("request-permanent", "realm-permanent", "requester-1",
+                "entitlement-1", ResourceType.REALM_ROLE, "resource-1", "Resource",
+                "Access is needed for the project.", Instant.parse("2026-09-27T10:00:00Z"),
+                null, true);
+        JpaAccessRequestRepository repository = new JpaAccessRequestRepository(entityManager);
+        transaction().execute(() -> repository.createIfNoPending(request).orElseThrow());
+
+        AccessRequest reloaded = repository.findById("realm-permanent", request.id()).orElseThrow();
+        assertTrue(reloaded.permanent());
+        assertEquals(null, reloaded.requestedDurationSeconds());
     }
 
     @Test

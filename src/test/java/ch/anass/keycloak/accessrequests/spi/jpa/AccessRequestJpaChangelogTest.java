@@ -27,15 +27,16 @@ class AccessRequestJpaChangelogTest {
     private static final String CHANGELOG_LOCATION = "META-INF/access-requests-changelog.xml";
 
     @Test
-    void createsTheCompleteSchemaFromOneIdempotentBaseline() throws Exception {
+    void createsTheCompleteSchemaWithAnIdempotentDurationMigration() throws Exception {
         String databaseUrl = databaseUrl();
 
         applyChangelog(databaseUrl);
         applyChangelog(databaseUrl);
 
         try (Connection connection = DriverManager.getConnection(databaseUrl)) {
-            assertEquals("1", valueOf(connection, "select count(*) from DATABASECHANGELOG"));
-            assertEquals("initial-schema", valueOf(connection, "select ID from DATABASECHANGELOG"));
+            assertEquals("2", valueOf(connection, "select count(*) from DATABASECHANGELOG"));
+            assertEquals(Set.of("initial-schema", "entitlement-duration-policy"),
+                    changelogIds(connection));
             assertEquals(
                     Set.of(
                             "ID",
@@ -46,6 +47,8 @@ class AccessRequestJpaChangelogTest {
                             "RESOURCE_ID",
                             "RESOURCE_NAME_SNAPSHOT",
                             "JUSTIFICATION",
+                            "REQUESTED_DURATION_SECONDS",
+                            "PERMANENT",
                             "DECISION_STATUS",
                             "PROVISIONING_STATUS",
                             "APPROVER_ID",
@@ -81,6 +84,9 @@ class AccessRequestJpaChangelogTest {
                             "RISK_LEVEL",
                             "APPROVER_ROLE_ID",
                             "REQUESTABLE",
+                            "DEFAULT_DURATION_SECONDS",
+                            "MAX_DURATION_SECONDS",
+                            "ALLOW_PERMANENT",
                             "CREATED_TIMESTAMP",
                             "UPDATED_TIMESTAMP",
                             "VERSION"),
@@ -100,6 +106,9 @@ class AccessRequestJpaChangelogTest {
                             "RISK_LEVEL",
                             "APPROVER_ROLE_ID",
                             "REQUESTABLE",
+                            "DEFAULT_DURATION_SECONDS",
+                            "MAX_DURATION_SECONDS",
+                            "ALLOW_PERMANENT",
                             "VERSION"),
                     columnsOf(connection, "AR_ENTITLEMENT_HISTORY"));
             assertEquals(
@@ -158,6 +167,62 @@ class AccessRequestJpaChangelogTest {
             insertPendingRequest(connection, "request-1");
 
             assertThrows(SQLException.class, () -> insertPendingRequest(connection, "request-2"));
+        }
+    }
+
+    @Test
+    void backfillsExistingEntitlementsAndHistoryWithoutEnablingPermanentAccess() throws Exception {
+        String databaseUrl = databaseUrl();
+        try (Connection connection = DriverManager.getConnection(databaseUrl)) {
+            Database database = DatabaseFactory.getInstance()
+                    .findCorrectDatabaseImplementation(new JdbcConnection(connection));
+            try (Liquibase liquibase = new Liquibase(CHANGELOG_LOCATION,
+                    new ClassLoaderResourceAccessor(), database)) {
+                liquibase.update(1, new Contexts(), new LabelExpression());
+            }
+        }
+        try (Connection connection = DriverManager.getConnection(databaseUrl)) {
+            connection.createStatement().executeUpdate("""
+                    insert into AR_ENTITLEMENT (
+                        ID, REALM_ID, RESOURCE_TYPE, RESOURCE_ID, DISPLAY_NAME, DESCRIPTION,
+                        RISK_LEVEL, APPROVER_ROLE_ID, REQUESTABLE, CREATED_TIMESTAMP,
+                        UPDATED_TIMESTAMP, VERSION)
+                    values ('old-low', 'realm-1', 'REALM_ROLE', 'role-low', 'Low access',
+                            'Legacy access.', 'LOW', 'approver', TRUE, 1, 1, 0)
+                    """);
+            insertPendingRequest(connection, "old-request");
+            connection.createStatement().executeUpdate("""
+                    insert into AR_ENTITLEMENT_HISTORY (
+                        ID, ENTITLEMENT_ID, REALM_ID, EVENT_TYPE, ACTOR_ID, EVENT_TIMESTAMP,
+                        RESOURCE_TYPE, RESOURCE_ID, DISPLAY_NAME, DESCRIPTION, RISK_LEVEL,
+                        APPROVER_ROLE_ID, REQUESTABLE, VERSION)
+                    values ('old-history', 'old-low', 'realm-1', 'ENTITLEMENT_CREATED',
+                            'admin', 1, 'REALM_ROLE', 'role-low', 'Low access', 'Legacy access.',
+                            'MEDIUM', 'approver', TRUE, 0)
+                    """);
+        }
+
+        applyChangelog(databaseUrl);
+
+        try (Connection connection = DriverManager.getConnection(databaseUrl)) {
+            assertEquals("2592000", valueOf(connection,
+                    "select DEFAULT_DURATION_SECONDS from AR_ENTITLEMENT where ID = 'old-low'"));
+            assertEquals("7776000", valueOf(connection,
+                    "select MAX_DURATION_SECONDS from AR_ENTITLEMENT where ID = 'old-low'"));
+            assertEquals("FALSE", valueOf(connection,
+                    "select ALLOW_PERMANENT from AR_ENTITLEMENT where ID = 'old-low'").toUpperCase(java.util.Locale.ROOT));
+            assertEquals("604800", valueOf(connection,
+                    "select DEFAULT_DURATION_SECONDS from AR_ENTITLEMENT_HISTORY where ID = 'old-history'"));
+            assertEquals("2592000", valueOf(connection,
+                    "select MAX_DURATION_SECONDS from AR_ENTITLEMENT_HISTORY where ID = 'old-history'"));
+            assertEquals("FALSE", valueOf(connection,
+                    "select ALLOW_PERMANENT from AR_ENTITLEMENT_HISTORY where ID = 'old-history'")
+                    .toUpperCase(java.util.Locale.ROOT));
+            assertEquals("FALSE", valueOf(connection,
+                    "select PERMANENT from AR_ACCESS_REQUEST where ID = 'old-request'")
+                    .toUpperCase(java.util.Locale.ROOT));
+            assertEquals(null, valueOf(connection,
+                    "select REQUESTED_DURATION_SECONDS from AR_ACCESS_REQUEST where ID = 'old-request'"));
         }
     }
 
@@ -229,6 +294,16 @@ class AccessRequestJpaChangelogTest {
             }
         }
         return columnNames;
+    }
+
+    private Set<String> changelogIds(Connection connection) throws SQLException {
+        Set<String> ids = new HashSet<>();
+        try (ResultSet result = connection.createStatement().executeQuery("select ID from DATABASECHANGELOG")) {
+            while (result.next()) {
+                ids.add(result.getString(1));
+            }
+        }
+        return ids;
     }
 
     private Set<String> indexNamesOf(Connection connection, String tableName) throws SQLException {

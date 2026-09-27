@@ -5,6 +5,7 @@ import ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementEntity
 import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementAuditEvent;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementPage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementQuery;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -131,6 +133,26 @@ class JpaEntitlementRepositoryTest {
     }
 
     @Test
+    void persistsAndUpdatesTheCompleteDurationPolicy() {
+        DurationPolicy initial = new DurationPolicy(Duration.ofDays(14), Duration.ofDays(60), true);
+        Entitlement created = Entitlement.create("duration-1", "realm-1", ResourceType.REALM_ROLE,
+                "role-duration", "Temporary role", "Temporary access.", RiskLevel.LOW,
+                "finance-access-approver", initial, CREATED_AT);
+        persist(created);
+
+        Entitlement loaded = repository.findById("realm-1", "duration-1").orElseThrow();
+        assertEquals(initial, loaded.durationPolicy());
+
+        DurationPolicy replacement = new DurationPolicy(Duration.ofDays(7), Duration.ofDays(21), false);
+        Entitlement updated = loaded.updateDetails(loaded.displayName(), loaded.description(),
+                loaded.riskLevel(), loaded.approverRoleId(), replacement, CREATED_AT.plusSeconds(1));
+        EntityTransactionSupport.execute(entityManager,
+                () -> repository.updateIfVersionMatches(updated, loaded.version()).orElseThrow());
+
+        assertEquals(replacement, repository.findById("realm-1", "duration-1").orElseThrow().durationPolicy());
+    }
+
+    @Test
     void returnsDraftAndRequestableEntitlementsForAdministrativePagination() {
         persist(published("entitlement-3", "realm-1", ResourceType.REALM_ROLE, "role-3", "Charlie",
                 "Third entitlement.", RiskLevel.LOW));
@@ -169,13 +191,18 @@ class JpaEntitlementRepositoryTest {
     @Test
     void persistsAnImmutableSnapshotOfTheEntitlementPolicyChange() {
         Entitlement entitlement = published("entitlement-audit", "realm-1", ResourceType.REALM_ROLE, "role-audit",
-                "Finance Editor", "Edit access to finance data.", RiskLevel.HIGH).withVersion(1);
+                "Finance Editor", "Edit access to finance data.", RiskLevel.HIGH)
+                .updateDetails("Finance Editor", "Edit access to finance data.", RiskLevel.HIGH,
+                        "finance-access-approver",
+                        new DurationPolicy(Duration.ofHours(4), Duration.ofHours(12), true), CREATED_AT)
+                .withVersion(1);
 
         EntityTransactionSupport.execute(entityManager, () -> new JpaEntitlementAuditEventPublisher(entityManager)
                 .publish(EntitlementAuditEvent.updated(entitlement, "catalog-manager-1")));
 
         Object[] event = (Object[]) entityManager.createNativeQuery("""
-                        select EVENT_TYPE, ACTOR_ID, REQUESTABLE, VERSION, DISPLAY_NAME
+                        select EVENT_TYPE, ACTOR_ID, REQUESTABLE, VERSION, DISPLAY_NAME,
+                               DEFAULT_DURATION_SECONDS, MAX_DURATION_SECONDS, ALLOW_PERMANENT
                           from AR_ENTITLEMENT_HISTORY
                          where ENTITLEMENT_ID = 'entitlement-audit'
                         """).getSingleResult();
@@ -184,6 +211,9 @@ class JpaEntitlementRepositoryTest {
         assertTrue((Boolean) event[2]);
         assertEquals(1L, ((Number) event[3]).longValue());
         assertEquals("Finance Editor", event[4]);
+        assertEquals(Duration.ofHours(4).toSeconds(), ((Number) event[5]).longValue());
+        assertEquals(Duration.ofHours(12).toSeconds(), ((Number) event[6]).longValue());
+        assertTrue((Boolean) event[7]);
     }
 
     private void persist(Entitlement entitlement) {

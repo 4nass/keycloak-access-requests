@@ -24,34 +24,43 @@ public final class CatalogDto {
 
     public record CatalogItemResponse(
             String id, ResourceType type, String name, String description, RiskLevel riskLevel,
-            boolean alreadyGranted, boolean pendingRequest) {
+            boolean alreadyGranted, boolean pendingRequest,
+            long defaultDurationSeconds, long maxDurationSeconds, boolean allowPermanent) {
         public static CatalogItemResponse from(CatalogEntry entry) {
             return new CatalogItemResponse(entry.entitlement().id(), entry.entitlement().resourceType(),
                     entry.entitlement().displayName(), entry.entitlement().description(),
-                    entry.entitlement().riskLevel(), entry.alreadyGranted(), entry.pendingRequest());
+                    entry.entitlement().riskLevel(), entry.alreadyGranted(), entry.pendingRequest(),
+                    entry.entitlement().durationPolicy().defaultDuration().toSeconds(),
+                    entry.entitlement().durationPolicy().maxDuration().toSeconds(),
+                    entry.entitlement().durationPolicy().allowPermanent());
         }
     }
 
     public record EntitlementCreation(
             ResourceType resourceType, String resourceId, String displayName, String description,
-            RiskLevel riskLevel, String approverRoleId) {
+            RiskLevel riskLevel, String approverRoleId, Long defaultDurationSeconds,
+            Long maxDurationSeconds, Boolean allowPermanent) {
     }
 
     public record EntitlementUpdate(
             String displayName, String description, RiskLevel riskLevel, String approverRoleId,
-            Boolean requestable, Long version) {
+            Boolean requestable, Long version, Long defaultDurationSeconds,
+            Long maxDurationSeconds, Boolean allowPermanent) {
     }
 
     public record EntitlementResponse(
             String id, ResourceType resourceType, String resourceId, String displayName,
             String description, RiskLevel riskLevel, String approverRoleId, boolean requestable,
-            String createdAt, String updatedAt, long version) {
+            String createdAt, String updatedAt, long version,
+            long defaultDurationSeconds, long maxDurationSeconds, boolean allowPermanent) {
         public static EntitlementResponse from(Entitlement entitlement) {
             return new EntitlementResponse(entitlement.id(), entitlement.resourceType(),
                     entitlement.resourceId(), entitlement.displayName(), entitlement.description(),
                     entitlement.riskLevel(), entitlement.approverRoleId(), entitlement.requestable(),
                     entitlement.createdAt().toString(), entitlement.updatedAt().toString(),
-                    entitlement.version());
+                    entitlement.version(), entitlement.durationPolicy().defaultDuration().toSeconds(),
+                    entitlement.durationPolicy().maxDuration().toSeconds(),
+                    entitlement.durationPolicy().allowPermanent());
         }
     }
 

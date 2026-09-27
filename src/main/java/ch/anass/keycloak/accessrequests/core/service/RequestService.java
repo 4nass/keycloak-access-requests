@@ -28,6 +28,7 @@ import ch.anass.keycloak.accessrequests.core.port.UserStatusReader;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.List;
 import java.util.UUID;
@@ -137,9 +138,29 @@ public final class RequestService {
             String requesterId,
             String entitlementId,
             String justification) {
+        return create(realmId, requesterId, entitlementId, justification, null, false);
+    }
+
+    public AccessRequest create(
+            String realmId,
+            String requesterId,
+            String entitlementId,
+            String justification,
+            Long durationSeconds,
+            boolean permanent) {
         try {
             return transaction.execute(() -> {
                 Entitlement entitlement = requireCurrentEntitlementForUpdate(realmId, entitlementId);
+                Long selectedDuration = durationSeconds;
+                if (!permanent && selectedDuration == null) {
+                    selectedDuration = entitlement.durationPolicy().defaultDuration().getSeconds();
+                }
+                try {
+                    entitlement.durationPolicy().validate(
+                            selectedDuration == null ? null : Duration.ofSeconds(selectedDuration), permanent);
+                } catch (IllegalArgumentException exception) {
+                    throw new InvalidRequestedDurationException();
+                }
                 if (!userStatusReader.isEnabled(realmId, requesterId)) {
                     throw new UserDisabledException(requesterId);
                 }
@@ -157,7 +178,9 @@ public final class RequestService {
                         entitlement.resourceId(),
                         entitlement.displayName(),
                         justification,
-                        occurredAt);
+                        occurredAt,
+                        selectedDuration,
+                        permanent);
                 AccessRequest persisted = accessRequestRepository.createIfNoPending(request)
                         .orElseThrow(() -> new RequestAlreadyPendingException(entitlementId));
                 AccessRequestEvent event = AccessRequestEvent.created(persisted, requesterId, occurredAt);

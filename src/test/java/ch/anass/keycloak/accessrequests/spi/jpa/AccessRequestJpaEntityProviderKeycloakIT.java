@@ -395,13 +395,19 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                                   "displayName":"Catalog Finance Reader",
                                   "description":"%s",
                                   "riskLevel":"HIGH",
-                                  "approverRoleId":"%s"
+                                  "approverRoleId":"%s",
+                                  "defaultDurationSeconds":14400,
+                                  "maxDurationSeconds":43200,
+                                  "allowPermanent":false
                                 }
                                 """.formatted(targetRoleId, description, approverRoleId)))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(201, creationResponse.statusCode());
         assertTrue(creationResponse.body().contains("\"requestable\":false"));
+        assertTrue(creationResponse.body().contains("\"defaultDurationSeconds\":14400"));
+        assertTrue(creationResponse.body().contains("\"maxDurationSeconds\":43200"));
+        assertTrue(creationResponse.body().contains("\"allowPermanent\":false"));
         String entitlementId = responseId(creationResponse.body());
         HttpResponse<String> defaultEntitlementPage = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementEndpoint)
@@ -422,7 +428,10 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                                   "riskLevel":"MEDIUM",
                                   "approverRoleId":"%s",
                                   "requestable":true,
-                                  "version":0
+                                  "version":0,
+                                  "defaultDurationSeconds":604800,
+                                  "maxDurationSeconds":2592000,
+                                  "allowPermanent":true
                                 }
                                 """.formatted(description, replacementApproverRoleId)))
                         .build(),
@@ -430,6 +439,29 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(200, updateResponse.statusCode());
         assertTrue(updateResponse.body().contains("\"requestable\":true"));
         assertTrue(updateResponse.body().contains("\"version\":1"));
+        assertTrue(updateResponse.body().contains("\"defaultDurationSeconds\":604800"));
+        assertTrue(updateResponse.body().contains("\"maxDurationSeconds\":2592000"));
+        assertTrue(updateResponse.body().contains("\"allowPermanent\":true"));
+
+        HttpResponse<Void> invalidDurationResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(entitlementByIdEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString("""
+                                {
+                                  "displayName":"Catalog Finance Reader",
+                                  "description":"%s",
+                                  "riskLevel":"MEDIUM",
+                                  "approverRoleId":"%s",
+                                  "requestable":true,
+                                  "version":1,
+                                  "defaultDurationSeconds":2592001,
+                                  "maxDurationSeconds":2592000,
+                                  "allowPermanent":true
+                                }
+                                """.formatted(description, replacementApproverRoleId)))
+                        .build(), HttpResponse.BodyHandlers.discarding());
+        assertEquals(400, invalidDurationResponse.statusCode());
 
         HttpResponse<Void> staleUpdateResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementByIdEndpoint)
@@ -1890,8 +1922,23 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         String justification = "I need read-only access to Finance Portal reports.";
         insertPublishedEntitlement(entitlementId);
 
+        HttpResponse<Void> excessiveDurationResponse = HttpClient.newHttpClient().send(
+                requestSubmission(endpoint, accessToken, """
+                        {"entitlementId":"%s","justification":"%s","durationSeconds":7862400}
+                        """.formatted(entitlementId, justification)),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(400, excessiveDurationResponse.statusCode());
+        HttpResponse<Void> unauthorizedPermanentResponse = HttpClient.newHttpClient().send(
+                requestSubmission(endpoint, accessToken, """
+                        {"entitlementId":"%s","justification":"%s","permanent":true}
+                        """.formatted(entitlementId, justification)),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(400, unauthorizedPermanentResponse.statusCode());
+
         HttpResponse<String> createdResponse = HttpClient.newHttpClient().send(
-                requestSubmission(endpoint, accessToken, entitlementId, justification),
+                requestSubmission(endpoint, accessToken, """
+                        {"entitlementId":"%s","justification":"%s","durationSeconds":7776000}
+                        """.formatted(entitlementId, justification)),
                 HttpResponse.BodyHandlers.ofString());
 
         assertEquals(201, createdResponse.statusCode());
@@ -1899,6 +1946,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertTrue(createdResponse.body().contains("\"entitlementId\":\"" + entitlementId + "\""));
         assertTrue(createdResponse.body().contains("\"decisionStatus\":\"PENDING\""));
         assertTrue(createdResponse.body().contains("\"provisioningStatus\":\"NOT_STARTED\""));
+        assertTrue(createdResponse.body().contains("\"durationSeconds\":7776000"));
+        assertTrue(createdResponse.body().contains("\"permanent\":false"));
         assertPendingRequestAndCreatedAuditEvent(
                 requestId, entitlementId, subjectOf(accessToken), justification);
 
@@ -1947,7 +1996,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var requestStatement = connection.prepareStatement("""
-                     select REQUESTER_ID, JUSTIFICATION, DECISION_STATUS, PROVISIONING_STATUS
+                     select REQUESTER_ID, JUSTIFICATION, DECISION_STATUS, PROVISIONING_STATUS,
+                            REQUESTED_DURATION_SECONDS, PERMANENT
                        from AR_ACCESS_REQUEST
                       where ID = ?
                         and ENTITLEMENT_ID = ?
@@ -1960,6 +2010,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 assertEquals(justification, result.getString("JUSTIFICATION"));
                 assertEquals("PENDING", result.getString("DECISION_STATUS"));
                 assertEquals("NOT_STARTED", result.getString("PROVISIONING_STATUS"));
+                assertEquals(7_776_000L, result.getLong("REQUESTED_DURATION_SECONDS"));
+                assertFalse(result.getBoolean("PERMANENT"));
                 assertFalse(result.next(), "Exactly one submitted request must be persisted.");
             }
 
@@ -2707,10 +2759,13 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                          RISK_LEVEL,
                          APPROVER_ROLE_ID,
                          REQUESTABLE,
+                         DEFAULT_DURATION_SECONDS,
+                         MAX_DURATION_SECONDS,
+                         ALLOW_PERMANENT,
                          CREATED_TIMESTAMP,
                          UPDATED_TIMESTAMP,
                          VERSION)
-                     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                      """)) {
             long now = Instant.now().toEpochMilli();
             statement.setString(1, entitlementId);
@@ -2722,9 +2777,12 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             statement.setString(7, "LOW");
             statement.setString(8, approverRoleId);
             statement.setBoolean(9, requestable);
-            statement.setLong(10, now);
-            statement.setLong(11, now);
-            statement.setLong(12, 0);
+            statement.setLong(10, 2_592_000);
+            statement.setLong(11, 7_776_000);
+            statement.setBoolean(12, false);
+            statement.setLong(13, now);
+            statement.setLong(14, now);
+            statement.setLong(15, 0);
             statement.executeUpdate();
         }
     }

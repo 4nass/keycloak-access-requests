@@ -31,12 +31,14 @@ public final class ApprovalDto {
 
     public record PendingRequestSummaryResponse(
             String id, String requesterId, String entitlementId, ResourceType resourceType,
-            String resourceName, RiskLevel riskLevel, String justification, String createdAt) {
+            String resourceName, RiskLevel riskLevel, String justification, String createdAt,
+            Long durationSeconds, boolean permanent) {
         public static PendingRequestSummaryResponse from(ApprovalQueueEntry entry) {
             AccessRequest request = entry.request();
             return new PendingRequestSummaryResponse(request.id(), request.requesterId(),
                     request.entitlementId(), request.resourceType(), request.resourceNameSnapshot(),
-                    entry.riskLevel(), request.justification(), request.createdAt().toString());
+                    entry.riskLevel(), request.justification(), request.createdAt().toString(),
+                    request.requestedDurationSeconds(), request.permanent());
         }
     }
 }

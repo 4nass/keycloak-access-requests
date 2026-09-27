@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.persistence.jpa.entity;
 
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import jakarta.persistence.Basic;
@@ -17,6 +18,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 
 import java.sql.Types;
 import java.time.Instant;
+import java.time.Duration;
 
 @Entity
 @Table(
@@ -58,6 +60,15 @@ public class EntitlementEntity {
     @Column(name = "REQUESTABLE", nullable = false)
     private boolean requestable;
 
+    @Column(name = "DEFAULT_DURATION_SECONDS", nullable = false)
+    private long defaultDurationSeconds;
+
+    @Column(name = "MAX_DURATION_SECONDS", nullable = false)
+    private long maxDurationSeconds;
+
+    @Column(name = "ALLOW_PERMANENT", nullable = false)
+    private boolean allowPermanent;
+
     @Column(name = "CREATED_TIMESTAMP", nullable = false)
     private long createdTimestamp;
 
@@ -89,6 +100,9 @@ public class EntitlementEntity {
         this.riskLevel = entitlement.riskLevel();
         this.approverRoleId = entitlement.approverRoleId();
         this.requestable = entitlement.requestable();
+        this.defaultDurationSeconds = entitlement.durationPolicy().defaultDuration().toSeconds();
+        this.maxDurationSeconds = entitlement.durationPolicy().maxDuration().toSeconds();
+        this.allowPermanent = entitlement.durationPolicy().allowPermanent();
         this.createdTimestamp = entitlement.createdAt().toEpochMilli();
         this.updatedTimestamp = entitlement.updatedAt().toEpochMilli();
     }
@@ -103,6 +117,8 @@ public class EntitlementEntity {
                 description,
                 riskLevel,
                 approverRoleId,
+                new DurationPolicy(
+                        Duration.ofSeconds(defaultDurationSeconds), Duration.ofSeconds(maxDurationSeconds), allowPermanent),
                 requestable,
                 Instant.ofEpochMilli(createdTimestamp),
                 Instant.ofEpochMilli(updatedTimestamp),

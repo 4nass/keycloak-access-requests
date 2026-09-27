@@ -67,6 +67,10 @@ class DurationPolicyTest {
         assertThrows(IllegalArgumentException.class, () -> new DurationPolicy(Duration.ZERO, Duration.ofDays(1), false));
         assertThrows(IllegalArgumentException.class, () -> new DurationPolicy(Duration.ofHours(1), Duration.ZERO, false));
         assertThrows(IllegalArgumentException.class, () -> new DurationPolicy(Duration.ofDays(2), Duration.ofDays(1), false));
+        assertThrows(IllegalArgumentException.class,
+                () -> new DurationPolicy(Duration.ofMillis(500), Duration.ofDays(1), false));
+        assertThrows(IllegalArgumentException.class,
+                () -> new DurationPolicy(Duration.ofHours(1), Duration.ofMillis(500), false));
     }
 
     private static Stream<Arguments> initialPolicies() {
