@@ -312,16 +312,42 @@ describe("Entitlements administration API client", () => {
             name: "finance-approvers",
             type: "REALM_ROLE" as const
         };
-        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ items: [reference] }));
+        const page = { items: [reference], nextFirst: 1, hasMore: false };
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse(page));
 
         await expect(createApi(fetchMock).references("REALM_ROLE", { max: 25, search: "finance" }))
-            .resolves.toEqual([reference]);
+            .resolves.toEqual(page);
         expect(request(fetchMock)).toEqual({
             url: "https://keycloak.example/realms/finance/access-requests/admin/references?type=REALM_ROLE&search=finance&max=25",
             init: expect.objectContaining({
                 headers: expect.objectContaining({ authorization: "Bearer admin-console-token" })
             })
         });
+    });
+
+    it("resolves an already selected reference by exact ID and forwards cancellation", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ items: [], nextFirst: 0, hasMore: false }));
+        const controller = new AbortController();
+
+        await createApi(fetchMock).references("GROUP", {
+            selectedId: "group-42",
+            signal: controller.signal
+        });
+
+        expect(request(fetchMock)).toEqual({
+            url: "https://keycloak.example/realms/finance/access-requests/admin/references?type=GROUP&search=&max=50&selectedId=group-42",
+            init: expect.objectContaining({ signal: controller.signal })
+        });
+    });
+
+    it("passes the next search offset to Keycloak", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ items: [], nextFirst: 50, hasMore: false }));
+
+        await createApi(fetchMock).references("GROUP", { search: "readers", first: 25, max: 25 });
+
+        expect(request(fetchMock).url).toBe(
+            "https://keycloak.example/realms/finance/access-requests/admin/references?type=GROUP&search=readers&max=25&first=25"
+        );
     });
 
     it("creates an entitlement using the immutable Keycloak resource fields", async () => {

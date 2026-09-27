@@ -35,7 +35,7 @@ import {
     ToolbarItem,
     Title
 } from "@patternfly/react-core";
-import { useCallback, useDeferredValue, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -372,6 +372,7 @@ function EntitlementDialog({
                             api={api}
                             fieldId="entitlement-resource-id"
                             isDisabled={isSaving}
+                            key={form.resourceType}
                             onSelect={(value) => onUpdate("resourceId", value)}
                             resourceType={form.resourceType}
                             searchLabel="accessRequestsAdminSearchResources"
@@ -466,41 +467,80 @@ function KeycloakReferenceSelector({
 }) {
     const { t } = useTranslation();
     const [search, setSearch] = useState("");
-    const deferredSearch = useDeferredValue(search);
+    const [first, setFirst] = useState(0);
+    const [retryNonce, setRetryNonce] = useState(0);
+    const [nextFirst, setNextFirst] = useState(0);
+    const [hasMore, setHasMore] = useState(false);
     const [references, setReferences] = useState<KeycloakReference[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [rememberedSelection, setRememberedSelection] = useState<KeycloakReference>();
+    const [loading, setLoading] = useState(false);
     const [loadError, setLoadError] = useState<unknown>();
 
     useEffect(() => {
+        const term = search.trim();
+        if (term.length < 2 && !value) {
+            setReferences([]);
+            setHasMore(false);
+            setNextFirst(0);
+            setLoading(false);
+            setLoadError(undefined);
+            return;
+        }
         let active = true;
+        const controller = new AbortController();
         setLoading(true);
         setLoadError(undefined);
-        void api.references(resourceType, { search: deferredSearch })
-            .then((items) => {
-                if (active) {
-                    setReferences(items);
-                }
+        if (first === 0) {
+            setReferences([]);
+            setHasMore(false);
+        }
+        const timeout = window.setTimeout(() => {
+            void api.references(resourceType, {
+                search: term.length >= 2 ? term : undefined,
+                selectedId: first === 0 && term.length < 2 ? value || undefined : undefined,
+                first,
+                max: 50,
+                signal: controller.signal
             })
-            .catch((referenceError: unknown) => {
-                if (active) {
-                    setReferences([]);
-                    setLoadError(referenceError);
-                }
-            })
-            .finally(() => {
-                if (active) {
-                    setLoading(false);
-                }
-            });
+                .then((page) => {
+                    if (active) {
+                        setReferences((current) => first === 0 ? page.items : [
+                            ...current,
+                            ...page.items.filter((item) => !current.some((existing) => existing.id === item.id))
+                        ]);
+                        const selected = page.items.find((item) => item.id === value);
+                        if (selected) {
+                            setRememberedSelection(selected);
+                        }
+                        setNextFirst(page.nextFirst);
+                        setHasMore(page.hasMore);
+                    }
+                })
+                .catch((referenceError: unknown) => {
+                    if (active) {
+                        if (first === 0) {
+                            setReferences([]);
+                        }
+                        setLoadError(referenceError);
+                    }
+                })
+                .finally(() => {
+                    if (active) {
+                        setLoading(false);
+                    }
+                });
+        }, first === 0 ? 300 : 0);
         return () => {
             active = false;
+            window.clearTimeout(timeout);
+            controller.abort();
         };
-    }, [api, deferredSearch, resourceType]);
+    }, [api, first, retryNonce, search, resourceType, value]);
 
     const selectedReference = references.find((reference) => reference.id === value);
-    const selectedOption = value && !selectedReference
+    const selectedOption = selectedReference ?? (rememberedSelection?.id === value ? rememberedSelection : undefined) ?? (value
         ? { description: "", id: value, name: value, type: resourceType }
-        : selectedReference;
+        : undefined);
 
     return (
         <>
@@ -508,7 +548,10 @@ function KeycloakReferenceSelector({
                 aria-label={t(searchLabel)}
                 id={`${fieldId}-search`}
                 isDisabled={isDisabled}
-                onChange={(_event, nextSearch) => setSearch(nextSearch)}
+                onChange={(_event, nextSearch) => {
+                    setSearch(nextSearch);
+                    setFirst(0);
+                }}
                 placeholder={t(searchPlaceholder)}
                 value={search}
             />
@@ -516,21 +559,37 @@ function KeycloakReferenceSelector({
             <FormSelect
                 aria-label={t(selectionPlaceholder)}
                 id={fieldId}
-                isDisabled={isDisabled || loading || Boolean(loadError)}
+                isDisabled={isDisabled || loading || (first === 0 && Boolean(loadError))}
                 isRequired
-                onChange={(_event, nextValue) => onSelect(nextValue)}
+                onChange={(_event, nextValue) => {
+                    setRememberedSelection(references.find((reference) => reference.id === nextValue));
+                    setFirst(0);
+                    onSelect(nextValue);
+                }}
                 value={value}
             >
                 <FormSelectOption isDisabled label={t(selectionPlaceholder)} value="" />
                 {selectedOption && <FormSelectOption label={selectedOption.name} value={selectedOption.id} />}
                 {loading && <FormSelectOption isDisabled label={t("accessRequestsAdminReferencesLoading")} value="loading" />}
-                {!loading && !loadError && references.length === 0 && (
+                {!loading && !loadError && search.trim().length < 2 && (
+                    <FormSelectOption isDisabled label={t("accessRequestsAdminReferencesEnterSearch")} value="enter-search" />
+                )}
+                {!loading && !loadError && search.trim().length >= 2 && references.length === 0 && (
                     <FormSelectOption isDisabled label={t("accessRequestsAdminReferencesEmpty")} value="empty" />
                 )}
                 {references.filter((reference) => reference.id !== selectedOption?.id).map((reference) => (
                     <FormSelectOption key={reference.id} label={reference.name} value={reference.id} />
                 ))}
             </FormSelect>
+            {hasMore && <Button
+                isDisabled={isDisabled || loading}
+                onClick={() => first === nextFirst
+                    ? setRetryNonce((current) => current + 1)
+                    : setFirst(nextFirst)}
+                variant="link"
+            >
+                {t("accessRequestsAdminReferencesLoadMore")}
+            </Button>}
         </>
     );
 }

@@ -1148,10 +1148,12 @@ class AccessRequestAdminConsoleBrowserIT {
         WebDriverWait wait = waitFor(driver);
         wait.until(ExpectedConditions.elementToBeClickable(
                 By.xpath("//button[normalize-space()='Create entitlement']"))).click();
+        driver.findElement(By.id("entitlement-resource-id-search")).sendKeys(fixture.managedTargetRoleId());
         new Select(wait.until(ExpectedConditions.elementToBeClickable(By.id("entitlement-resource-id"))))
                 .selectByValue(fixture.managedTargetRoleId());
         driver.findElement(By.id("entitlement-display-name")).sendKeys(displayName);
         driver.findElement(By.id("entitlement-description")).sendKeys("Created through the deployed Administration Console.");
+        driver.findElement(By.id("entitlement-approver-role-search")).sendKeys(fixture.approverRoleId());
         new Select(wait.until(ExpectedConditions.elementToBeClickable(By.id("entitlement-approver-role"))))
                 .selectByValue(fixture.approverRoleId());
         driver.findElement(By.xpath("//button[normalize-space()='Save']")).click();

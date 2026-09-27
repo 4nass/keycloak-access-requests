@@ -197,8 +197,10 @@ public final class AccessRequestRealmResource {
     public Response listKeycloakReferences(
             @QueryParam("type") ResourceType resourceType,
             @QueryParam("search") String search,
+            @QueryParam("selectedId") String selectedId,
+            @DefaultValue("0") @QueryParam("first") int first,
             @DefaultValue("50") @QueryParam("max") int max) {
-        return catalogHandler.listKeycloakReferences(resourceType, search, max);
+        return catalogHandler.listKeycloakReferences(resourceType, search, selectedId, first, max);
     }
 
     @GET

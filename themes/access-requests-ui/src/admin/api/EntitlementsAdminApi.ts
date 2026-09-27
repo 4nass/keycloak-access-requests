@@ -169,6 +169,12 @@ export type KeycloakReference = {
     description: string;
 };
 
+export type KeycloakReferencePage = {
+    items: KeycloakReference[];
+    nextFirst: number;
+    hasMore: boolean;
+};
+
 export type EntitlementsAdminApi = {
     capabilities(): Promise<AdminCapabilities>;
     list(query?: { page?: number; size?: number }): Promise<EntitlementPage>;
@@ -179,7 +185,13 @@ export type EntitlementsAdminApi = {
     failedProvisioningRequests(query?: { page?: number; size?: number; state?: "OPEN" | "CLOSED" }): Promise<FailedProvisioningRequestPage>;
     retryFailedProvisioning(id: string): Promise<ProvisioningRetryResult>;
     closeFailedProvisioning(id: string, reason: string): Promise<ProvisioningClosureResult>;
-    references(type: Entitlement["resourceType"], query?: { search?: string; max?: number }): Promise<KeycloakReference[]>;
+    references(type: Entitlement["resourceType"], query?: {
+        search?: string;
+        selectedId?: string;
+        first?: number;
+        max?: number;
+        signal?: AbortSignal;
+    }): Promise<KeycloakReferencePage>;
     create(submission: EntitlementCreation): Promise<Entitlement>;
     update(id: string, submission: EntitlementUpdate): Promise<Entitlement>;
     retryNotificationDelivery(id: string): Promise<void>;
@@ -255,11 +267,21 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
         }
         return parameters;
     };
-    const referenceQuery = (type: Entitlement["resourceType"], query: { search?: string; max?: number } = {}) => new URLSearchParams({
-        type,
-        search: query.search ?? "",
-        max: String(query.max ?? 50)
-    });
+    const referenceQuery = (type: Entitlement["resourceType"], query: {
+        search?: string;
+        selectedId?: string;
+        first?: number;
+        max?: number;
+    } = {}) => {
+        const parameters = new URLSearchParams({ type, search: query.search ?? "", max: String(query.max ?? 50) });
+        if (query.first !== undefined) {
+            parameters.set("first", String(query.first));
+        }
+        if (query.selectedId) {
+            parameters.set("selectedId", query.selectedId);
+        }
+        return parameters;
+    };
 
     return {
         capabilities: () => request("/admin/capabilities"),
@@ -281,8 +303,8 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
             json("POST", { reason })
         ),
         references: async (type, query) => {
-            const response = await request<{ items: KeycloakReference[] }>(`/admin/references?${referenceQuery(type, query)}`);
-            return response.items;
+            return request<KeycloakReferencePage>(`/admin/references?${referenceQuery(type, query)}`,
+                { signal: query?.signal });
         },
         create: (submission) => request("/admin/entitlements", json("POST", submission)),
         update: (id, submission) => request(`/admin/entitlements/${encodeURIComponent(id)}`, json("PUT", submission)),

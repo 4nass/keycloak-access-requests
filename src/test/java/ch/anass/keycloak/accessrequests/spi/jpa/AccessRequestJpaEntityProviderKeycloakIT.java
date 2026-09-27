@@ -37,6 +37,7 @@ import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -376,10 +377,12 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         String approverRoleId = createRealmRole(server, adminToken, "catalog-approver-" + UUID.randomUUID());
         String replacementApproverRoleId = createRealmRole(server, adminToken, "catalog-approver-new-" + UUID.randomUUID());
         ClientRole clientRole = createClientRole(server, adminToken, "catalog-client-target-" + UUID.randomUUID());
-        String groupId = createGroup(server, adminToken, "catalog-group-target-" + UUID.randomUUID());
+        String groupId = createGroup(server, adminToken, "Catalog-Group-Target-" + UUID.randomUUID());
         assertKeycloakReferenceIsListed(server, managerToken, "REALM_ROLE", "catalog-target", targetRoleId);
         assertKeycloakReferenceIsListed(server, managerToken, "CLIENT_ROLE", "catalog-client-target", clientRole.roleId());
         assertKeycloakReferenceIsListed(server, managerToken, "GROUP", "catalog-group-target", groupId);
+        assertKeycloakReferenceIsListed(server, managerToken, "GROUP", "CATALOG-GROUP-TARGET", groupId);
+        assertBoundedReferenceLookupAndSelectedId(server, managerToken, targetRoleId);
         String description = "Read-only access to the catalog-managed finance report.";
         HttpResponse<String> creationResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementEndpoint)
@@ -2547,6 +2550,46 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             String roleId) throws Exception {
         assertTrue(hasRealmRoleAssignment(server, adminToken, userId, roleId),
                 "Provisioning must grant the configured realm role to the requester.");
+    }
+
+    private void assertBoundedReferenceLookupAndSelectedId(
+            GenericContainer<?> server, String accessToken, String selectedRoleId) throws Exception {
+        String base = "http://%s:%d/realms/master/access-requests/admin/references?type=REALM_ROLE"
+                .formatted(server.getHost(), server.getMappedPort(8080));
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<String> noSearch = client.send(
+                HttpRequest.newBuilder(URI.create(base))
+                        .header("Authorization", "Bearer " + accessToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, noSearch.statusCode());
+        assertEquals(0, new ObjectMapper().readTree(noSearch.body()).path("items").size());
+
+        HttpResponse<String> selected = client.send(
+                HttpRequest.newBuilder(URI.create(base + "&selectedId=" + selectedRoleId))
+                        .header("Authorization", "Bearer " + accessToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, selected.statusCode());
+        assertEquals(selectedRoleId, new ObjectMapper().readTree(selected.body()).path("items").get(0).path("id").asText());
+
+        HttpResponse<String> limited = client.send(
+                HttpRequest.newBuilder(URI.create(base + "&search=catalog&max=1"))
+                        .header("Authorization", "Bearer " + accessToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, limited.statusCode());
+        var firstPage = new ObjectMapper().readTree(limited.body());
+        assertEquals(1, firstPage.path("items").size());
+        assertTrue(firstPage.path("hasMore").asBoolean());
+        assertEquals(1, firstPage.path("nextFirst").asInt());
+
+        HttpResponse<String> next = client.send(
+                HttpRequest.newBuilder(URI.create(base + "&search=catalog&max=1&first=1"))
+                        .header("Authorization", "Bearer " + accessToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, next.statusCode());
+        var secondPage = new ObjectMapper().readTree(next.body());
+        assertEquals(1, secondPage.path("items").size());
+        assertNotEquals(firstPage.path("items").get(0).path("id").asText(),
+                secondPage.path("items").get(0).path("id").asText());
     }
 
     private void assertRealmRoleNotAssigned(

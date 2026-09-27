@@ -139,6 +139,8 @@ const expectedMessageKeys = [
     "accessRequestsAdminNotificationRecipientTypeRealmRole",
     "accessRequestsAdminNotificationRecipientTypeUser",
     "accessRequestsAdminReferencesEmpty",
+    "accessRequestsAdminReferencesEnterSearch",
+    "accessRequestsAdminReferencesLoadMore",
     "accessRequestsAdminReferencesLoading",
     "accessRequestsAdminRequestable",
     "accessRequestsAdminResourceId",

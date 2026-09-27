@@ -61,7 +61,7 @@ class AccessRequestRouteContractTest {
                 "POST admin/requests/{requestId}/provisioning/close | consumes=application/json | "
                         + "produces=application/json | params=body,path:requestId",
                 "GET admin/references | consumes=- | produces=application/json | "
-                        + "params=query:max=50,query:search,query:type",
+                        + "params=query:first=0,query:max=50,query:search,query:selectedId,query:type",
                 "GET mine/{requestId} | consumes=- | produces=application/json | params=path:requestId",
                 "GET pending | consumes=- | produces=application/json | params=query:page=0,query:size=20",
                 "GET capabilities | consumes=- | produces=application/json | params=-",

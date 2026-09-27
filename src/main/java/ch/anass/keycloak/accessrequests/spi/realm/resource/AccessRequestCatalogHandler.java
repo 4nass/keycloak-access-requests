@@ -17,7 +17,6 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.EntitlementList
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.EntitlementResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.EntitlementUpdate;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.KeycloakReferenceListResponse;
-import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.KeycloakReferenceResponse;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.Response;
@@ -26,13 +25,8 @@ import org.keycloak.models.GroupModel;
 import org.keycloak.models.RoleModel;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
 import java.util.UUID;
-import java.util.stream.Stream;
 
 import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestErrors.error;
 
@@ -146,6 +140,8 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
     public Response listKeycloakReferences(
             ResourceType resourceType,
             String search,
+            String selectedId,
+            int first,
             int max) {
         AccessRequestManager manager = requireAccessRequestManager();
         if (resourceType == null) {
@@ -154,13 +150,15 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
         if (max < 1 || max > 100) {
             return error(Response.Status.BAD_REQUEST, "INVALID_REFERENCE_QUERY", "max must be between 1 and 100", null);
         }
-
-        List<KeycloakReferenceResponse> references = references(manager.realm(), resourceType)
-                .filter(reference -> matches(reference, search))
-                .sorted(Comparator.comparing(KeycloakReferenceResponse::name, String.CASE_INSENSITIVE_ORDER))
-                .limit(max)
-                .toList();
-        return Response.ok(new KeycloakReferenceListResponse(references)).build();
+        if (first < 0 || first > Integer.MAX_VALUE - max - 1) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_REFERENCE_QUERY", "first is outside the supported range", null);
+        }
+        if ((search != null && search.length() > 256) || (selectedId != null && selectedId.length() > 256)) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_REFERENCE_QUERY", "search and selectedId must be at most 256 characters", null);
+        }
+        var page = KeycloakReferenceSearch.find(manager.realm(), session.roles(), session.groups(),
+                resourceType, search, selectedId, first, max);
+        return Response.ok(new KeycloakReferenceListResponse(page.items(), page.nextFirst(), page.hasMore())).build();
     }
 
     private static EntitlementCreation requireEntitlementCreation(EntitlementCreation submission) {
@@ -207,46 +205,6 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
 
     private static void validateApproverRole(RealmModel realm, String approverRoleId) {
         requireRole(realm, approverRoleId, false, "approverRoleId");
-    }
-
-    private static Stream<KeycloakReferenceResponse> references(RealmModel realm, ResourceType resourceType) {
-        return switch (resourceType) {
-            case REALM_ROLE -> realm.getRolesStream()
-                    .filter(role -> !role.isClientRole())
-                    .map(role -> roleReference(resourceType, role, role.getName()));
-            case CLIENT_ROLE -> realm.getClientsStream()
-                    .flatMap(client -> client.getRolesStream()
-                            .map(role -> roleReference(resourceType, role, client.getClientId() + " / " + role.getName())));
-            case GROUP -> realm.getGroupsStream()
-                    .map(group -> new KeycloakReferenceResponse(
-                            resourceType, group.getId(), groupPath(group), ""));
-        };
-    }
-
-    private static KeycloakReferenceResponse roleReference(
-            ResourceType resourceType, RoleModel role, String name) {
-        return new KeycloakReferenceResponse(
-                resourceType, role.getId(), name, Objects.requireNonNullElse(role.getDescription(), ""));
-    }
-
-    private static boolean matches(KeycloakReferenceResponse reference, String search) {
-        if (isBlank(search)) {
-            return true;
-        }
-        String normalizedSearch = search.trim().toLowerCase(Locale.ROOT);
-        return reference.id().toLowerCase(Locale.ROOT).contains(normalizedSearch)
-                || reference.name().toLowerCase(Locale.ROOT).contains(normalizedSearch)
-                || reference.description().toLowerCase(Locale.ROOT).contains(normalizedSearch);
-    }
-
-    private static String groupPath(GroupModel group) {
-        List<String> path = new ArrayList<>();
-        GroupModel current = group;
-        while (current != null) {
-            path.addFirst(current.getName());
-            current = current.getParent();
-        }
-        return "/" + String.join("/", path);
     }
 
     private static RoleModel requireRole(RealmModel realm, String roleId, boolean clientRole, String fieldName) {

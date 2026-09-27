@@ -62,7 +62,8 @@ public final class CatalogDto {
         }
     }
 
-    public record KeycloakReferenceListResponse(List<KeycloakReferenceResponse> items) {
+    public record KeycloakReferenceListResponse(List<KeycloakReferenceResponse> items, int nextFirst,
+            boolean hasMore) {
     }
 
     public record KeycloakReferenceResponse(ResourceType type, String id, String name, String description) {

@@ -34,12 +34,14 @@ describe("EntitlementCatalogPage", () => {
     beforeEach(() => {
         api.create.mockReset();
         api.list.mockReset().mockResolvedValue({ items: [entitlement], page: 0, size: 20, total: 1 });
-        api.references.mockReset().mockImplementation((type) => Promise.resolve(type === "REALM_ROLE"
-            ? [
+        api.references.mockReset().mockImplementation((type) => Promise.resolve({
+            items: type === "REALM_ROLE" ? [
                 { description: "Access to finance reports", id: "finance-reader-role", name: "Finance Reader", type },
                 { description: "Approves finance access", id: "finance-approvers", name: "Finance Approvers", type }
-            ]
-            : []));
+            ] : [],
+            nextFirst: 2,
+            hasMore: false
+        }));
         api.update.mockReset().mockResolvedValue({ ...entitlement, requestable: false, version: 5 });
     });
 
@@ -105,11 +107,17 @@ describe("EntitlementCatalogPage", () => {
 
         await screen.findByRole("heading", { name: "Finance Reader" });
         await user.click(screen.getByRole("button", { name: "accessRequestsAdminCreateEntitlement" }));
-        await waitFor(() => expect(api.references).toHaveBeenCalled());
+        expect(api.references).not.toHaveBeenCalled();
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminSearchResources" }), "finance");
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminSearchApproverRoles" }), "finance");
+        await waitFor(() => expect(api.references).toHaveBeenCalledWith("REALM_ROLE",
+            expect.objectContaining({ search: "finance" })));
         await user.selectOptions(
             screen.getByRole("combobox", { name: "accessRequestsAdminSelectResource" }),
             "finance-reader-role"
         );
+        await waitFor(() => expect(screen.getByRole("combobox", { name: "accessRequestsAdminSelectApproverRole" }))
+            .toHaveTextContent("Finance Approvers"));
         await user.selectOptions(
             screen.getByRole("combobox", { name: "accessRequestsAdminSelectApproverRole" }),
             "finance-approvers"
@@ -128,6 +136,85 @@ describe("EntitlementCatalogPage", () => {
         }));
         expect(screen.queryByRole("textbox", { name: "accessRequestsAdminResourceId" })).not.toBeInTheDocument();
         expect(screen.queryByRole("textbox", { name: "accessRequestsAdminApproverRole" })).not.toBeInTheDocument();
+    });
+
+    it("waits for a meaningful reference search and cancels a superseded lookup", async () => {
+        const user = userEvent.setup();
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminCreateEntitlement" }));
+        const search = screen.getByRole("textbox", { name: "accessRequestsAdminSearchResources" });
+        await user.type(search, "f");
+        await new Promise((resolve) => window.setTimeout(resolve, 350));
+        expect(api.references).not.toHaveBeenCalled();
+
+        await user.type(search, "i");
+        await waitFor(() => expect(api.references).toHaveBeenCalledWith("REALM_ROLE",
+            expect.objectContaining({ search: "fi" })));
+        const signal = api.references.mock.calls[0][1].signal as AbortSignal;
+        await user.type(search, "n");
+        expect(signal.aborted).toBe(true);
+    });
+
+    it("loads later reference pages and keeps the selected resource visible", async () => {
+        const user = userEvent.setup();
+        api.references.mockImplementation((_type, query) => Promise.resolve(query.first === 0
+            ? { items: [{ id: "reader-1", name: "Reader 1", type: "REALM_ROLE", description: "" }], nextFirst: 1, hasMore: true }
+            : { items: [{ id: "reader-2", name: "Reader 2", type: "REALM_ROLE", description: "" }], nextFirst: 2, hasMore: false }));
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminCreateEntitlement" }));
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminSearchResources" }), "reader");
+        await screen.findByRole("option", { name: "Reader 1" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminReferencesLoadMore" }));
+        await screen.findByRole("option", { name: "Reader 2" });
+
+        expect(api.references).toHaveBeenCalledWith("REALM_ROLE", expect.objectContaining({ first: 1, search: "reader" }));
+        expect(screen.getByRole("option", { name: "Reader 1" })).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "accessRequestsAdminReferencesLoadMore" })).not.toBeInTheDocument();
+        await user.selectOptions(screen.getByRole("combobox", { name: "accessRequestsAdminSelectResource" }), "reader-2");
+        expect(screen.getByRole("option", { name: "Reader 2" })).toBeInTheDocument();
+        await user.clear(screen.getByRole("textbox", { name: "accessRequestsAdminSearchResources" }));
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminSearchResources" }), "other");
+        await waitFor(() => expect(screen.getByRole("combobox", { name: "accessRequestsAdminSelectResource" }))
+            .toHaveValue("reader-2"));
+        expect(screen.getByRole("option", { name: "Reader 2" })).toBeInTheDocument();
+    });
+
+    it("keeps loaded references and retries a failed next page", async () => {
+        const user = userEvent.setup();
+        let nextPageAttempts = 0;
+        api.references.mockImplementation((_type, query) => {
+            if (query.first === 0) {
+                return Promise.resolve({
+                    items: [{ id: "reader-1", name: "Reader 1", type: "REALM_ROLE", description: "" }],
+                    nextFirst: 1,
+                    hasMore: true
+                });
+            }
+            nextPageAttempts++;
+            return nextPageAttempts === 1
+                ? Promise.reject(new Error("Unavailable"))
+                : Promise.resolve({
+                    items: [{ id: "reader-2", name: "Reader 2", type: "REALM_ROLE", description: "" }],
+                    nextFirst: 2,
+                    hasMore: false
+                });
+        });
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminCreateEntitlement" }));
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminSearchResources" }), "reader");
+        await screen.findByRole("option", { name: "Reader 1" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminReferencesLoadMore" }));
+        await screen.findByText("accessRequestsAdminErrorUnexpected");
+        expect(screen.getByRole("option", { name: "Reader 1" })).toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminReferencesLoadMore" }));
+        await screen.findByRole("option", { name: "Reader 2" });
+        expect(nextPageAttempts).toBe(2);
     });
 
     it("warns about composite group access only while creating a group entitlement", async () => {

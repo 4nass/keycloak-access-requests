@@ -124,10 +124,12 @@ This endpoint powers the Admin Console selectors. It accepts:
 | Parameter | Requirement |
 | --- | --- |
 | `type` | Required: `REALM_ROLE`, `CLIENT_ROLE`, or `GROUP` |
-| `search` | Optional name, description, or ID filter |
+| `search` | Optional name/client ID/group-name search (at least two characters), or an exact resource ID |
+| `selectedId` | Optional exact ID of an already selected resource, resolved when `search` has fewer than two characters |
+| `first` | Optional search-result offset, default 0 |
 | `max` | Optional result cap, 1 to 100; default 50 |
 
-It returns IDs for use as `resourceId` and `approverRoleId`. `approverRoleId` must refer to a realm role.
+An empty or one-character `search` does not enumerate the realm; without `selectedId`, it returns an empty list. Text search uses Keycloak's paginated search APIs: realm-role names, client-role names or client IDs, and group names. The response contains `items`, `nextFirst`, and `hasMore`; pass `nextFirst` as `first` while `hasMore` is true. An exact-ID search returns that resource directly instead of starting a text-search page. `selectedId` only resolves an existing selection when no text search is active. Group-name matching is case-insensitive with Keycloak 26.7.4's built-in JPA provider; custom group storage providers may behave differently. Arbitrary substrings of IDs, descriptions, and full group paths are not searched; an exact ID lookup is supported instead. Results follow Keycloak's search order rather than a global sort performed by this extension. It returns IDs for use as `resourceId` and `approverRoleId`. `approverRoleId` must refer to a realm role.
 
 ### `POST /admin/entitlements`
 

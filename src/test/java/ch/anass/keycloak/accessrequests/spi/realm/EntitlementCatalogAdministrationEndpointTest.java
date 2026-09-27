@@ -77,14 +77,19 @@ class EntitlementCatalogAdministrationEndpointTest {
         assertTrue(handler.isAnnotationPresent(GET.class));
         assertEquals("admin/references", handler.getAnnotation(Path.class).value());
         assertJsonResponse(handler);
-        assertEquals(3, handler.getParameterCount());
+        assertEquals(5, handler.getParameterCount());
         assertEquals(ResourceType.class, handler.getParameterTypes()[0]);
         assertEquals("type", handler.getParameters()[0].getAnnotation(QueryParam.class).value());
         assertEquals(String.class, handler.getParameterTypes()[1]);
         assertEquals("search", handler.getParameters()[1].getAnnotation(QueryParam.class).value());
-        assertEquals(int.class, handler.getParameterTypes()[2]);
-        assertEquals("max", handler.getParameters()[2].getAnnotation(QueryParam.class).value());
-        assertEquals("50", handler.getParameters()[2].getAnnotation(DefaultValue.class).value());
+        assertEquals(String.class, handler.getParameterTypes()[2]);
+        assertEquals("selectedId", handler.getParameters()[2].getAnnotation(QueryParam.class).value());
+        assertEquals(int.class, handler.getParameterTypes()[3]);
+        assertEquals("first", handler.getParameters()[3].getAnnotation(QueryParam.class).value());
+        assertEquals("0", handler.getParameters()[3].getAnnotation(DefaultValue.class).value());
+        assertEquals(int.class, handler.getParameterTypes()[4]);
+        assertEquals("max", handler.getParameters()[4].getAnnotation(QueryParam.class).value());
+        assertEquals("50", handler.getParameters()[4].getAnnotation(DefaultValue.class).value());
     }
 
     @Test
