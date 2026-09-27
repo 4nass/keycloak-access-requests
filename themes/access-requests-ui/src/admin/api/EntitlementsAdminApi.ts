@@ -7,6 +7,9 @@ export type Entitlement = {
     riskLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
     approverRoleId: string;
     requestable: boolean;
+    defaultDurationSeconds: number;
+    maxDurationSeconds: number;
+    allowPermanent: boolean;
     createdAt: string;
     updatedAt: string;
     version: number;
@@ -76,11 +79,13 @@ export type AdminAuditRequestDetails = {
 export type EntitlementCreation = Pick<
     Entitlement,
     "resourceType" | "resourceId" | "displayName" | "description" | "riskLevel" | "approverRoleId"
+    | "defaultDurationSeconds" | "maxDurationSeconds" | "allowPermanent"
 >;
 
 export type EntitlementUpdate = Pick<
     Entitlement,
     "displayName" | "description" | "riskLevel" | "approverRoleId" | "requestable" | "version"
+    | "defaultDurationSeconds" | "maxDurationSeconds" | "allowPermanent"
 >;
 
 export type AdminCapabilities = {

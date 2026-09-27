@@ -48,8 +48,15 @@ import {
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
 import { AccessRequestsAdminTabs } from "./AccessRequestsAdminTabs";
 
-type FormValues = EntitlementCreation & {
+type DurationUnit = "SECONDS" | "HOURS" | "DAYS";
+
+type FormValues = Omit<EntitlementCreation, "defaultDurationSeconds" | "maxDurationSeconds" | "allowPermanent"> & {
     requestable: boolean;
+    defaultDurationAmount: string;
+    defaultDurationUnit: DurationUnit;
+    maxDurationAmount: string;
+    maxDurationUnit: DurationUnit;
+    allowPermanent: boolean;
 };
 
 type DialogState = {
@@ -58,9 +65,19 @@ type DialogState = {
 };
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50].map((value) => ({ title: String(value), value }));
+const DURATION_UNIT_SECONDS: Record<DurationUnit, number> = { SECONDS: 1, HOURS: 3_600, DAYS: 86_400 };
+const DURATION_PRESETS: Record<Entitlement["riskLevel"], Pick<FormValues,
+    "defaultDurationAmount" | "defaultDurationUnit" | "maxDurationAmount" | "maxDurationUnit">> = {
+    LOW: { defaultDurationAmount: "30", defaultDurationUnit: "DAYS", maxDurationAmount: "90", maxDurationUnit: "DAYS" },
+    MEDIUM: { defaultDurationAmount: "7", defaultDurationUnit: "DAYS", maxDurationAmount: "30", maxDurationUnit: "DAYS" },
+    HIGH: { defaultDurationAmount: "8", defaultDurationUnit: "HOURS", maxDurationAmount: "24", maxDurationUnit: "HOURS" },
+    CRITICAL: { defaultDurationAmount: "1", defaultDurationUnit: "HOURS", maxDurationAmount: "4", maxDurationUnit: "HOURS" }
+};
 
 const emptyForm: FormValues = {
     approverRoleId: "",
+    allowPermanent: false,
+    ...DURATION_PRESETS.LOW,
     description: "",
     displayName: "",
     requestable: false,
@@ -80,6 +97,7 @@ export function EntitlementCatalogPage() {
     const [dialog, setDialog] = useState<DialogState>();
     const [form, setForm] = useState<FormValues>(emptyForm);
     const [formError, setFormError] = useState<unknown>();
+    const [durationError, setDurationError] = useState(false);
     const [isSaving, setSaving] = useState(false);
     const [actionNotice, setActionNotice] = useState<string>();
     const latestLoad = useRef(0);
@@ -115,6 +133,7 @@ export function EntitlementCatalogPage() {
         setActionNotice(undefined);
         setForm(emptyForm);
         setFormError(undefined);
+        setDurationError(false);
         setDialog({ mode: "create" });
     };
 
@@ -122,14 +141,20 @@ export function EntitlementCatalogPage() {
         setActionNotice(undefined);
         setForm({
             approverRoleId: entitlement.approverRoleId,
+            allowPermanent: entitlement.allowPermanent,
+            defaultDurationAmount: durationInput(entitlement.defaultDurationSeconds).amount,
+            defaultDurationUnit: durationInput(entitlement.defaultDurationSeconds).unit,
             description: entitlement.description,
             displayName: entitlement.displayName,
             requestable: entitlement.requestable,
+            maxDurationAmount: durationInput(entitlement.maxDurationSeconds).amount,
+            maxDurationUnit: durationInput(entitlement.maxDurationSeconds).unit,
             resourceId: entitlement.resourceId,
             resourceType: entitlement.resourceType,
             riskLevel: entitlement.riskLevel
         });
         setFormError(undefined);
+        setDurationError(false);
         setDialog({ entitlement, mode: "edit" });
     };
 
@@ -146,14 +171,26 @@ export function EntitlementCatalogPage() {
             return;
         }
 
+        const defaultDurationSeconds = durationSeconds(form.defaultDurationAmount, form.defaultDurationUnit);
+        const maxDurationSeconds = durationSeconds(form.maxDurationAmount, form.maxDurationUnit);
+        if (defaultDurationSeconds === undefined || maxDurationSeconds === undefined
+                || defaultDurationSeconds > maxDurationSeconds) {
+            setDurationError(true);
+            return;
+        }
+
         setSaving(true);
         setFormError(undefined);
+        setDurationError(false);
         try {
             if (dialog.mode === "create") {
                 await api.create({
                     approverRoleId: form.approverRoleId,
+                    allowPermanent: form.allowPermanent,
+                    defaultDurationSeconds,
                     description: form.description,
                     displayName: form.displayName,
+                    maxDurationSeconds,
                     resourceId: form.resourceId,
                     resourceType: form.resourceType,
                     riskLevel: form.riskLevel
@@ -162,8 +199,11 @@ export function EntitlementCatalogPage() {
             } else {
                 await api.update(dialog.entitlement!.id, {
                     approverRoleId: form.approverRoleId,
+                    allowPermanent: form.allowPermanent,
+                    defaultDurationSeconds,
                     description: form.description,
                     displayName: form.displayName,
+                    maxDurationSeconds,
                     requestable: form.requestable,
                     riskLevel: form.riskLevel,
                     version: dialog.entitlement!.version
@@ -181,6 +221,12 @@ export function EntitlementCatalogPage() {
 
     const updateField = <Key extends keyof FormValues>(key: Key, value: FormValues[Key]) => {
         setForm((current) => ({ ...current, [key]: value }));
+        setDurationError(false);
+    };
+
+    const updateRisk = (riskLevel: FormValues["riskLevel"]) => {
+        setForm((current) => ({ ...current, riskLevel, ...DURATION_PRESETS[riskLevel], allowPermanent: false }));
+        setDurationError(false);
     };
 
     const refreshMessage = refreshError ? errorText(refreshError, t) : undefined;
@@ -264,12 +310,14 @@ export function EntitlementCatalogPage() {
                 <EntitlementDialog
                     api={api}
                     error={formMessage}
+                    durationError={durationError}
                     form={form}
                     isSaving={isSaving}
                     mode={dialog.mode}
                     onClose={closeDialog}
                     onSave={save}
                     onUpdate={updateField}
+                    onRiskChange={updateRisk}
                 />
             )}
         </>
@@ -298,6 +346,14 @@ function EntitlementListItem({ entitlement, onEdit }: { entitlement: Entitlement
                                 <DescriptionListTerm>{t("accessRequestsAdminApproverRole")}</DescriptionListTerm>
                                 <DescriptionListDescription>{entitlement.approverRoleId}</DescriptionListDescription>
                             </DescriptionListGroup>
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{t("accessRequestsAdminDefaultDuration")}</DescriptionListTerm>
+                                <DescriptionListDescription>{durationText(entitlement.defaultDurationSeconds, t)}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{t("accessRequestsAdminMaxDuration")}</DescriptionListTerm>
+                                <DescriptionListDescription>{durationText(entitlement.maxDurationSeconds, t)}</DescriptionListDescription>
+                            </DescriptionListGroup>
                         </DescriptionList>
                     </DataListCell>,
                     <DataListCell key="state" width={1}>
@@ -306,6 +362,8 @@ function EntitlementListItem({ entitlement, onEdit }: { entitlement: Entitlement
                                 ? "accessRequestsAdminOpenToRequests"
                                 : "accessRequestsAdminClosedToRequests")}
                         </Label>
+                        <Text component="small">{t(entitlement.allowPermanent
+                            ? "accessRequestsAdminPermanentAllowed" : "accessRequestsAdminTemporaryOnly")}</Text>
                     </DataListCell>
                 ]} />
                 <DataListAction aria-labelledby={titleId} id={`entitlement-actions-${entitlement.id}`} aria-label={t("accessRequestsAdminEditEntitlement")}>
@@ -321,21 +379,25 @@ function EntitlementListItem({ entitlement, onEdit }: { entitlement: Entitlement
 function EntitlementDialog({
     api,
     error,
+    durationError,
     form,
     isSaving,
     mode,
     onClose,
     onSave,
-    onUpdate
+    onUpdate,
+    onRiskChange
 }: {
     api: EntitlementsAdminApi;
     error?: string;
+    durationError: boolean;
     form: FormValues;
     isSaving: boolean;
     mode: "create" | "edit";
     onClose: () => void;
     onSave: (event: FormEvent<HTMLFormElement>) => Promise<void>;
     onUpdate: <Key extends keyof FormValues>(key: Key, value: FormValues[Key]) => void;
+    onRiskChange: (riskLevel: FormValues["riskLevel"]) => void;
 }) {
     const { t } = useTranslation();
     const isCreate = mode === "create";
@@ -358,6 +420,7 @@ function EntitlementDialog({
             ]}
         >
             {error && <Alert isInline title={error} variant="danger" className="pf-v5-u-mb-lg" />}
+            {durationError && <Alert isInline title={t("accessRequestsAdminInvalidDuration")} variant="danger" className="pf-v5-u-mb-lg" />}
             <Form id="entitlement-form" onSubmit={(event) => void onSave(event)}>
                 <FormGroup fieldId="entitlement-resource-type" isRequired label={t("accessRequestsAdminResourceType")}>
                     <FormSelect
@@ -419,7 +482,7 @@ function EntitlementDialog({
                     <FormSelect
                         id="entitlement-risk-level"
                         isDisabled={isSaving}
-                        onChange={(_event, value) => onUpdate("riskLevel", value as FormValues["riskLevel"])}
+                        onChange={(_event, value) => onRiskChange(value as FormValues["riskLevel"])}
                         value={form.riskLevel}
                     >
                         <FormSelectOption label={t("accessRequestsAdminRiskLevelLow")} value="LOW" />
@@ -427,6 +490,33 @@ function EntitlementDialog({
                         <FormSelectOption label={t("accessRequestsAdminRiskLevelHigh")} value="HIGH" />
                         <FormSelectOption label={t("accessRequestsAdminRiskLevelCritical")} value="CRITICAL" />
                     </FormSelect>
+                </FormGroup>
+                <DurationFormField
+                    amount={form.defaultDurationAmount}
+                    amountKey="defaultDurationAmount"
+                    isSaving={isSaving}
+                    label={t("accessRequestsAdminDefaultDuration")}
+                    onUpdate={onUpdate}
+                    unit={form.defaultDurationUnit}
+                    unitKey="defaultDurationUnit"
+                />
+                <DurationFormField
+                    amount={form.maxDurationAmount}
+                    amountKey="maxDurationAmount"
+                    isSaving={isSaving}
+                    label={t("accessRequestsAdminMaxDuration")}
+                    onUpdate={onUpdate}
+                    unit={form.maxDurationUnit}
+                    unitKey="maxDurationUnit"
+                />
+                <FormGroup fieldId="entitlement-allow-permanent">
+                    <Checkbox
+                        id="entitlement-allow-permanent"
+                        isChecked={form.allowPermanent}
+                        isDisabled={isSaving}
+                        label={t("accessRequestsAdminAllowPermanent")}
+                        onChange={(_event, checked) => onUpdate("allowPermanent", checked)}
+                    />
                 </FormGroup>
                 <FormGroup fieldId="entitlement-approver-role" isRequired label={t("accessRequestsAdminApproverRole")}>
                     <KeycloakReferenceSelector
@@ -455,6 +545,71 @@ function EntitlementDialog({
             </Form>
         </Modal>
     );
+}
+
+function DurationFormField({ amount, amountKey, isSaving, label, onUpdate, unit, unitKey }: {
+    amount: string;
+    amountKey: "defaultDurationAmount" | "maxDurationAmount";
+    isSaving: boolean;
+    label: string;
+    onUpdate: <Key extends keyof FormValues>(key: Key, value: FormValues[Key]) => void;
+    unit: DurationUnit;
+    unitKey: "defaultDurationUnit" | "maxDurationUnit";
+}) {
+    const { t } = useTranslation();
+    return <>
+        <FormGroup fieldId={amountKey} isRequired label={label}>
+            <TextInput
+                id={amountKey}
+                isDisabled={isSaving}
+                isRequired
+                min={1}
+                onChange={(_event, value) => onUpdate(amountKey, value)}
+                step={1}
+                type="number"
+                value={amount}
+            />
+        </FormGroup>
+        <FormGroup fieldId={unitKey} label={t("accessRequestsAdminDurationUnit")}>
+            <FormSelect
+                id={unitKey}
+                isDisabled={isSaving}
+                onChange={(_event, value) => onUpdate(unitKey, value as DurationUnit)}
+                value={unit}
+            >
+                <FormSelectOption label={t("accessRequestsAdminDurationUnitSeconds")} value="SECONDS" />
+                <FormSelectOption label={t("accessRequestsAdminDurationUnitHours")} value="HOURS" />
+                <FormSelectOption label={t("accessRequestsAdminDurationUnitDays")} value="DAYS" />
+            </FormSelect>
+        </FormGroup>
+    </>;
+}
+
+function durationInput(seconds: number): { amount: string; unit: DurationUnit } {
+    if (seconds % DURATION_UNIT_SECONDS.DAYS === 0) {
+        return { amount: String(seconds / DURATION_UNIT_SECONDS.DAYS), unit: "DAYS" };
+    }
+    if (seconds % DURATION_UNIT_SECONDS.HOURS === 0) {
+        return { amount: String(seconds / DURATION_UNIT_SECONDS.HOURS), unit: "HOURS" };
+    }
+    return { amount: String(seconds), unit: "SECONDS" };
+}
+
+function durationSeconds(amount: string, unit: DurationUnit): number | undefined {
+    const parsed = Number(amount);
+    const seconds = parsed * DURATION_UNIT_SECONDS[unit];
+    return Number.isSafeInteger(parsed) && parsed > 0 && Number.isSafeInteger(seconds)
+        ? seconds : undefined;
+}
+
+function durationText(seconds: number, t: (key: string) => string): string {
+    const input = durationInput(seconds);
+    const unitKey = {
+        SECONDS: "accessRequestsAdminDurationUnitSeconds",
+        HOURS: "accessRequestsAdminDurationUnitHours",
+        DAYS: "accessRequestsAdminDurationUnitDays"
+    }[input.unit];
+    return `${input.amount} ${t(unitKey)}`;
 }
 
 function KeycloakReferenceSelector({

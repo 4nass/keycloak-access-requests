@@ -18,10 +18,13 @@ import { EntitlementCatalogPage } from "./EntitlementCatalogPage";
 
 const entitlement = {
     approverRoleId: "finance-approvers",
+    allowPermanent: false,
     createdAt: "2026-09-04T10:00:00Z",
+    defaultDurationSeconds: 2_592_000,
     description: "Read-only finance access",
     displayName: "Finance Reader",
     id: "finance-reader",
+    maxDurationSeconds: 7_776_000,
     requestable: true,
     resourceId: "finance-reader-role",
     resourceType: "CLIENT_ROLE" as const,
@@ -101,8 +104,11 @@ describe("EntitlementCatalogPage", () => {
 
         await waitFor(() => expect(api.update).toHaveBeenCalledWith("finance-reader", {
             approverRoleId: "finance-approvers",
+            allowPermanent: false,
+            defaultDurationSeconds: 2_592_000,
             description: "Read-only finance access",
             displayName: "Finance Reader",
+            maxDurationSeconds: 7_776_000,
             requestable: false,
             riskLevel: "LOW",
             version: 4
@@ -138,14 +144,60 @@ describe("EntitlementCatalogPage", () => {
 
         await waitFor(() => expect(api.create).toHaveBeenCalledWith({
             approverRoleId: "finance-approvers",
+            allowPermanent: false,
+            defaultDurationSeconds: 2_592_000,
             description: "Read-only finance access.",
             displayName: "Finance reader access",
+            maxDurationSeconds: 7_776_000,
             resourceId: "finance-reader-role",
             resourceType: "REALM_ROLE",
             riskLevel: "LOW"
         }));
         expect(screen.queryByRole("textbox", { name: "accessRequestsAdminResourceId" })).not.toBeInTheDocument();
         expect(screen.queryByRole("textbox", { name: "accessRequestsAdminApproverRole" })).not.toBeInTheDocument();
+    });
+
+    it("lets the administrator change default, maximum, and permanent access independently", async () => {
+        const user = userEvent.setup();
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminEditEntitlement" }));
+        const defaultDuration = screen.getByRole("spinbutton", { name: "accessRequestsAdminDefaultDuration" });
+        const maxDuration = screen.getByRole("spinbutton", { name: "accessRequestsAdminMaxDuration" });
+        expect(defaultDuration).toHaveValue(30);
+        expect(maxDuration).toHaveValue(90);
+        await user.clear(defaultDuration);
+        await user.type(defaultDuration, "14");
+        await user.clear(maxDuration);
+        await user.type(maxDuration, "60");
+        await user.click(screen.getByRole("checkbox", { name: "accessRequestsAdminAllowPermanent" }));
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminSave" }));
+
+        await waitFor(() => expect(api.update).toHaveBeenCalledWith("finance-reader", expect.objectContaining({
+            allowPermanent: true,
+            defaultDurationSeconds: 1_209_600,
+            maxDurationSeconds: 5_184_000
+        })));
+    });
+
+    it("resets duration presets when risk changes and refuses an inverted range", async () => {
+        const user = userEvent.setup();
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminEditEntitlement" }));
+        await user.selectOptions(screen.getByRole("combobox", { name: "accessRequestsAdminRiskLevel" }), "HIGH");
+        const defaultDuration = screen.getByRole("spinbutton", { name: "accessRequestsAdminDefaultDuration" });
+        const maxDuration = screen.getByRole("spinbutton", { name: "accessRequestsAdminMaxDuration" });
+        expect(defaultDuration).toHaveValue(8);
+        expect(maxDuration).toHaveValue(24);
+        await user.clear(maxDuration);
+        await user.type(maxDuration, "4");
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminSave" }));
+
+        expect(api.update).not.toHaveBeenCalled();
+        expect(screen.getByText("accessRequestsAdminInvalidDuration")).toBeVisible();
     });
 
     it("ignores an older page response that arrives after the current page", async () => {

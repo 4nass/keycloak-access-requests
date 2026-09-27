@@ -29,10 +29,13 @@ function request(fetchMock: ReturnType<typeof vi.fn>) {
 
 const entitlement = {
     approverRoleId: "role-finance-approvers",
+    allowPermanent: false,
     createdAt: "2026-09-04T10:00:00Z",
+    defaultDurationSeconds: 2_592_000,
     description: "Read-only finance access",
     displayName: "Finance Reader",
     id: "finance-reader",
+    maxDurationSeconds: 7_776_000,
     requestable: true,
     resourceId: "finance-reader-role",
     resourceType: "CLIENT_ROLE" as const,
@@ -354,8 +357,11 @@ describe("Entitlements administration API client", () => {
         const fetchMock = vi.fn().mockResolvedValue(jsonResponse(entitlement, 201));
         const submission = {
             approverRoleId: entitlement.approverRoleId,
+            allowPermanent: entitlement.allowPermanent,
+            defaultDurationSeconds: entitlement.defaultDurationSeconds,
             description: entitlement.description,
             displayName: entitlement.displayName,
+            maxDurationSeconds: entitlement.maxDurationSeconds,
             resourceId: entitlement.resourceId,
             resourceType: entitlement.resourceType,
             riskLevel: entitlement.riskLevel
@@ -372,8 +378,11 @@ describe("Entitlements administration API client", () => {
         const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ...entitlement, requestable: false, version: 5 }));
         const submission = {
             approverRoleId: entitlement.approverRoleId,
+            allowPermanent: true,
+            defaultDurationSeconds: 1_209_600,
             description: entitlement.description,
             displayName: entitlement.displayName,
+            maxDurationSeconds: 5_184_000,
             requestable: false,
             riskLevel: entitlement.riskLevel,
             version: entitlement.version
