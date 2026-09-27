@@ -56,13 +56,13 @@ Keycloak database, roles, and groups
 
 ## Domain boundaries
 
-`core/domain` defines the vocabulary and state transitions. It does not depend on Keycloak or JPA.
+`core/domain` defines the vocabulary and state transitions. `entitlement` owns published access metadata, including resource type and risk; `catalog` defines the requester-facing search results. `request` owns the access request lifecycle and decision state, while `approval` defines the approver queue and authorization failures. `grant` tracks access provenance and provisioning outcomes, and `notification` describes lifecycle messages. These packages depend on `entitlement` and `request` where needed, without reverse dependencies or Keycloak/JPA types.
 
 `core/port` defines the infrastructure capabilities required by the services: repositories, transaction handling, history publication, role membership, user status, existing-access checks, and provisioning.
 
 `core/service` coordinates use cases. It protects request state, request ownership, duplicate pending requests, approval authorization, self-approval, concurrency, and provisioning outcomes.
 
-`persistence/jpa` and `spi` implement those ports with Keycloak's runtime APIs. This keeps Keycloak-specific types outside the domain and makes the core unit-testable without a running server.
+`persistence/jpa` separates mapped `entity` classes from `repository` implementations; its transaction adapter remains at the JPA package root. `spi` connects those adapters to Keycloak's runtime APIs. This keeps Keycloak-specific types outside the domain and makes the core unit-testable without a running server.
 
 ## Persistence and consistency
 
