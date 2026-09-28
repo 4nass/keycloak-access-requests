@@ -1188,8 +1188,9 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 requestSubmission(
                         requestsEndpoint,
                         requesterToken,
-                        entitlementId,
-                        approvalRequestJustification),
+                        """
+                        {"entitlementId":"%s","justification":"%s","durationSeconds":14400}
+                        """.formatted(entitlementId, approvalRequestJustification)),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(201, approvedRequestResponse.statusCode());
         String approvedRequestId = responseId(approvedRequestResponse.body());
@@ -2098,21 +2099,26 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var requestStatement = connection.prepareStatement("""
-                     select PROVISIONING_STATUS
+                      select PROVISIONING_STATUS, REQUESTED_DURATION_SECONDS, PERMANENT
                        from AR_ACCESS_REQUEST
                       where ID = ?
                      """)) {
             requestStatement.setString(1, requestId);
+            Long requestedDurationSeconds;
+            boolean permanent;
             try (ResultSet result = requestStatement.executeQuery()) {
                 assertTrue(result.next(), "The provisioned request must be persisted.");
                 assertEquals(provisioningStatus, result.getString("PROVISIONING_STATUS"));
+                requestedDurationSeconds = result.getObject("REQUESTED_DURATION_SECONDS", Long.class);
+                permanent = result.getBoolean("PERMANENT");
                 assertFalse(result.next(), "Exactly one provisioned request must be persisted.");
             }
 
             assertProvisioningAuditEvent(connection, requestId, "PROVISIONING_STARTED", approverId);
             assertProvisioningAuditEvent(connection, requestId, completionEventType, approverId);
             try (var grantStatement = connection.prepareStatement("""
-                    select GRANT_ORIGIN, REVOCATION_STATE, REALM_ID, REQUESTER_ID, RESOURCE_TYPE, RESOURCE_ID
+                     select GRANT_ORIGIN, REVOCATION_STATE, REALM_ID, REQUESTER_ID, RESOURCE_TYPE, RESOURCE_ID,
+                            RECORDED_TIMESTAMP, EXPIRES_TIMESTAMP
                       from AR_ACCESS_GRANT
                      where REQUEST_ID = ?
                     """)) {
@@ -2126,6 +2132,12 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         assertTrue(grant.getString("REQUESTER_ID") != null);
                         assertTrue(grant.getString("RESOURCE_TYPE") != null);
                         assertTrue(grant.getString("RESOURCE_ID") != null);
+                        Long expectedExpiry = "CREATED_BY_EXTENSION".equals(expectedGrantOrigin)
+                                && !permanent && requestedDurationSeconds != null
+                                ? Instant.ofEpochMilli(grant.getLong("RECORDED_TIMESTAMP"))
+                                        .plusSeconds(requestedDurationSeconds).toEpochMilli()
+                                : null;
+                        assertEquals(expectedExpiry, grant.getObject("EXPIRES_TIMESTAMP", Long.class));
                         assertFalse(grant.next(), "A request must have exactly one grant record.");
                     } else {
                         assertFalse(grant.next(), "Failed provisioning must not persist a grant record.");

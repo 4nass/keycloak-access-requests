@@ -134,6 +134,7 @@ class AccessRequestJpaChangelogTest {
             assertEquals(Set.of(
                             "REQUEST_ID", "REALM_ID", "REQUESTER_ID", "ENTITLEMENT_ID",
                             "RESOURCE_TYPE", "RESOURCE_ID", "GRANT_ORIGIN", "RECORDED_TIMESTAMP",
+                            "EXPIRES_TIMESTAMP",
                             "REVOCATION_STATE", "VERSION"),
                     columnsOf(connection, "AR_ACCESS_GRANT"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")

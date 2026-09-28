@@ -5,6 +5,7 @@ import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.request.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningStatus;
+import java.time.DateTimeException;
 import java.time.Instant;
 import java.util.Objects;
 
@@ -20,13 +21,21 @@ public record AccessGrant(
         String resourceId,
         GrantOrigin origin,
         Instant recordedAt,
+        Instant expiresAt,
         GrantRevocationState revocationState,
         long version) {
 
     public AccessGrant(String requestId, String realmId, String requesterId, String entitlementId,
             ResourceType resourceType, String resourceId, GrantOrigin origin, Instant recordedAt) {
         this(requestId, realmId, requesterId, entitlementId, resourceType, resourceId, origin, recordedAt,
-                GrantRevocationState.UNVERIFIED, 0);
+                null, GrantRevocationState.UNVERIFIED, 0);
+    }
+
+    public AccessGrant(String requestId, String realmId, String requesterId, String entitlementId,
+            ResourceType resourceType, String resourceId, GrantOrigin origin, Instant recordedAt,
+            GrantRevocationState revocationState, long version) {
+        this(requestId, realmId, requesterId, entitlementId, resourceType, resourceId, origin, recordedAt,
+                null, revocationState, version);
     }
 
     public AccessGrant {
@@ -38,6 +47,12 @@ public record AccessGrant(
         resourceId = requireText(resourceId, "resourceId");
         origin = Objects.requireNonNull(origin, "origin must not be null");
         recordedAt = Objects.requireNonNull(recordedAt, "recordedAt must not be null");
+        if (expiresAt != null && !expiresAt.isAfter(recordedAt)) {
+            throw new IllegalArgumentException("expiresAt must be after recordedAt");
+        }
+        if (origin == GrantOrigin.PREEXISTING && expiresAt != null) {
+            throw new IllegalArgumentException("Preexisting access must not have an extension-owned expiry");
+        }
         revocationState = Objects.requireNonNull(revocationState, "revocationState must not be null");
         if (version < 0) {
             throw new IllegalArgumentException("version must not be negative");
@@ -49,7 +64,8 @@ public record AccessGrant(
         }
     }
 
-    public static AccessGrant from(AccessRequest request, Entitlement entitlement, GrantOrigin origin, Instant recordedAt) {
+    public static AccessGrant from(
+            AccessRequest request, Entitlement entitlement, GrantOrigin origin, Instant recordedAt) {
         Objects.requireNonNull(request, "request must not be null");
         Objects.requireNonNull(entitlement, "entitlement must not be null");
         if (request.decisionStatus() != DecisionStatus.APPROVED
@@ -62,8 +78,19 @@ public record AccessGrant(
                 || !request.resourceId().equals(entitlement.resourceId())) {
             throw new IllegalArgumentException("The request and entitlement must identify the same resource");
         }
+        Instant expiresAt = null;
+        // A legacy request without a selected duration cannot acquire an invented expiry here.
+        if (origin == GrantOrigin.CREATED_BY_EXTENSION && !request.permanent()
+                && request.requestedDurationSeconds() != null) {
+            try {
+                expiresAt = recordedAt.plusSeconds(request.requestedDurationSeconds());
+            } catch (DateTimeException | ArithmeticException exception) {
+                throw new IllegalArgumentException("Requested duration cannot be represented as an expiry", exception);
+            }
+        }
         return new AccessGrant(request.id(), request.realmId(), request.requesterId(), entitlement.id(),
-                entitlement.resourceType(), entitlement.resourceId(), origin, recordedAt);
+                entitlement.resourceType(), entitlement.resourceId(), origin, recordedAt, expiresAt,
+                GrantRevocationState.UNVERIFIED, 0);
     }
 
     /**
@@ -91,7 +118,7 @@ public record AccessGrant(
 
     private AccessGrant withState(GrantRevocationState state) {
         return new AccessGrant(requestId, realmId, requesterId, entitlementId, resourceType, resourceId,
-                origin, recordedAt, state, version);
+                origin, recordedAt, expiresAt, state, version);
     }
 
     private static String requireText(String value, String name) {

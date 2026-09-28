@@ -45,6 +45,9 @@ public class AccessGrantEntity {
     @Column(name = "RECORDED_TIMESTAMP", nullable = false)
     private long recordedTimestamp;
 
+    @Column(name = "EXPIRES_TIMESTAMP")
+    private Long expiresTimestamp;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "REVOCATION_STATE", nullable = false, length = 30)
     private GrantRevocationState revocationState;
@@ -65,6 +68,7 @@ public class AccessGrantEntity {
         resourceId = grant.resourceId();
         origin = grant.origin();
         recordedTimestamp = grant.recordedAt().toEpochMilli();
+        expiresTimestamp = grant.expiresAt() == null ? null : grant.expiresAt().toEpochMilli();
         revocationState = grant.revocationState();
         version = grant.version();
     }
@@ -75,7 +79,8 @@ public class AccessGrantEntity {
 
     public AccessGrant toDomain() {
         return new AccessGrant(requestId, realmId, requesterId, entitlementId, resourceType, resourceId,
-                origin, Instant.ofEpochMilli(recordedTimestamp), revocationState, version);
+                origin, Instant.ofEpochMilli(recordedTimestamp),
+                expiresTimestamp == null ? null : Instant.ofEpochMilli(expiresTimestamp), revocationState, version);
     }
 
     public String realmId() {

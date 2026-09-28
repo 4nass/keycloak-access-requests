@@ -64,6 +64,21 @@ class AccessGrantTest {
     }
 
     @Test
+    void rejectsAnExpiryAtOrBeforeActivationAndAnyExpiryOnPreexistingAccess() {
+        AccessGrant grant = AccessGrant.from(
+                successfulRequest(28_800L, false), entitlement(), GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT);
+
+        assertThrows(IllegalArgumentException.class, () -> new AccessGrant(
+                grant.requestId(), grant.realmId(), grant.requesterId(), grant.entitlementId(),
+                grant.resourceType(), grant.resourceId(), grant.origin(), GRANTED_AT, GRANTED_AT,
+                GrantRevocationState.UNVERIFIED, 0));
+        assertThrows(IllegalArgumentException.class, () -> new AccessGrant(
+                grant.requestId(), grant.realmId(), grant.requesterId(), grant.entitlementId(),
+                grant.resourceType(), grant.resourceId(), GrantOrigin.PREEXISTING, GRANTED_AT, grant.expiresAt(),
+                GrantRevocationState.UNVERIFIED, 0));
+    }
+
+    @Test
     void recordsOwnedAndPreexistingAccessSeparately() {
         AccessGrant owned = AccessGrant.from(request(), entitlement(), GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT);
         AccessGrant preexisting = AccessGrant.from(request(), entitlement(), GrantOrigin.PREEXISTING, GRANTED_AT);
@@ -81,11 +96,13 @@ class AccessGrantTest {
 
     @Test
     void invalidatesARecordedGrantAndRejectsRevocationWithoutExplicitAuthority() {
-        AccessGrant owned = AccessGrant.from(request(), entitlement(), GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT);
+        AccessGrant owned = AccessGrant.from(
+                successfulRequest(28_800L, false), entitlement(), GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT);
 
         assertThrows(IllegalStateException.class, owned::markRevoked);
         AccessGrant invalidated = owned.invalidate();
         assertEquals(GrantRevocationState.INVALIDATED, invalidated.revocationState());
+        assertEquals(owned.expiresAt(), invalidated.expiresAt());
         assertFalse(invalidated.canAutoRevoke());
         assertThrows(IllegalStateException.class, invalidated::markRevoked);
     }

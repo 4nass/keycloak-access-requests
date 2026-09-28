@@ -319,6 +319,9 @@
         </createIndex>
     </changeSet>
     <changeSet id="entitlement-duration-policy" author="4nass">
+        <addColumn tableName="AR_ACCESS_GRANT">
+            <column name="EXPIRES_TIMESTAMP" type="BIGINT"/>
+        </addColumn>
         <addColumn tableName="AR_ACCESS_REQUEST">
             <column name="REQUESTED_DURATION_SECONDS" type="BIGINT"/>
             <column name="PERMANENT" type="BOOLEAN" defaultValueBoolean="false">

@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -71,6 +72,20 @@ class JpaAccessGrantRepositoryTest {
     }
 
     @Test
+    void preservesTheExpiryOfAnExtensionOwnedTemporaryGrant() {
+        Instant recordedAt = Instant.parse("2026-09-01T10:15:30Z");
+        AccessGrant temporary = new AccessGrant("request-temporary", "realm-1", "user-1", "entitlement-1",
+                ResourceType.REALM_ROLE, "role-1", GrantOrigin.CREATED_BY_EXTENSION,
+                recordedAt, recordedAt.plus(Duration.ofHours(4)),
+                GrantRevocationState.UNVERIFIED, 0);
+
+        inTransaction(() -> repository.create(temporary));
+        entityManager.clear();
+
+        assertEquals(temporary, repository.findByRequestId("realm-1", "request-temporary").orElseThrow());
+    }
+
+    @Test
     void doesNotPersistAGrantWhenItsTransactionRollsBack() {
         AccessGrant grant = grant("request-3", GrantOrigin.CREATED_BY_EXTENSION);
         entityManager.getTransaction().begin();
@@ -84,7 +99,11 @@ class JpaAccessGrantRepositoryTest {
 
     @Test
     void invalidatesAGrantOnceWithOptimisticLockingAndRealmIsolation() {
-        inTransaction(() -> repository.create(grant("request-4", GrantOrigin.CREATED_BY_EXTENSION)));
+        Instant recordedAt = Instant.parse("2026-09-01T10:15:30Z");
+        AccessGrant expiring = new AccessGrant("request-4", "realm-1", "user-1", "entitlement-1",
+                ResourceType.REALM_ROLE, "role-1", GrantOrigin.CREATED_BY_EXTENSION,
+                recordedAt, recordedAt.plus(Duration.ofHours(4)), GrantRevocationState.UNVERIFIED, 0);
+        inTransaction(() -> repository.create(expiring));
         entityManager.clear();
 
         assertTrue(inTransactionResult(() -> repository.invalidateIfVersionMatches("other-realm", "request-4", 0))
@@ -93,6 +112,7 @@ class JpaAccessGrantRepositoryTest {
                 () -> repository.invalidateIfVersionMatches("realm-1", "request-4", 0).orElseThrow());
 
         assertEquals(GrantRevocationState.INVALIDATED, invalidated.revocationState());
+        assertEquals(expiring.expiresAt(), invalidated.expiresAt());
         assertEquals(1, invalidated.version());
         assertFalse(invalidated.canAutoRevoke());
         assertTrue(inTransactionResult(() -> repository.invalidateIfVersionMatches("realm-1", "request-4", 0)).isEmpty());
