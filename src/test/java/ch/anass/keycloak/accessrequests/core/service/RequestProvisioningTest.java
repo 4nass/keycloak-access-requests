@@ -68,6 +68,39 @@ class RequestProvisioningTest {
     }
 
     @Test
+    void anUnrepresentableExpiryPreventsApprovalBeforeProvisioning() {
+        Fixture fixture = fixtureWithDuration(List.of(ProvisioningOutcome.SUCCEEDED), Long.MAX_VALUE, false);
+
+        assertThrows(InvalidRequestedDurationException.class,
+                () -> fixture.service().approve("realm-1", "request-1", "approver-1", "Approved."));
+
+        assertEquals(0, fixture.provisioner().grantAttempts());
+        assertEquals(DecisionStatus.PENDING, fixture.persistedRequest().decisionStatus());
+        assertTrue(fixture.events().published().isEmpty());
+        assertTrue(fixture.grants().findByRequestId("realm-1", "request-1").isEmpty());
+    }
+
+    @Test
+    void anUnrepresentableExpiryPreventsRetryBeforeProvisioning() {
+        Fixture fixture = fixtureWithDuration(List.of(ProvisioningOutcome.FAILED, ProvisioningOutcome.SUCCEEDED),
+                Duration.ofHours(4).toSeconds(), false);
+        fixture.service().approve("realm-1", "request-1", "approver-1", "Approved.");
+        int eventCount = fixture.events().published().size();
+        Clock lateClock = Clock.fixed(Instant.ofEpochMilli(Long.MAX_VALUE - 500), ZoneOffset.UTC);
+        RequestService retryService = provisioningEnabledService(
+                fixture.entitlement(), fixture.requests(), fixture.events(), fixture.provisioner(),
+                fixture.grants(), lateClock);
+
+        assertThrows(InvalidRequestedDurationException.class,
+                () -> retryService.retryProvisioning("realm-1", "request-1", "manager-1"));
+
+        assertEquals(1, fixture.provisioner().grantAttempts());
+        assertEquals(ProvisioningStatus.FAILED, fixture.persistedRequest().provisioningStatus());
+        assertEquals(eventCount, fixture.events().published().size());
+        assertTrue(fixture.grants().findByRequestId("realm-1", "request-1").isEmpty());
+    }
+
+    @Test
     void startsTheFullRequestedDurationOnSuccessfulRetryRatherThanOnApproval() {
         Fixture fixture = fixtureWithDuration(
                 List.of(ProvisioningOutcome.FAILED, ProvisioningOutcome.SUCCEEDED), 14_400L, false);

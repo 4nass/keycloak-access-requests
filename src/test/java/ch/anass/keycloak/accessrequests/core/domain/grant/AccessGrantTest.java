@@ -61,6 +61,11 @@ class AccessGrantTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> AccessGrant.from(request, entitlement(), GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT));
+
+        AccessRequest beyondPersistedTimestamp = successfulRequest(Long.MAX_VALUE / 1_000 - 1, false);
+        assertThrows(IllegalArgumentException.class,
+                () -> AccessGrant.from(beyondPersistedTimestamp, entitlement(),
+                        GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT));
     }
 
     @Test

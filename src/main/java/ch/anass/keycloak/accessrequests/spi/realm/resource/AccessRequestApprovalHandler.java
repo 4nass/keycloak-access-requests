@@ -10,6 +10,7 @@ import ch.anass.keycloak.accessrequests.core.service.EntitlementNotRequestableEx
 import ch.anass.keycloak.accessrequests.core.service.ConcurrentRequestModificationException;
 import ch.anass.keycloak.accessrequests.core.service.RequestNotFoundException;
 import ch.anass.keycloak.accessrequests.core.service.RequestService;
+import ch.anass.keycloak.accessrequests.core.service.InvalidRequestedDurationException;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.CapabilitiesResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.DecisionSubmission;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.PendingRequestListResponse;
@@ -91,6 +92,8 @@ final class AccessRequestApprovalHandler extends AccessRequestHandlerSupport {
             return error(Response.Status.NOT_FOUND, "ENTITLEMENT_NOT_FOUND", exception.getMessage(), requestId);
         } catch (EntitlementNotRequestableException exception) {
             return error(Response.Status.CONFLICT, "ENTITLEMENT_NOT_REQUESTABLE", exception.getMessage(), requestId);
+        } catch (InvalidRequestedDurationException exception) {
+            return error(Response.Status.CONFLICT, "INVALID_REQUESTED_DURATION", exception.getMessage(), requestId);
         } catch (InvalidRequestStateException exception) {
             return error(Response.Status.CONFLICT, "INVALID_REQUEST_STATE", exception.getMessage(), requestId);
         } catch (ConcurrentRequestModificationException exception) {

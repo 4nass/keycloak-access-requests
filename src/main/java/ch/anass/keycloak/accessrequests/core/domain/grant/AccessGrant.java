@@ -1,11 +1,11 @@
 package ch.anass.keycloak.accessrequests.core.domain.grant;
 
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.request.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningStatus;
-import java.time.DateTimeException;
 import java.time.Instant;
 import java.util.Objects;
 
@@ -82,11 +82,7 @@ public record AccessGrant(
         // A legacy request without a selected duration cannot acquire an invented expiry here.
         if (origin == GrantOrigin.CREATED_BY_EXTENSION && !request.permanent()
                 && request.requestedDurationSeconds() != null) {
-            try {
-                expiresAt = recordedAt.plusSeconds(request.requestedDurationSeconds());
-            } catch (DateTimeException | ArithmeticException exception) {
-                throw new IllegalArgumentException("Requested duration cannot be represented as an expiry", exception);
-            }
+            expiresAt = DurationPolicy.expiryAt(recordedAt, request.requestedDurationSeconds());
         }
         return new AccessGrant(request.id(), request.realmId(), request.requesterId(), entitlement.id(),
                 entitlement.resourceType(), entitlement.resourceId(), origin, recordedAt, expiresAt,

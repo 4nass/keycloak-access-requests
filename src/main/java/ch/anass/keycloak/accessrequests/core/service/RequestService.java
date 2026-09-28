@@ -7,6 +7,7 @@ import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.request.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidProvisioningRetryException;
 import ch.anass.keycloak.accessrequests.core.domain.grant.ProvisioningResult;
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureCode;
@@ -158,6 +159,9 @@ public final class RequestService {
                 try {
                     entitlement.durationPolicy().validate(
                             selectedDuration == null ? null : Duration.ofSeconds(selectedDuration), permanent);
+                    if (!permanent) {
+                        DurationPolicy.expiryAt(Instant.now(clock), selectedDuration);
+                    }
                 } catch (IllegalArgumentException exception) {
                     throw new InvalidRequestedDurationException();
                 }
@@ -223,6 +227,7 @@ public final class RequestService {
             AccessRequest candidate = request.copy();
             Instant decidedAt = Instant.now(clock);
             candidate.approve(approverId, decisionComment, decidedAt);
+            requireRepresentableExpiry(candidate, decidedAt);
             AccessRequest approved = updateOrThrow(candidate, request.version());
             AccessRequestEvent approvalEvent = AccessRequestEvent.approved(
                     approved, approverId, decidedAt, decisionComment);
@@ -268,6 +273,7 @@ public final class RequestService {
             }
 
             Instant startedAt = Instant.now(clock);
+            requireRepresentableExpiry(request, startedAt);
             publish(AccessRequestEvent.provisioningStarted(request, actorId, startedAt), request, entitlement);
 
             ProvisioningResult result = provision(request.id(), realmId, request.requesterId(), entitlement);
@@ -330,6 +336,16 @@ public final class RequestService {
     private void publish(AccessRequestEvent event, AccessRequest request, Entitlement entitlement) {
         eventPublisher.publish(event);
         notificationPolicy.notificationsFor(request, entitlement, event).forEach(notificationPublisher::publish);
+    }
+
+    private static void requireRepresentableExpiry(AccessRequest request, Instant activatedAt) {
+        if (!request.permanent() && request.requestedDurationSeconds() != null) {
+            try {
+                DurationPolicy.expiryAt(activatedAt, request.requestedDurationSeconds());
+            } catch (IllegalArgumentException exception) {
+                throw new InvalidRequestedDurationException();
+            }
+        }
     }
 
     private AccessRequest findRequest(String realmId, String requestId) {

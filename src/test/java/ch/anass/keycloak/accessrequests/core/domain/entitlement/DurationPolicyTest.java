@@ -6,6 +6,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -71,6 +72,18 @@ class DurationPolicyTest {
                 () -> new DurationPolicy(Duration.ofMillis(500), Duration.ofDays(1), false));
         assertThrows(IllegalArgumentException.class,
                 () -> new DurationPolicy(Duration.ofHours(1), Duration.ofMillis(500), false));
+    }
+
+    @Test
+    void rejectsAnUnstorableMaximumAndChecksThePersistedExpiryBoundary() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new DurationPolicy(Duration.ofDays(1), Duration.ofSeconds(Long.MAX_VALUE), false));
+
+        Instant lastPersistableInstant = Instant.ofEpochMilli(Long.MAX_VALUE);
+        assertEquals(lastPersistableInstant,
+                DurationPolicy.expiryAt(lastPersistableInstant.minusSeconds(1), 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> DurationPolicy.expiryAt(lastPersistableInstant.minusSeconds(1), 2));
     }
 
     private static Stream<Arguments> initialPolicies() {

@@ -209,10 +209,12 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
             throw new BadRequestException("defaultDurationSeconds and maxDurationSeconds must be provided together");
         }
         try {
-            return new DurationPolicy(Duration.ofSeconds(defaultSeconds), Duration.ofSeconds(maxSeconds),
+            DurationPolicy policy = new DurationPolicy(Duration.ofSeconds(defaultSeconds), Duration.ofSeconds(maxSeconds),
                     Boolean.TRUE.equals(allowPermanent));
+            DurationPolicy.expiryAt(Instant.now(), maxSeconds);
+            return policy;
         } catch (IllegalArgumentException exception) {
-            throw new BadRequestException("defaultDurationSeconds must be positive and no greater than maxDurationSeconds",
+            throw new BadRequestException("Duration bounds must be positive, ordered, and representable as an expiry",
                     exception);
         }
     }

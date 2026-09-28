@@ -1,6 +1,8 @@
 package ch.anass.keycloak.accessrequests.core.domain.entitlement;
 
 import java.time.Duration;
+import java.time.DateTimeException;
+import java.time.Instant;
 import java.util.Objects;
 
 /** Configured bounds for the duration selected by a requester. */
@@ -24,6 +26,11 @@ public record DurationPolicy(Duration defaultDuration, Duration maxDuration, boo
             throw new IllegalArgumentException(
                     "Durations must be positive whole seconds and defaultDuration must not exceed maxDuration");
         }
+        try {
+            maxDuration.toMillis();
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException("Maximum duration cannot be stored as an expiry", exception);
+        }
     }
 
     public void validate(Duration requestedDuration, boolean permanent) {
@@ -40,5 +47,20 @@ public record DurationPolicy(Duration defaultDuration, Duration maxDuration, boo
 
     private static boolean isPositive(Duration duration) {
         return !duration.isZero() && !duration.isNegative();
+    }
+
+    /** The grant expiry must fit both Instant and the persisted epoch-millisecond timestamp. */
+    public static Instant expiryAt(Instant activatedAt, long durationSeconds) {
+        Objects.requireNonNull(activatedAt, "activatedAt must not be null");
+        if (durationSeconds <= 0) {
+            throw new IllegalArgumentException("Requested duration must be positive");
+        }
+        try {
+            Instant expiresAt = activatedAt.plusSeconds(durationSeconds);
+            expiresAt.toEpochMilli();
+            return expiresAt;
+        } catch (DateTimeException | ArithmeticException exception) {
+            throw new IllegalArgumentException("Requested duration cannot be represented as an expiry", exception);
+        }
     }
 }

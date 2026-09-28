@@ -140,6 +140,23 @@ class RequestServiceTest {
     }
 
     @Test
+    void rejectsAConfiguredDurationWhoseExpiryCannotBePersisted() {
+        long veryLongDuration = Long.MAX_VALUE / 1_000 - 1;
+        Entitlement entitlement = financeEntitlement().updateDetails(
+                "Finance Reader", "Read-only access to finance data.", RiskLevel.LOW,
+                "finance-access-approver",
+                new DurationPolicy(Duration.ofDays(1), Duration.ofSeconds(veryLongDuration), false),
+                Instant.EPOCH.plusSeconds(1));
+        entitlements.add(entitlement);
+
+        assertThrows(InvalidRequestedDurationException.class, () -> service.create(
+                "realm-1", "requester-1", "entitlement-1", "Access is needed for the finance project.",
+                veryLongDuration, false));
+        assertFalse(requests.hasSavedRequests());
+        assertTrue(events.published().isEmpty());
+    }
+
+    @Test
     void permanentAccessIsRejectedUnlessTheEntitlementExplicitlyAllowsIt() {
         entitlements.add(financeEntitlement());
         assertThrows(InvalidRequestedDurationException.class, () -> service.create(
