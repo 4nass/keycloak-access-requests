@@ -284,7 +284,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertTrue(tableExists(connection, "ar_entitlement"));
             assertTrue(tableExists(connection, "ar_entitlement_history"));
             assertTrue(tableExists(connection, "ar_notification_outbox"));
-            assertEquals(1, providerChangeSetCount(connection));
+            assertEquals(2, providerChangeSetCount(connection));
         }
     }
 
@@ -1599,7 +1599,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(409, approval.statusCode(),
                 "Keycloak maps the injected grant constraint violation to a conflict response.");
         assertRealmRoleNotAssigned(server, adminToken, requesterId, roleId);
-        assertPendingRequestAndCreatedAuditEvent(requestId, entitlementId, requesterId, justification);
+        assertPendingRequestAndCreatedAuditEvent(requestId, entitlementId, requesterId, justification, 2_592_000L);
         assertNoGrantForRequest(requestId);
 
         HttpResponse<String> recoveredApproval = HttpClient.newHttpClient().send(
@@ -1949,7 +1949,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertTrue(createdResponse.body().contains("\"durationSeconds\":7776000"));
         assertTrue(createdResponse.body().contains("\"permanent\":false"));
         assertPendingRequestAndCreatedAuditEvent(
-                requestId, entitlementId, subjectOf(accessToken), justification);
+                requestId, entitlementId, subjectOf(accessToken), justification, 7_776_000L);
 
         HttpResponse<Void> duplicateResponse = HttpClient.newHttpClient().send(
                 requestSubmission(endpoint, accessToken, entitlementId, justification),
@@ -1992,7 +1992,11 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     }
 
     private void assertPendingRequestAndCreatedAuditEvent(
-            String requestId, String entitlementId, String requesterId, String justification) throws SQLException {
+            String requestId,
+            String entitlementId,
+            String requesterId,
+            String justification,
+            long expectedDurationSeconds) throws SQLException {
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              var requestStatement = connection.prepareStatement("""
@@ -2010,7 +2014,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 assertEquals(justification, result.getString("JUSTIFICATION"));
                 assertEquals("PENDING", result.getString("DECISION_STATUS"));
                 assertEquals("NOT_STARTED", result.getString("PROVISIONING_STATUS"));
-                assertEquals(7_776_000L, result.getLong("REQUESTED_DURATION_SECONDS"));
+                assertEquals(expectedDurationSeconds, result.getLong("REQUESTED_DURATION_SECONDS"));
                 assertFalse(result.getBoolean("PERMANENT"));
                 assertFalse(result.next(), "Exactly one submitted request must be persisted.");
             }
