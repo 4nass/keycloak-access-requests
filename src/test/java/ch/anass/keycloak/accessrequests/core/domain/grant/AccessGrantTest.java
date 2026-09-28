@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.core.domain.grant;
 
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
@@ -8,16 +9,59 @@ import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureC
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningStatus;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AccessGrantTest {
 
     private static final Instant GRANTED_AT = Instant.parse("2026-09-01T10:15:30Z");
+
+    @Test
+    void activatesTemporaryAccessAtProvisioningSuccessAndExpiresAfterTheRequestedDuration() {
+        AccessRequest request = successfulRequest(28_800L, false);
+
+        AccessGrant grant = AccessGrant.from(request, entitlement(), GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT);
+
+        assertEquals(GRANTED_AT, grant.recordedAt());
+        assertEquals(GRANTED_AT.plus(Duration.ofHours(8)), grant.expiresAt());
+        assertFalse(grant.canAutoRevoke(), "An expiration alone must not authorize revocation.");
+    }
+
+    @Test
+    void leavesAnExplicitlyAllowedPermanentGrantWithoutAnExpiry() {
+        Entitlement entitlement = Entitlement.create("entitlement-1", "realm-1", ResourceType.REALM_ROLE,
+                "role-1", "Role", "Role description", RiskLevel.LOW, "approver-role",
+                new DurationPolicy(Duration.ofDays(30), Duration.ofDays(90), true), GRANTED_AT);
+
+        AccessGrant grant = AccessGrant.from(
+                successfulRequest(null, true), entitlement, GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT);
+
+        assertEquals(GRANTED_AT, grant.recordedAt());
+        assertNull(grant.expiresAt());
+    }
+
+    @Test
+    void doesNotScheduleExpiryForAccessThatExistedBeforeProvisioning() {
+        AccessGrant grant = AccessGrant.from(
+                successfulRequest(28_800L, false), entitlement(), GrantOrigin.PREEXISTING, GRANTED_AT);
+
+        assertNull(grant.expiresAt());
+        assertFalse(grant.canAutoRevoke());
+    }
+
+    @Test
+    void rejectsAnExpiryThatCannotBeRepresentedAsAnInstant() {
+        AccessRequest request = successfulRequest(Long.MAX_VALUE, false);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> AccessGrant.from(request, entitlement(), GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT));
+    }
 
     @Test
     void recordsOwnedAndPreexistingAccessSeparately() {
@@ -85,6 +129,21 @@ class AccessGrantTest {
     }
 
     @Test
+    void rejectsAnApprovedRequestWhoseProvisioningFailedOrHasNotStarted() {
+        AccessRequest notStarted = AccessRequest.create("request-2", "realm-1", "user-1", "entitlement-1",
+                ResourceType.REALM_ROLE, "role-1", "Role", "Business justification",
+                GRANTED_AT.minus(Duration.ofHours(1)), 28_800L, false);
+        notStarted.approve("approver-1", "Approved", GRANTED_AT.minus(Duration.ofMinutes(5)));
+        AccessRequest failed = notStarted.copy();
+        failed.markProvisioningFailed(GRANTED_AT);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> AccessGrant.from(notStarted, entitlement(), GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT));
+        assertThrows(IllegalArgumentException.class,
+                () -> AccessGrant.from(failed, entitlement(), GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT));
+    }
+
+    @Test
     void requiresAnOriginForSuccessAndForbidsOneOnFailure() {
         assertThrows(IllegalArgumentException.class,
                 () -> new ProvisioningResult(ProvisioningStatus.SUCCEEDED, null, null, null));
@@ -105,6 +164,15 @@ class AccessGrantTest {
         AccessRequest request = AccessRequest.create("request-1", "realm-1", "user-1", "entitlement-1",
                 ResourceType.REALM_ROLE, "role-1", "Role", "Business justification", GRANTED_AT);
         request.approve("approver-1", "Approved", GRANTED_AT);
+        request.markProvisioningSucceeded(GRANTED_AT);
+        return request;
+    }
+
+    private static AccessRequest successfulRequest(Long durationSeconds, boolean permanent) {
+        AccessRequest request = AccessRequest.create("request-1", "realm-1", "user-1", "entitlement-1",
+                ResourceType.REALM_ROLE, "role-1", "Role", "Business justification",
+                GRANTED_AT.minus(Duration.ofHours(1)), durationSeconds, permanent);
+        request.approve("approver-1", "Approved", GRANTED_AT.minus(Duration.ofMinutes(5)));
         request.markProvisioningSucceeded(GRANTED_AT);
         return request;
     }

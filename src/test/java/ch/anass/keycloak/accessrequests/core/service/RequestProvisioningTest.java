@@ -13,6 +13,7 @@ import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.request.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidProvisioningRetryException;
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidProvisioningClosureException;
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidRequestStateException;
@@ -33,6 +34,7 @@ import ch.anass.keycloak.accessrequests.core.port.UserStatusReader;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -46,12 +48,53 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequestProvisioningTest {
 
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-09-01T10:15:30Z"), ZoneOffset.UTC);
+
+    @Test
+    void activatesATemporaryGrantOnlyAfterSuccessfulProvisioning() {
+        Fixture fixture = fixtureWithDuration(List.of(ProvisioningOutcome.SUCCEEDED), 14_400L, false);
+
+        fixture.service().approve("realm-1", "request-1", "approver-1", "Approved.");
+
+        AccessGrant grant = fixture.grants().findByRequestId("realm-1", "request-1").orElseThrow();
+        assertEquals(CLOCK.instant(), grant.recordedAt());
+        assertEquals(CLOCK.instant().plus(Duration.ofHours(4)), grant.expiresAt());
+    }
+
+    @Test
+    void startsTheFullRequestedDurationOnSuccessfulRetryRatherThanOnApproval() {
+        Fixture fixture = fixtureWithDuration(
+                List.of(ProvisioningOutcome.FAILED, ProvisioningOutcome.SUCCEEDED), 14_400L, false);
+        fixture.service().approve("realm-1", "request-1", "approver-1", "Approved.");
+        assertTrue(fixture.grants().findByRequestId("realm-1", "request-1").isEmpty());
+
+        Clock retryClock = Clock.offset(CLOCK, Duration.ofDays(2));
+        RequestService retryService = provisioningEnabledService(
+                fixture.entitlement(), fixture.requests(), fixture.events(), fixture.provisioner(),
+                fixture.grants(), retryClock);
+        retryService.retryProvisioning("realm-1", "request-1", "manager-1");
+
+        AccessGrant grant = fixture.grants().findByRequestId("realm-1", "request-1").orElseThrow();
+        assertEquals(retryClock.instant(), grant.recordedAt());
+        assertEquals(retryClock.instant().plus(Duration.ofHours(4)), grant.expiresAt());
+    }
+
+    @Test
+    void leavesAnAllowedPermanentGrantWithoutAnExpiry() {
+        Fixture fixture = fixtureWithDuration(List.of(ProvisioningOutcome.SUCCEEDED), null, true);
+
+        fixture.service().approve("realm-1", "request-1", "approver-1", "Approved.");
+
+        AccessGrant grant = fixture.grants().findByRequestId("realm-1", "request-1").orElseThrow();
+        assertEquals(CLOCK.instant(), grant.recordedAt());
+        assertNull(grant.expiresAt());
+    }
 
     @Test
     void provisionsAnApprovedRequestAndRecordsTheSuccessfulDelivery() {
@@ -109,6 +152,7 @@ class RequestProvisioningTest {
         AccessGrant grant = fixture.grants().findByRequestId("realm-1", approved.id()).orElseThrow();
         assertEquals(GrantOrigin.PREEXISTING, grant.origin());
         assertEquals(GrantRevocationState.UNVERIFIED, grant.revocationState());
+        assertNull(grant.expiresAt(), "Preexisting access must not be scheduled for extension-owned expiry.");
         assertTrue(!grant.canAutoRevoke());
     }
 
@@ -277,6 +321,7 @@ class RequestProvisioningTest {
                 .map(event -> event.requestVersion())
                 .toList());
         assertEquals(ProvisioningStatus.FAILED, fixture.persistedRequest().provisioningStatus());
+        assertTrue(fixture.grants().findByRequestId("realm-1", fixture.request().id()).isEmpty());
     }
 
     @Test
@@ -551,14 +596,44 @@ class RequestProvisioningTest {
         return new Fixture(service, entitlement, request, requests, events, provisioner, grants);
     }
 
+    private static Fixture fixtureWithDuration(
+            List<ProvisioningOutcome> outcomes, Long durationSeconds, boolean permanent) {
+        Entitlement entitlement = Entitlement.create(
+                        "entitlement-1", "realm-1", ResourceType.REALM_ROLE, "resource-1",
+                        "Temporary role", "Access needed for a limited period.", RiskLevel.HIGH,
+                        "approver-role", new DurationPolicy(Duration.ofHours(8), Duration.ofHours(24), permanent),
+                        CLOCK.instant().minus(Duration.ofHours(1)))
+                .publish(CLOCK.instant().minus(Duration.ofMinutes(50)));
+        AccessRequest request = AccessRequest.create(
+                "request-1", entitlement.realmId(), "requester-1", entitlement.id(), entitlement.resourceType(),
+                entitlement.resourceId(), entitlement.displayName(), "Business justification",
+                CLOCK.instant().minus(Duration.ofMinutes(10)), durationSeconds, permanent);
+        InMemoryAccessRequestRepository requests = new InMemoryAccessRequestRepository(request);
+        RecordingEventPublisher events = new RecordingEventPublisher();
+        RecordingProvisioner provisioner = new RecordingProvisioner(outcomes);
+        RecordingGrantRepository grants = new RecordingGrantRepository();
+        RequestService service = provisioningEnabledService(entitlement, requests, events, provisioner, grants);
+        return new Fixture(service, entitlement, request, requests, events, provisioner, grants);
+    }
+
     private static RequestService provisioningEnabledService(
             Entitlement entitlement,
             InMemoryAccessRequestRepository requests,
             RecordingEventPublisher events,
             RecordingProvisioner provisioner,
             RecordingGrantRepository grants) {
+        return provisioningEnabledService(entitlement, requests, events, provisioner, grants, CLOCK);
+    }
+
+    private static RequestService provisioningEnabledService(
+            Entitlement entitlement,
+            InMemoryAccessRequestRepository requests,
+            RecordingEventPublisher events,
+            RecordingProvisioner provisioner,
+            RecordingGrantRepository grants,
+            Clock clock) {
         return provisioningEnabledService(
-                new SingleEntitlementRepository(entitlement), requests, events, provisioner, grants);
+                new SingleEntitlementRepository(entitlement), requests, events, provisioner, grants, clock);
     }
 
     private static RequestService provisioningEnabledService(
@@ -567,6 +642,16 @@ class RequestProvisioningTest {
             RecordingEventPublisher events,
             RecordingProvisioner provisioner,
             RecordingGrantRepository grants) {
+        return provisioningEnabledService(entitlementRepository, requests, events, provisioner, grants, CLOCK);
+    }
+
+    private static RequestService provisioningEnabledService(
+            EntitlementRepository entitlementRepository,
+            InMemoryAccessRequestRepository requests,
+            RecordingEventPublisher events,
+            RecordingProvisioner provisioner,
+            RecordingGrantRepository grants,
+            Clock clock) {
         return new RequestService(
                 entitlementRepository,
                 requests,
@@ -583,7 +668,7 @@ class RequestProvisioningTest {
                     }
                 },
                 List.of(provisioner),
-                CLOCK);
+                clock);
     }
 
     private record Fixture(
