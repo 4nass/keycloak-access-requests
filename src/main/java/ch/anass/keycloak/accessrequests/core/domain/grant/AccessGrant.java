@@ -95,7 +95,19 @@ public record AccessGrant(
      */
     public boolean canAutoRevoke() {
         return origin == GrantOrigin.CREATED_BY_EXTENSION
+                && expiresAt != null
                 && revocationState == GrantRevocationState.AUTHORIZED;
+    }
+
+    public boolean isDueAt(Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        return origin == GrantOrigin.CREATED_BY_EXTENSION
+                && expiresAt != null
+                && !now.isBefore(expiresAt);
+    }
+
+    public boolean canAutoRevokeAt(Instant now) {
+        return canAutoRevoke() && isDueAt(now);
     }
 
     public AccessGrant invalidate() {

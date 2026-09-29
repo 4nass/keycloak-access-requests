@@ -4,7 +4,7 @@ import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantOrigin;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationState;
-import ch.anass.keycloak.accessrequests.core.port.AccessGrantRepository;
+import ch.anass.keycloak.accessrequests.core.port.AccessGrantRevocationRepository;
 import ch.anass.keycloak.accessrequests.core.port.AccessGrantRevocationAuthority;
 import ch.anass.keycloak.accessrequests.core.port.AccessGrantRevoker;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
@@ -138,6 +138,18 @@ class AccessGrantRevocationServiceTest {
         assertEquals(GrantRevocationState.AUTHORIZED, fixture.repository.current().revocationState());
     }
 
+    @Test
+    void aMisScopedRepositoryResultFailsClosedBeforeCallingTheRevoker() {
+        Fixture fixture = fixture(grant(GrantOrigin.CREATED_BY_EXTENSION, EXPIRES_AT,
+                GrantRevocationState.AUTHORIZED), true, AT_EXPIRY);
+        fixture.repository.returnWrongScopedGrant = true;
+
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service().revokeExpired("other-realm", "request-1"));
+        assertEquals(0, fixture.removals.get());
+        assertEquals(GrantRevocationState.AUTHORIZED, fixture.repository.current().revocationState());
+    }
+
     private static void revokeAfter(CountDownLatch start, Fixture fixture) {
         try {
             start.await();
@@ -184,8 +196,9 @@ class AccessGrantRevocationServiceTest {
         }
     }
 
-    private static final class InMemoryGrantRepository implements AccessGrantRepository {
+    private static final class InMemoryGrantRepository implements AccessGrantRevocationRepository {
         private AccessGrant current;
+        private boolean returnWrongScopedGrant;
 
         private InMemoryGrantRepository(AccessGrant grant) {
             current = grant;
@@ -202,8 +215,9 @@ class AccessGrantRevocationServiceTest {
                     ? Optional.of(current) : Optional.empty();
         }
 
+        @Override
         public Optional<AccessGrant> findByRequestIdForUpdate(String realmId, String requestId) {
-            return findByRequestId(realmId, requestId);
+            return returnWrongScopedGrant ? Optional.of(current) : findByRequestId(realmId, requestId);
         }
 
         @Override
@@ -216,6 +230,7 @@ class AccessGrantRevocationServiceTest {
             return Optional.of(current);
         }
 
+        @Override
         public Optional<AccessGrant> updateIfVersionMatches(AccessGrant updated, long expectedVersion) {
             if (!current.realmId().equals(updated.realmId()) || !current.requestId().equals(updated.requestId())
                     || current.version() != expectedVersion) {

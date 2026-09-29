@@ -114,10 +114,11 @@ class AccessGrantTest {
 
     @Test
     void onlyAnExplicitlyAuthorizedActiveJitGrantCanBeMarkedRevoked() {
-        AccessGrant grant = AccessGrant.from(request(), entitlement(), GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT);
+        AccessGrant grant = AccessGrant.from(successfulRequest(28_800L, false), entitlement(),
+                GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT);
         AccessGrant authorized = new AccessGrant(grant.requestId(), grant.realmId(), grant.requesterId(),
                 grant.entitlementId(), grant.resourceType(), grant.resourceId(), grant.origin(), grant.recordedAt(),
-                GrantRevocationState.AUTHORIZED, grant.version());
+                grant.expiresAt(), GrantRevocationState.AUTHORIZED, grant.version());
 
         assertTrue(authorized.canAutoRevoke());
         assertEquals(GrantRevocationState.REVOKED, authorized.markRevoked().revocationState());
