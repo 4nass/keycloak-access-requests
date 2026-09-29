@@ -5,6 +5,8 @@ import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantOrigin;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationState;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.port.AccessGrantRevocationRepository;
+import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestTransaction;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.Persistence;
@@ -16,9 +18,18 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.time.Duration;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JpaAccessGrantRepositoryTest {
@@ -117,6 +128,169 @@ class JpaAccessGrantRepositoryTest {
         assertFalse(invalidated.canAutoRevoke());
         assertTrue(inTransactionResult(() -> repository.invalidateIfVersionMatches("realm-1", "request-4", 0)).isEmpty());
         assertTrue(inTransactionResult(() -> repository.invalidateIfVersionMatches("realm-1", "request-4", 1)).isEmpty());
+    }
+
+    @Test
+    void revocationUpdateRequiresTheExpectedRealmVersionAndAuthorizedState() {
+        AccessGrant authorized = authorizedGrant("request-revoke");
+        inTransaction(() -> repository.create(authorized));
+        entityManager.clear();
+        AccessGrantRevocationRepository revocation = revocationRepository();
+        AccessGrant revoked = authorized.markRevoked();
+
+        assertTrue(inTransactionResult(() -> revocation.findByRequestIdForUpdate(
+                "other-realm", authorized.requestId())).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(revoked, 1)).isEmpty());
+        AccessGrant wrongRealm = new AccessGrant(revoked.requestId(), "other-realm", revoked.requesterId(),
+                revoked.entitlementId(), revoked.resourceType(), revoked.resourceId(), revoked.origin(),
+                revoked.recordedAt(), revoked.expiresAt(), revoked.revocationState(), revoked.version());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(wrongRealm, 0)).isEmpty());
+        AccessGrant changedResource = new AccessGrant(revoked.requestId(), revoked.realmId(), revoked.requesterId(),
+                revoked.entitlementId(), revoked.resourceType(), "other-role", revoked.origin(),
+                revoked.recordedAt(), revoked.expiresAt(), revoked.revocationState(), revoked.version());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(changedResource, 0)).isEmpty());
+        AccessGrant forgedVersion = new AccessGrant(revoked.requestId(), revoked.realmId(), revoked.requesterId(),
+                revoked.entitlementId(), revoked.resourceType(), revoked.resourceId(), revoked.origin(),
+                revoked.recordedAt(), revoked.expiresAt(), revoked.revocationState(), 9);
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(forgedVersion, 0)).isEmpty());
+        assertEquals(authorized, repository.findByRequestId("realm-1", authorized.requestId()).orElseThrow());
+
+        AccessGrant persisted = inTransactionResult(() -> revocation.updateIfVersionMatches(revoked, 0).orElseThrow());
+        assertEquals(GrantRevocationState.REVOKED, persisted.revocationState());
+        assertEquals(1, persisted.version());
+        assertEquals(authorized.expiresAt(), persisted.expiresAt());
+        assertEquals(authorized.resourceId(), persisted.resourceId());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(revoked, 0)).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(revoked, 1)).isEmpty());
+        assertTrue(inTransactionResult(() -> repository.invalidateIfVersionMatches(
+                "realm-1", authorized.requestId(), 1)).isEmpty());
+    }
+
+    @Test
+    void invalidationPreventsAStaleRevocationAndUnauthorizedGrantsCannotBeMarkedRevoked() {
+        AccessGrant authorized = authorizedGrant("request-invalidated");
+        AccessGrant unverified = temporaryGrant("request-unverified", GrantRevocationState.UNVERIFIED);
+        inTransaction(() -> {
+            repository.create(authorized);
+            repository.create(unverified);
+        });
+        entityManager.clear();
+        AccessGrantRevocationRepository revocation = revocationRepository();
+
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                asRevoked(unverified), 0)).isEmpty());
+        assertEquals(GrantRevocationState.INVALIDATED, inTransactionResult(() -> repository
+                .invalidateIfVersionMatches("realm-1", authorized.requestId(), 0).orElseThrow())
+                .revocationState());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                authorized.markRevoked(), 0)).isEmpty());
+        assertEquals(GrantRevocationState.INVALIDATED,
+                repository.findByRequestId("realm-1", authorized.requestId()).orElseThrow().revocationState());
+    }
+
+    @Test
+    void aRolledBackRevocationLeavesTheGrantAuthorizedForRetry() {
+        AccessGrant authorized = authorizedGrant("request-rollback");
+        inTransaction(() -> repository.create(authorized));
+        entityManager.clear();
+        AccessGrantRevocationRepository revocation = revocationRepository();
+
+        entityManager.getTransaction().begin();
+        try {
+            revocation.findByRequestIdForUpdate("realm-1", authorized.requestId()).orElseThrow();
+            assertEquals(GrantRevocationState.REVOKED,
+                    revocation.updateIfVersionMatches(authorized.markRevoked(), 0).orElseThrow().revocationState());
+        } finally {
+            entityManager.getTransaction().rollback();
+            entityManager.clear();
+        }
+
+        assertEquals(authorized, repository.findByRequestId("realm-1", authorized.requestId()).orElseThrow());
+    }
+
+    @Test
+    void pessimisticGrantLockSerializesTwoTransactions() throws Exception {
+        revocationRepository();
+        AccessGrant authorized = authorizedGrant("request-lock");
+        inTransaction(() -> repository.create(authorized));
+        entityManager.clear();
+        CountDownLatch firstLocked = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        CountDownLatch secondAttempted = new CountDownLatch(1);
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> first = workers.submit(() -> {
+                EntityManager manager = entityManagerFactory.createEntityManager();
+                try {
+                    new JpaAccessRequestTransaction(manager).execute(() -> {
+                        AccessGrantRevocationRepository revocation = AccessGrantRevocationRepository.class.cast(
+                                new JpaAccessGrantRepository(manager));
+                        AccessGrant locked = revocation.findByRequestIdForUpdate("realm-1", authorized.requestId())
+                                .orElseThrow();
+                        firstLocked.countDown();
+                        await(releaseFirst);
+                        revocation.updateIfVersionMatches(locked.markRevoked(), locked.version()).orElseThrow();
+                        return null;
+                    });
+                } finally {
+                    manager.close();
+                }
+            });
+            assertTrue(firstLocked.await(10, TimeUnit.SECONDS));
+
+            Future<Optional<AccessGrant>> second = workers.submit(() -> {
+                EntityManager manager = entityManagerFactory.createEntityManager();
+                try {
+                    secondAttempted.countDown();
+                    return new JpaAccessRequestTransaction(manager).execute(() ->
+                            AccessGrantRevocationRepository.class.cast(new JpaAccessGrantRepository(manager))
+                                    .findByRequestIdForUpdate("realm-1", authorized.requestId()));
+                } finally {
+                    manager.close();
+                }
+            });
+            assertTrue(secondAttempted.await(10, TimeUnit.SECONDS));
+            assertThrows(TimeoutException.class, () -> second.get(250, TimeUnit.MILLISECONDS));
+
+            releaseFirst.countDown();
+            first.get(10, TimeUnit.SECONDS);
+            assertEquals(GrantRevocationState.REVOKED, second.get(10, TimeUnit.SECONDS).orElseThrow().revocationState());
+        } finally {
+            releaseFirst.countDown();
+            workers.shutdownNow();
+        }
+    }
+
+    private AccessGrantRevocationRepository revocationRepository() {
+        return assertInstanceOf(AccessGrantRevocationRepository.class, repository);
+    }
+
+    private static AccessGrant authorizedGrant(String requestId) {
+        return temporaryGrant(requestId, GrantRevocationState.AUTHORIZED);
+    }
+
+    private static AccessGrant temporaryGrant(String requestId, GrantRevocationState state) {
+        Instant recordedAt = Instant.parse("2026-09-01T10:15:30Z");
+        return new AccessGrant(requestId, "realm-1", "user-1", "entitlement-1", ResourceType.REALM_ROLE,
+                "jit-role-1", GrantOrigin.CREATED_BY_EXTENSION, recordedAt, recordedAt.plus(Duration.ofHours(4)),
+                state, 0);
+    }
+
+    private static AccessGrant asRevoked(AccessGrant grant) {
+        return new AccessGrant(grant.requestId(), grant.realmId(), grant.requesterId(), grant.entitlementId(),
+                grant.resourceType(), grant.resourceId(), grant.origin(), grant.recordedAt(), grant.expiresAt(),
+                GrantRevocationState.REVOKED, grant.version());
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for the other transaction");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(exception);
+        }
     }
 
     private static AccessGrant grant(String requestId, GrantOrigin origin) {
