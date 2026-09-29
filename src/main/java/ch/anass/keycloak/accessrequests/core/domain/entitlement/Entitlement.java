@@ -15,6 +15,7 @@ public final class Entitlement {
     private final String approverRoleId;
     private final DurationPolicy durationPolicy;
     private final boolean requestable;
+    private final boolean exclusiveJit;
     private final Instant createdAt;
     private final Instant updatedAt;
     private final long version;
@@ -30,6 +31,7 @@ public final class Entitlement {
             String approverRoleId,
             DurationPolicy durationPolicy,
             boolean requestable,
+            boolean exclusiveJit,
             Instant createdAt,
             Instant updatedAt,
             long version) {
@@ -43,6 +45,7 @@ public final class Entitlement {
         this.approverRoleId = requireText(approverRoleId, "approverRoleId");
         this.durationPolicy = Objects.requireNonNull(durationPolicy, "durationPolicy must not be null");
         this.requestable = requestable;
+        this.exclusiveJit = exclusiveJit;
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
         if (updatedAt.isBefore(createdAt)) {
@@ -89,6 +92,7 @@ public final class Entitlement {
                 riskLevel,
                 approverRoleId,
                 durationPolicy,
+                false,
                 false,
                 createdAt,
                 createdAt,
@@ -138,9 +142,30 @@ public final class Entitlement {
                 approverRoleId,
                 durationPolicy,
                 requestable,
+                false,
                 createdAt,
                 updatedAt,
                 version);
+    }
+
+    public static Entitlement rehydrate(
+            String id,
+            String realmId,
+            ResourceType resourceType,
+            String resourceId,
+            String displayName,
+            String description,
+            RiskLevel riskLevel,
+            String approverRoleId,
+            DurationPolicy durationPolicy,
+            boolean requestable,
+            boolean exclusiveJit,
+            Instant createdAt,
+            Instant updatedAt,
+            long version) {
+        return new Entitlement(id, realmId, resourceType, resourceId, displayName, description,
+                riskLevel, approverRoleId, durationPolicy, requestable, exclusiveJit,
+                createdAt, updatedAt, version);
     }
 
     public String id() {
@@ -183,6 +208,10 @@ public final class Entitlement {
         return requestable;
     }
 
+    public boolean exclusiveJit() {
+        return exclusiveJit;
+    }
+
     public Instant createdAt() {
         return createdAt;
     }
@@ -209,6 +238,15 @@ public final class Entitlement {
             return this;
         }
         return copy(false, timestamp, version);
+    }
+
+    /** Declaration that this entitlement targets a resource reserved for extension-managed JIT access. */
+    public Entitlement withExclusiveJit(boolean exclusiveJit, Instant occurredAt) {
+        Instant timestamp = requireLifecycleTimestamp(occurredAt);
+        if (this.exclusiveJit == exclusiveJit) {
+            return this;
+        }
+        return copy(requestable, exclusiveJit, timestamp, version);
     }
 
     public Entitlement updateDetails(
@@ -241,16 +279,21 @@ public final class Entitlement {
                 approverRoleId,
                 durationPolicy,
                 requestable,
+                exclusiveJit,
                 createdAt,
                 timestamp,
                 version);
     }
 
     public Entitlement withVersion(long version) {
-        return copy(requestable, updatedAt, version);
+        return copy(requestable, exclusiveJit, updatedAt, version);
     }
 
     private Entitlement copy(boolean requestable, Instant updatedAt, long version) {
+        return copy(requestable, exclusiveJit, updatedAt, version);
+    }
+
+    private Entitlement copy(boolean requestable, boolean exclusiveJit, Instant updatedAt, long version) {
         return new Entitlement(
                 id,
                 realmId,
@@ -262,6 +305,7 @@ public final class Entitlement {
                 approverRoleId,
                 durationPolicy,
                 requestable,
+                exclusiveJit,
                 createdAt,
                 updatedAt,
                 version);

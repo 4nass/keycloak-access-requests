@@ -110,6 +110,26 @@ public record AccessGrant(
         return canAutoRevoke() && isDueAt(now);
     }
 
+    /**
+     * Authorizes expiry only when current entitlement policy and an independent check agree.
+     * The caller must obtain that check while holding the grant and entitlement locks.
+     */
+    public AccessGrant authorizeForRevocation(Entitlement entitlement, boolean exclusivelyManaged) {
+        Objects.requireNonNull(entitlement, "entitlement must not be null");
+        if (!realmId.equals(entitlement.realmId()) || !entitlementId.equals(entitlement.id())
+                || resourceType != entitlement.resourceType() || !resourceId.equals(entitlement.resourceId())) {
+            throw new IllegalArgumentException("Grant and entitlement must identify the same resource");
+        }
+        if (origin != GrantOrigin.CREATED_BY_EXTENSION || expiresAt == null
+                || revocationState == GrantRevocationState.INVALIDATED
+                || revocationState == GrantRevocationState.REVOKED
+                || !entitlement.exclusiveJit() || !exclusivelyManaged) {
+            throw new IllegalStateException("Exclusive JIT revocation authority has not been verified");
+        }
+        return revocationState == GrantRevocationState.AUTHORIZED
+                ? this : withState(GrantRevocationState.AUTHORIZED);
+    }
+
     public AccessGrant invalidate() {
         if (revocationState == GrantRevocationState.REVOKED) {
             throw new IllegalStateException("A revoked grant cannot be invalidated");
