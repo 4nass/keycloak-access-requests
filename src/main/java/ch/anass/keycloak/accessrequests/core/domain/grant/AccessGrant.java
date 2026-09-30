@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.core.domain.grant;
 
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.JitAccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
@@ -23,7 +24,15 @@ public record AccessGrant(
         Instant recordedAt,
         Instant expiresAt,
         GrantRevocationState revocationState,
-        long version) {
+        long version,
+        String deliveryGroupId) {
+
+    public AccessGrant(String requestId, String realmId, String requesterId, String entitlementId,
+            ResourceType resourceType, String resourceId, GrantOrigin origin, Instant recordedAt,
+            Instant expiresAt, GrantRevocationState revocationState, long version) {
+        this(requestId, realmId, requesterId, entitlementId, resourceType, resourceId, origin, recordedAt,
+                expiresAt, revocationState, version, null);
+    }
 
     public AccessGrant(String requestId, String realmId, String requesterId, String entitlementId,
             ResourceType resourceType, String resourceId, GrantOrigin origin, Instant recordedAt) {
@@ -62,10 +71,19 @@ public record AccessGrant(
                 || revocationState == GrantRevocationState.REVOKED)) {
             throw new IllegalArgumentException("Preexisting access cannot be authorized for revocation");
         }
+        if (deliveryGroupId != null) {
+            deliveryGroupId = requireText(deliveryGroupId, "deliveryGroupId");
+        }
     }
 
     public static AccessGrant from(
             AccessRequest request, Entitlement entitlement, GrantOrigin origin, Instant recordedAt) {
+        return from(request, entitlement, origin, recordedAt, null);
+    }
+
+    public static AccessGrant from(
+            AccessRequest request, Entitlement entitlement, GrantOrigin origin, Instant recordedAt,
+            JitAccessPackage accessPackage) {
         Objects.requireNonNull(request, "request must not be null");
         Objects.requireNonNull(entitlement, "entitlement must not be null");
         if (request.decisionStatus() != DecisionStatus.APPROVED
@@ -78,6 +96,10 @@ public record AccessGrant(
                 || !request.resourceId().equals(entitlement.resourceId())) {
             throw new IllegalArgumentException("The request and entitlement must identify the same resource");
         }
+        if (accessPackage != null && (!request.realmId().equals(accessPackage.realmId())
+                || !entitlement.id().equals(accessPackage.entitlementId()))) {
+            throw new IllegalArgumentException("The JIT package must match the provisioned entitlement");
+        }
         Instant expiresAt = null;
         // A legacy request without a selected duration cannot acquire an invented expiry here.
         if (origin == GrantOrigin.CREATED_BY_EXTENSION && !request.permanent()
@@ -86,7 +108,7 @@ public record AccessGrant(
         }
         return new AccessGrant(request.id(), request.realmId(), request.requesterId(), entitlement.id(),
                 entitlement.resourceType(), entitlement.resourceId(), origin, recordedAt, expiresAt,
-                GrantRevocationState.UNVERIFIED, 0);
+                GrantRevocationState.UNVERIFIED, 0, accessPackage == null ? null : accessPackage.groupId());
     }
 
     /**
@@ -95,6 +117,7 @@ public record AccessGrant(
      */
     public boolean canAutoRevoke() {
         return origin == GrantOrigin.CREATED_BY_EXTENSION
+                && deliveryGroupId == null
                 && expiresAt != null
                 && revocationState == GrantRevocationState.AUTHORIZED;
     }
@@ -123,7 +146,7 @@ public record AccessGrant(
         if (origin != GrantOrigin.CREATED_BY_EXTENSION || expiresAt == null
                 || revocationState == GrantRevocationState.INVALIDATED
                 || revocationState == GrantRevocationState.REVOKED
-                || !entitlement.exclusiveJit() || !exclusivelyManaged) {
+                || deliveryGroupId != null || !entitlement.exclusiveJit() || !exclusivelyManaged) {
             throw new IllegalStateException("Exclusive JIT revocation authority has not been verified");
         }
         return revocationState == GrantRevocationState.AUTHORIZED
@@ -146,7 +169,7 @@ public record AccessGrant(
 
     private AccessGrant withState(GrantRevocationState state) {
         return new AccessGrant(requestId, realmId, requesterId, entitlementId, resourceType, resourceId,
-                origin, recordedAt, expiresAt, state, version);
+                origin, recordedAt, expiresAt, state, version, deliveryGroupId);
     }
 
     private static String requireText(String value, String name) {

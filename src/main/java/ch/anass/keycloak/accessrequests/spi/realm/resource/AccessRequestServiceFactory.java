@@ -14,8 +14,10 @@ import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequ
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlementAuditEventPublisher;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlementRepository;
+import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaJitAccessPackageRepository;
 import ch.anass.keycloak.accessrequests.spi.notification.KeycloakAccessRequestNotificationOutboxPublisher;
 import ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakEntitlementProvisioner;
+import ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakJitPackageMembership;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakAccessRequestTransaction;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakEffectiveAccessChecker;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakRoleMembershipReader;
@@ -77,17 +79,19 @@ final class AccessRequestServiceFactory {
         return new CatalogService(
                 new JpaEntitlementRepository(entityManager),
                 new JpaAccessRequestRepository(entityManager),
-                new KeycloakEffectiveAccessChecker(session, realm, user));
+                new KeycloakEffectiveAccessChecker(session, realm, user,
+                        new JpaJitAccessPackageRepository(entityManager)));
     }
 
     RequestService requestService(RealmModel realm, UserModel user) {
         EntityManager entityManager = entityManager();
         var entitlementRepository = new JpaEntitlementRepository(entityManager);
+        var jitPackages = new JpaJitAccessPackageRepository(entityManager);
         return new RequestService(
                 entitlementRepository,
                 new JpaAccessRequestRepository(entityManager),
                 new JpaAccessGrantRepository(entityManager),
-                new KeycloakEffectiveAccessChecker(session, realm, user),
+                new KeycloakEffectiveAccessChecker(session, realm, user, jitPackages),
                 new KeycloakUserStatusReader(realm, user),
                 REQUEST_POLICY,
                 new JpaAccessRequestEventPublisher(entityManager),
@@ -96,7 +100,8 @@ final class AccessRequestServiceFactory {
                         new KeycloakRoleMembershipReader(realm, user)),
                 transaction(),
                 List.of(new KeycloakEntitlementProvisioner(session, realm)),
-                new KeycloakAccessRequestNotificationOutboxPublisher(realm, entityManager));
+                new KeycloakAccessRequestNotificationOutboxPublisher(realm, entityManager),
+                java.time.Clock.systemUTC(), jitPackages, new KeycloakJitPackageMembership(session, realm));
     }
 
     ApprovalQueueService approvalQueueService(RealmModel realm, UserModel user) {

@@ -97,6 +97,27 @@ class JpaAccessGrantRepositoryTest {
     }
 
     @Test
+    void persistsJitDeliveryGroupWithoutAuthorizingLegacyDirectRevocation() {
+        Instant recordedAt = Instant.parse("2026-09-01T10:15:30Z");
+        AccessGrant jitGrant = new AccessGrant("request-jit", "realm-1", "user-1", "entitlement-1",
+                ResourceType.REALM_ROLE, "source-role", GrantOrigin.CREATED_BY_EXTENSION,
+                recordedAt, recordedAt.plus(Duration.ofHours(4)), GrantRevocationState.AUTHORIZED, 0,
+                "jit-group-1");
+        inTransaction(() -> repository.create(jitGrant));
+        entityManager.clear();
+
+        AccessGrant persisted = repository.findByRequestId("realm-1", "request-jit").orElseThrow();
+        assertEquals(jitGrant, persisted);
+        assertEquals("jit-group-1", persisted.deliveryGroupId());
+        assertFalse(persisted.canAutoRevoke());
+        assertTrue(inTransactionResult(() -> revocationRepository().updateIfVersionMatches(
+                new AccessGrant(persisted.requestId(), persisted.realmId(), persisted.requesterId(),
+                        persisted.entitlementId(), persisted.resourceType(), persisted.resourceId(),
+                        persisted.origin(), persisted.recordedAt(), persisted.expiresAt(),
+                        GrantRevocationState.REVOKED, persisted.version(), persisted.deliveryGroupId()), 0)).isEmpty());
+    }
+
+    @Test
     void doesNotPersistAGrantWhenItsTransactionRollsBack() {
         AccessGrant grant = grant("request-3", GrantOrigin.CREATED_BY_EXTENSION);
         entityManager.getTransaction().begin();

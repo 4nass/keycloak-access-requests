@@ -38,6 +38,9 @@ public class AccessGrantEntity {
     @Column(name = "RESOURCE_ID", nullable = false, length = 255)
     private String resourceId;
 
+    @Column(name = "DELIVERY_GROUP_ID", length = 255)
+    private String deliveryGroupId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "GRANT_ORIGIN", nullable = false, length = 30)
     private GrantOrigin origin;
@@ -66,6 +69,7 @@ public class AccessGrantEntity {
         entitlementId = grant.entitlementId();
         resourceType = grant.resourceType();
         resourceId = grant.resourceId();
+        deliveryGroupId = grant.deliveryGroupId();
         origin = grant.origin();
         recordedTimestamp = grant.recordedAt().toEpochMilli();
         expiresTimestamp = grant.expiresAt() == null ? null : grant.expiresAt().toEpochMilli();
@@ -80,7 +84,8 @@ public class AccessGrantEntity {
     public AccessGrant toDomain() {
         return new AccessGrant(requestId, realmId, requesterId, entitlementId, resourceType, resourceId,
                 origin, Instant.ofEpochMilli(recordedTimestamp),
-                expiresTimestamp == null ? null : Instant.ofEpochMilli(expiresTimestamp), revocationState, version);
+                expiresTimestamp == null ? null : Instant.ofEpochMilli(expiresTimestamp), revocationState, version,
+                deliveryGroupId);
     }
 
     public String realmId() {

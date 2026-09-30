@@ -7,6 +7,7 @@ import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.request.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.JitAccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidProvisioningRetryException;
 import ch.anass.keycloak.accessrequests.core.domain.grant.ProvisioningResult;
@@ -25,6 +26,8 @@ import ch.anass.keycloak.accessrequests.core.port.DuplicatePendingRequestExcepti
 import ch.anass.keycloak.accessrequests.core.port.EffectiveAccessChecker;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementProvisioner;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
+import ch.anass.keycloak.accessrequests.core.port.JitAccessPackageProvisioner;
+import ch.anass.keycloak.accessrequests.core.port.JitAccessPackageRepository;
 import ch.anass.keycloak.accessrequests.core.port.UserStatusReader;
 
 import java.time.Clock;
@@ -41,6 +44,20 @@ public final class RequestService {
     private static final Logger LOG = Logger.getLogger(RequestService.class.getName());
     private static final AccessRequestNotificationPublisher NO_OP_NOTIFICATION_PUBLISHER = notification -> {
     };
+    private static final JitAccessPackageRepository NO_JIT_PACKAGES = new JitAccessPackageRepository() {
+        @Override
+        public void create(JitAccessPackage accessPackage) {
+            throw new UnsupportedOperationException("JIT package creation requires a configured repository");
+        }
+
+        @Override
+        public java.util.Optional<JitAccessPackage> findByEntitlementId(String realmId, String entitlementId) {
+            return java.util.Optional.empty();
+        }
+    };
+    private static final JitAccessPackageProvisioner NO_JIT_PROVISIONER = (realmId, requesterId, accessPackage) ->
+            ProvisioningResult.failed(ProvisioningFailureCode.PROVIDER_UNAVAILABLE,
+                    "No JIT package provisioner is configured.");
 
     private final EntitlementRepository entitlementRepository;
     private final AccessRequestRepository accessRequestRepository;
@@ -54,6 +71,8 @@ public final class RequestService {
     private final ApprovalAuthorizer approvalAuthorizer;
     private final AccessRequestTransaction transaction;
     private final List<EntitlementProvisioner> provisioners;
+    private final JitAccessPackageRepository jitPackages;
+    private final JitAccessPackageProvisioner jitProvisioner;
     private final Clock clock;
 
     public RequestService(
@@ -119,6 +138,26 @@ public final class RequestService {
             List<EntitlementProvisioner> provisioners,
             AccessRequestNotificationPublisher notificationPublisher,
             Clock clock) {
+        this(entitlementRepository, accessRequestRepository, accessGrantRepository, effectiveAccessChecker,
+                userStatusReader, requestPolicy, eventPublisher, approvalAuthorizer, transaction, provisioners,
+                notificationPublisher, clock, NO_JIT_PACKAGES, NO_JIT_PROVISIONER);
+    }
+
+    public RequestService(
+            EntitlementRepository entitlementRepository,
+            AccessRequestRepository accessRequestRepository,
+            AccessGrantRepository accessGrantRepository,
+            EffectiveAccessChecker effectiveAccessChecker,
+            UserStatusReader userStatusReader,
+            RequestPolicy requestPolicy,
+            AccessRequestEventPublisher eventPublisher,
+            ApprovalAuthorizer approvalAuthorizer,
+            AccessRequestTransaction transaction,
+            List<EntitlementProvisioner> provisioners,
+            AccessRequestNotificationPublisher notificationPublisher,
+            Clock clock,
+            JitAccessPackageRepository jitPackages,
+            JitAccessPackageProvisioner jitProvisioner) {
         this.entitlementRepository = Objects.requireNonNull(entitlementRepository);
         this.accessRequestRepository = Objects.requireNonNull(accessRequestRepository);
         this.accessGrantRepository = Objects.requireNonNull(accessGrantRepository);
@@ -131,6 +170,8 @@ public final class RequestService {
         this.approvalAuthorizer = Objects.requireNonNull(approvalAuthorizer);
         this.transaction = Objects.requireNonNull(transaction);
         this.provisioners = List.copyOf(Objects.requireNonNull(provisioners));
+        this.jitPackages = Objects.requireNonNull(jitPackages);
+        this.jitProvisioner = Objects.requireNonNull(jitProvisioner);
         this.clock = Objects.requireNonNull(clock);
     }
 
@@ -234,7 +275,9 @@ public final class RequestService {
             publish(approvalEvent, approved, entitlement);
             publish(AccessRequestEvent.provisioningStarted(approved, approverId, decidedAt), approved, entitlement);
 
-            ProvisioningResult result = provision(approved.id(), realmId, approved.requesterId(), entitlement);
+            JitAccessPackage accessPackage = jitPackages.findByEntitlementId(realmId, entitlement.id()).orElse(null);
+            ProvisioningResult result = provision(approved.id(), realmId, approved.requesterId(), entitlement,
+                    accessPackage);
             AccessRequest completed = approved.copy();
             Instant completedAt = Instant.now(clock);
             if (result.isSuccessful()) {
@@ -244,7 +287,8 @@ public final class RequestService {
             }
             AccessRequest persisted = updateOrThrow(completed, approved.version());
             if (result.isSuccessful()) {
-                accessGrantRepository.create(AccessGrant.from(persisted, entitlement, result.grantOrigin(), completedAt));
+                accessGrantRepository.create(AccessGrant.from(persisted, entitlement, result.grantOrigin(), completedAt,
+                        accessPackage));
             }
             AccessRequestEvent provisioningEvent = result.isSuccessful()
                     ? AccessRequestEvent.provisioningSucceeded(persisted, approverId, completedAt)
@@ -276,7 +320,9 @@ public final class RequestService {
             requireRepresentableExpiry(request, startedAt);
             publish(AccessRequestEvent.provisioningStarted(request, actorId, startedAt), request, entitlement);
 
-            ProvisioningResult result = provision(request.id(), realmId, request.requesterId(), entitlement);
+            JitAccessPackage accessPackage = jitPackages.findByEntitlementId(realmId, entitlement.id()).orElse(null);
+            ProvisioningResult result = provision(request.id(), realmId, request.requesterId(), entitlement,
+                    accessPackage);
             Instant completedAt = Instant.now(clock);
             AccessRequest candidate = request.copy();
             candidate.completeProvisioningRetry(
@@ -284,7 +330,8 @@ public final class RequestService {
                     completedAt);
             AccessRequest persisted = updateOrThrow(candidate, request.version());
             if (result.isSuccessful()) {
-                accessGrantRepository.create(AccessGrant.from(persisted, entitlement, result.grantOrigin(), completedAt));
+                accessGrantRepository.create(AccessGrant.from(persisted, entitlement, result.grantOrigin(), completedAt,
+                        accessPackage));
             }
             AccessRequestEvent event = result.isSuccessful()
                     ? AccessRequestEvent.provisioningSucceeded(persisted, actorId, completedAt)
@@ -374,7 +421,24 @@ public final class RequestService {
         return entitlement;
     }
 
-    private ProvisioningResult provision(String requestId, String realmId, String requesterId, Entitlement entitlement) {
+    private ProvisioningResult provision(String requestId, String realmId, String requesterId, Entitlement entitlement,
+            JitAccessPackage accessPackage) {
+        if (accessPackage != null) {
+            if (!entitlement.realmId().equals(accessPackage.realmId())
+                    || !entitlement.id().equals(accessPackage.entitlementId())) {
+                throw new IllegalStateException("The JIT package does not match the locked entitlement");
+            }
+            try {
+                ProvisioningResult result = jitProvisioner.grant(realmId, requesterId, accessPackage);
+                return result == null ? ProvisioningResult.failed(ProvisioningFailureCode.PROVIDER_UNAVAILABLE,
+                        "The JIT package provisioner returned no result.") : result;
+            } catch (RuntimeException exception) {
+                LOG.log(Level.SEVERE, "Unexpected JIT package provisioning failure [requestId=" + requestId
+                        + ", realmId=" + realmId + ", entitlementId=" + entitlement.id() + "]", exception);
+                return ProvisioningResult.failed(ProvisioningFailureCode.UNEXPECTED_FAILURE,
+                        "The JIT package provisioner failed.");
+            }
+        }
         for (EntitlementProvisioner provisioner : provisioners) {
             if (!provisioner.supports(entitlement.resourceType())) {
                 continue;

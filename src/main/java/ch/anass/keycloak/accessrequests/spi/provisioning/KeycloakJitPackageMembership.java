@@ -4,6 +4,7 @@ import ch.anass.keycloak.accessrequests.core.domain.entitlement.JitAccessPackage
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.grant.ProvisioningResult;
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureCode;
+import ch.anass.keycloak.accessrequests.core.port.JitAccessPackageProvisioner;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -17,7 +18,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /** Assigns package membership, never the underlying roles directly. */
-public final class KeycloakJitPackageMembership {
+public final class KeycloakJitPackageMembership implements JitAccessPackageProvisioner {
 
     private static final Logger LOG = Logger.getLogger(KeycloakJitPackageMembership.class.getName());
 
@@ -29,6 +30,7 @@ public final class KeycloakJitPackageMembership {
         this.realm = Objects.requireNonNull(realm, "realm must not be null");
     }
 
+    @Override
     public ProvisioningResult grant(String realmId, String requesterId, JitAccessPackage accessPackage) {
         Objects.requireNonNull(accessPackage, "accessPackage must not be null");
         if (!realm.getId().equals(realmId) || !accessPackage.realmId().equals(realmId)) {

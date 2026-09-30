@@ -76,6 +76,7 @@ public final class JpaAccessGrantRepository implements AccessGrantRevocationRepo
                            and entity.entitlementId = :entitlementId
                            and entity.resourceType = :resourceType
                            and entity.resourceId = :resourceId
+                           and entity.deliveryGroupId is null
                            and entity.origin = :origin
                            and entity.recordedTimestamp = :recordedTimestamp
                            and entity.expiresTimestamp = :expiresTimestamp

@@ -12,6 +12,7 @@ import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.request.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.JitAccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidRequestStateException;
 import ch.anass.keycloak.accessrequests.core.domain.grant.ProvisioningResult;
@@ -28,6 +29,8 @@ import ch.anass.keycloak.accessrequests.core.port.ApprovalAuthorizer;
 import ch.anass.keycloak.accessrequests.core.port.EffectiveAccessChecker;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementProvisioner;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
+import ch.anass.keycloak.accessrequests.core.port.JitAccessPackageProvisioner;
+import ch.anass.keycloak.accessrequests.core.port.JitAccessPackageRepository;
 import ch.anass.keycloak.accessrequests.core.port.UserStatusReader;
 import org.junit.jupiter.api.Test;
 
@@ -39,6 +42,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -96,6 +100,102 @@ class RequestServiceTest {
             transaction,
             List.of(provisioner),
             notifications);
+
+    @Test
+    void approvedJitPackageJoinsItsGroupWithoutGrantingTheSourceRoleDirectly() {
+        entitlements.add(financeEntitlement());
+        AtomicInteger directGrants = new AtomicInteger();
+        AtomicInteger groupJoins = new AtomicInteger();
+        RequestService jitService = packageService((realmId, requesterId, accessPackage) -> {
+            groupJoins.incrementAndGet();
+            return ProvisioningResult.granted();
+        }, directGrants);
+
+        AccessRequest request = jitService.create("realm-1", "requester-1", "entitlement-1",
+                "Temporary access is needed for this project.");
+        AccessRequest approved = jitService.approve("realm-1", request.id(), "approver-1", "Approved.");
+
+        assertEquals(ProvisioningStatus.SUCCEEDED, approved.provisioningStatus());
+        assertEquals(1, groupJoins.get());
+        assertEquals(0, directGrants.get());
+        assertEquals("jit-group-1", savedGrants.get(request.id()).deliveryGroupId());
+        assertFalse(savedGrants.get(request.id()).canAutoRevoke());
+    }
+
+    @Test
+    void failedJitGroupJoinNeverFallsBackToDirectRoleAndRetryUsesTheSameGroup() {
+        entitlements.add(financeEntitlement());
+        AtomicInteger directGrants = new AtomicInteger();
+        AtomicInteger attempts = new AtomicInteger();
+        RequestService jitService = packageService((realmId, requesterId, accessPackage) ->
+                attempts.incrementAndGet() == 1
+                        ? ProvisioningResult.failed("The JIT group is unavailable.")
+                        : ProvisioningResult.granted(), directGrants);
+
+        AccessRequest request = jitService.create("realm-1", "requester-1", "entitlement-1",
+                "Temporary access is needed for this project.");
+        AccessRequest failed = jitService.approve("realm-1", request.id(), "approver-1", "Approved.");
+        assertEquals(ProvisioningStatus.FAILED, failed.provisioningStatus());
+        assertTrue(savedGrants.isEmpty());
+        assertEquals(0, directGrants.get());
+
+        AccessRequest recovered = jitService.retryProvisioning("realm-1", request.id(), "admin-1");
+        assertEquals(ProvisioningStatus.SUCCEEDED, recovered.provisioningStatus());
+        assertEquals(2, attempts.get());
+        assertEquals(0, directGrants.get());
+        assertEquals("jit-group-1", savedGrants.get(request.id()).deliveryGroupId());
+    }
+
+    @Test
+    void existingJitGroupMembershipDoesNotBecomeAnExtensionOwnedTemporaryGrant() {
+        entitlements.add(financeEntitlement());
+        RequestService jitService = packageService((realmId, requesterId, accessPackage) ->
+                ProvisioningResult.alreadyPresent(), new AtomicInteger());
+
+        AccessRequest request = jitService.create("realm-1", "requester-1", "entitlement-1",
+                "Temporary access is needed for this project.");
+        jitService.approve("realm-1", request.id(), "approver-1", "Approved.");
+
+        AccessGrant grant = savedGrants.get(request.id());
+        assertEquals("jit-group-1", grant.deliveryGroupId());
+        assertEquals(ch.anass.keycloak.accessrequests.core.domain.grant.GrantOrigin.PREEXISTING, grant.origin());
+        assertEquals(null, grant.expiresAt());
+    }
+
+    private RequestService packageService(JitAccessPackageProvisioner packageProvisioner,
+            AtomicInteger directGrants) {
+        JitAccessPackage accessPackage = new JitAccessPackage("entitlement-1", "realm-1", "jit-group-1",
+                "AR_PKG_entitlement-1", List.of(
+                        new JitAccessPackage.RoleMapping(ResourceType.REALM_ROLE, "finance-reader")));
+        JitAccessPackageRepository packageRepository = new JitAccessPackageRepository() {
+            @Override
+            public void create(JitAccessPackage value) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public Optional<JitAccessPackage> findByEntitlementId(String realmId, String entitlementId) {
+                return realmId.equals(accessPackage.realmId()) && entitlementId.equals(accessPackage.entitlementId())
+                        ? Optional.of(accessPackage) : Optional.empty();
+            }
+        };
+        EntitlementProvisioner directProvisioner = new EntitlementProvisioner() {
+            @Override
+            public boolean supports(ResourceType resourceType) {
+                return true;
+            }
+
+            @Override
+            public ProvisioningResult grant(String realmId, String requesterId, Entitlement entitlement) {
+                directGrants.incrementAndGet();
+                return ProvisioningResult.granted();
+            }
+        };
+        return new RequestService(entitlements, requests, grants, effectiveAccess, users,
+                new RequestPolicy(10, 2000), events, approvalAuthorizer, transaction,
+                List.of(directProvisioner), notifications, java.time.Clock.systemUTC(),
+                packageRepository, packageProvisioner);
+    }
 
     @Test
     void createsPendingRequestForRequestableEntitlement() {
