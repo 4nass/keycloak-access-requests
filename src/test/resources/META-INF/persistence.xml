@@ -10,6 +10,7 @@
         <class>ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEventEntity</class>
         <class>ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestNotificationOutboxEntity</class>
         <class>ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementEntity</class>
+        <class>ch.anass.keycloak.accessrequests.persistence.jpa.entity.JitAccessPackageEntity</class>
         <class>ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementAuditEventEntity</class>
         <properties>
             <property name="jakarta.persistence.jdbc.driver" value="org.h2.Driver"/>
