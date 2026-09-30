@@ -621,6 +621,9 @@ class AccessRequestAdminConsoleBrowserIT {
                     createEntitlement(driver, fixture, displayName);
                     updateEntitlement(driver, displayName);
                     assertEntitlementWasPersisted(keycloak, fixture.globalAdminToken(), displayName);
+                    String packageName = "Browser access package " + UUID.randomUUID();
+                    createAndPublishAccessPackage(driver, fixture, packageName);
+                    assertAccessPackageWasPersisted(keycloak, fixture, packageName);
                 }
 
                 openFailedProvisioning(driver);
@@ -1185,6 +1188,72 @@ class AccessRequestAdminConsoleBrowserIT {
 
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.xpath(itemXPath + "//*[normalize-space()='Open for requests']")));
+    }
+
+    private void createAndPublishAccessPackage(WebDriver driver, AdminConsoleFixture fixture, String displayName) {
+        WebDriverWait wait = waitFor(driver);
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.xpath("//button[normalize-space()='Create access package']"))).click();
+        driver.findElement(By.id("access-package-display-name")).sendKeys(displayName);
+        driver.findElement(By.id("access-package-description"))
+                .sendKeys("Created through the deployed Administration Console.");
+        driver.findElement(By.id("access-package-approver-search")).sendKeys(fixture.approverRoleId());
+        wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(
+                "#access-package-approver option[value='" + fixture.approverRoleId() + "']")));
+        new Select(wait.until(ExpectedConditions.elementToBeClickable(By.id("access-package-approver"))))
+                .selectByValue(fixture.approverRoleId());
+        driver.findElement(By.id("access-package-role-search")).sendKeys(fixture.managedTargetRoleId());
+        wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(
+                "#access-package-role option[value='" + fixture.managedTargetRoleId() + "']")));
+        new Select(wait.until(ExpectedConditions.elementToBeClickable(By.id("access-package-role"))))
+                .selectByValue(fixture.managedTargetRoleId());
+        driver.findElement(By.xpath("//button[normalize-space()='Add role']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.xpath("//*[@aria-label='Selected roles']")));
+        driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Create access package']")).click();
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                "//*[@role='dialog']//*[contains(text(),'AR_PKG_')]")));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                "//*[@role='dialog']//*[normalize-space()='Package roles']")));
+        WebElement requestable = wait.until(ExpectedConditions.elementToBeClickable(By.id("entitlement-requestable")));
+        assertFalse(requestable.isSelected(), "A new access package must be closed until reviewed.");
+        requestable.click();
+        driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Save']")).click();
+        String itemXPath = "//*[contains(@class, 'pf-v5-c-data-list__item') and .//h2[normalize-space()="
+                + xpathLiteral(displayName) + "]]";
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.xpath(itemXPath + "//*[normalize-space()='Open for requests']")));
+    }
+
+    private void assertAccessPackageWasPersisted(KeycloakContainer keycloak, AdminConsoleFixture fixture,
+            String displayName) throws Exception {
+        HttpResponse<String> catalog = HTTP_CLIENT.send(
+                adminRequest(keycloak, "/realms/master/access-requests/admin/entitlements?page=0&size=100",
+                        fixture.globalAdminToken()).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, catalog.statusCode(), catalog.body());
+        JsonNode entitlement = JSON.readTree(catalog.body()).path("items");
+        JsonNode accessPackage = null;
+        for (JsonNode item : entitlement) {
+            if (displayName.equals(item.path("displayName").asText())) {
+                accessPackage = item;
+                break;
+            }
+        }
+        assertTrue(accessPackage != null, "The browser-created access package must appear in the catalog.");
+        assertTrue(accessPackage.path("requestable").asBoolean());
+        assertEquals("GROUP", accessPackage.path("resourceType").asText());
+
+        HttpResponse<String> details = HTTP_CLIENT.send(adminRequest(keycloak,
+                "/realms/master/access-requests/admin/access-packages/" + accessPackage.path("id").asText(),
+                fixture.globalAdminToken()).GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, details.statusCode(), details.body());
+        JsonNode binding = JSON.readTree(details.body());
+        assertTrue(binding.path("groupName").asText().startsWith("AR_PKG_"));
+        assertTrue(binding.path("groupExists").asBoolean());
+        assertTrue(binding.path("configurationValid").asBoolean());
+        assertEquals(fixture.managedTargetRoleId(), binding.path("roleMappings").get(0).path("roleId").asText());
     }
 
     private void assertEntitlementWasPersisted(KeycloakContainer keycloak, String globalAdminToken, String displayName)

@@ -90,12 +90,16 @@ final class KeycloakReferenceSearch {
     }
 
     private static KeycloakReferenceResponse roleReference(ResourceType type, RoleModel role) {
+        return new KeycloakReferenceResponse(type, role.getId(), roleDisplayName(type, role),
+                Objects.requireNonNullElse(role.getDescription(), ""));
+    }
+
+    static String roleDisplayName(ResourceType type, RoleModel role) {
         String name = role.getName();
         if (type == ResourceType.CLIENT_ROLE && role.getContainer() instanceof ClientModel client) {
             name = client.getClientId() + " / " + name;
         }
-        return new KeycloakReferenceResponse(type, role.getId(), name,
-                Objects.requireNonNullElse(role.getDescription(), ""));
+        return name;
     }
 
     private static KeycloakReferenceResponse groupReference(GroupModel group) {

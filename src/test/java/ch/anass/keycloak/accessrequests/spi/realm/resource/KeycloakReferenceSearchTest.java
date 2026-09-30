@@ -87,6 +87,7 @@ class KeycloakReferenceSearchTest {
                 ResourceType.CLIENT_ROLE, "finance", null, 0, 10);
 
         assertEquals(List.of("finance-portal / Reader"), matches.items().stream().map(reference -> reference.name()).toList());
+        assertEquals("finance-portal / Reader", KeycloakReferenceSearch.roleDisplayName(ResourceType.CLIENT_ROLE, role));
     }
 
     @Test

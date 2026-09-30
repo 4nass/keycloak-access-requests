@@ -164,7 +164,7 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
             RoleModel role = manager.realm().getRoleById(mapping.roleId());
             boolean missing = role == null || role.isClientRole() != (mapping.type() == ResourceType.CLIENT_ROLE);
             return new AccessPackageRoleResponse(mapping.type(), mapping.roleId(),
-                    missing ? null : role.getName(), missing);
+                    missing ? null : KeycloakReferenceSearch.roleDisplayName(mapping.type(), role), missing);
         }).toList();
         return new AccessPackageResponse(packageId, accessPackage.groupId(), accessPackage.groupName(),
                 group != null && accessPackage.groupName().equals(group.getName()),

@@ -236,6 +236,32 @@ describe("EntitlementCatalogPage", () => {
         expect(screen.getByRole("checkbox", { name: "accessRequestsAdminRequestable" })).toBeDisabled();
     });
 
+    it("allows an invalid published package to be closed to new requests", async () => {
+        const user = userEvent.setup();
+        api.list.mockResolvedValue({
+            items: [{ ...entitlement, id: "package-id", resourceId: "package-group", resourceType: "GROUP", requestable: true }],
+            page: 0, size: 20, total: 1
+        });
+        api.getAccessPackage.mockResolvedValue({
+            entitlementId: "package-id", groupId: "package-group", groupName: "AR_PKG_PACKAGE",
+            groupExists: true, configurationValid: false, roleMappings: []
+        });
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminEditEntitlement" }));
+        expect(await screen.findByText("accessRequestsAdminPackageInvalidConfiguration")).toBeVisible();
+        const requestable = screen.getByRole("checkbox", { name: "accessRequestsAdminRequestable" });
+        expect(requestable).toBeEnabled();
+        expect(requestable).toBeChecked();
+        await user.click(requestable);
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminSave" }));
+
+        await waitFor(() => expect(api.update).toHaveBeenCalledWith("package-id", expect.objectContaining({
+            requestable: false
+        })));
+    });
+
     it("lets the administrator change default, maximum, and permanent access independently", async () => {
         const user = userEvent.setup();
         render(<EntitlementCatalogPage />);

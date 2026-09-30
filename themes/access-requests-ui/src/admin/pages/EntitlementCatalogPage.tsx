@@ -553,7 +553,8 @@ function EntitlementDialog({
                         <Checkbox
                             id="entitlement-requestable"
                             isChecked={form.requestable}
-                            isDisabled={isSaving || (form.resourceType === "GROUP" && packageConfigurationValid !== true)}
+                            isDisabled={isSaving || (!form.requestable && form.resourceType === "GROUP"
+                                && packageConfigurationValid !== true)}
                             label={t("accessRequestsAdminRequestable")}
                             onChange={(_event, checked) => onUpdate("requestable", checked)}
                         />
