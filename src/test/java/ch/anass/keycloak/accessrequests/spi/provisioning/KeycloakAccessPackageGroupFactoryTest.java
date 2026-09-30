@@ -1,6 +1,6 @@
 package ch.anass.keycloak.accessrequests.spi.provisioning;
 
-import ch.anass.keycloak.accessrequests.core.domain.entitlement.JitAccessPackage;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.AccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.GroupModel;
@@ -16,14 +16,14 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-class KeycloakJitPackageGroupFactoryTest {
+class KeycloakAccessPackageGroupFactoryTest {
 
     @Test
     void createsAnExtensionNamedRootGroupWithBothKindsOfRoleMapping() {
         Fixture fixture = new Fixture();
-        JitAccessPackage accessPackage = fixture.factory().create("entitlement-1", "realm-1", List.of(
-                new JitAccessPackage.RoleMapping(ResourceType.REALM_ROLE, "realm-role"),
-                new JitAccessPackage.RoleMapping(ResourceType.CLIENT_ROLE, "client-role")));
+        AccessPackage accessPackage = fixture.factory().create("entitlement-1", "realm-1", List.of(
+                new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "realm-role"),
+                new AccessPackage.RoleMapping(ResourceType.CLIENT_ROLE, "client-role")));
 
         assertEquals("entitlement-1", accessPackage.entitlementId());
         assertEquals("group-1", accessPackage.groupId());
@@ -36,9 +36,9 @@ class KeycloakJitPackageGroupFactoryTest {
     void missingOrMismatchedRoleDoesNotCreateAnyGroup() {
         Fixture fixture = new Fixture();
         assertThrows(IllegalArgumentException.class, () -> fixture.factory().create("entitlement-1", "realm-1",
-                List.of(new JitAccessPackage.RoleMapping(ResourceType.REALM_ROLE, "missing"))));
+                List.of(new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "missing"))));
         assertThrows(IllegalArgumentException.class, () -> fixture.factory().create("entitlement-1", "realm-1",
-                List.of(new JitAccessPackage.RoleMapping(ResourceType.REALM_ROLE, "client-role"))));
+                List.of(new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "client-role"))));
         assertEquals(0, fixture.createdGroups);
     }
 
@@ -46,7 +46,7 @@ class KeycloakJitPackageGroupFactoryTest {
     void rejectsCrossRealmCreationBeforeAnyMutation() {
         Fixture fixture = new Fixture();
         assertThrows(IllegalArgumentException.class, () -> fixture.factory().create("entitlement-1", "other-realm",
-                List.of(new JitAccessPackage.RoleMapping(ResourceType.REALM_ROLE, "realm-role"))));
+                List.of(new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "realm-role"))));
         assertEquals(0, fixture.createdGroups);
     }
 
@@ -56,7 +56,7 @@ class KeycloakJitPackageGroupFactoryTest {
         private final RoleModel realmRole = role("realm-role", false);
         private final RoleModel clientRole = role("client-role", true);
 
-        KeycloakJitPackageGroupFactory factory() {
+        KeycloakAccessPackageGroupFactory factory() {
             RealmModel realm = proxy(RealmModel.class, (self, method, args) -> switch (method.getName()) {
                 case "getId" -> "realm-1";
                 case "getRoleById" -> switch ((String) args[0]) {
@@ -85,7 +85,7 @@ class KeycloakJitPackageGroupFactoryTest {
             });
             KeycloakSession session = proxy(KeycloakSession.class, (self, method, args) ->
                     method.getName().equals("groups") ? groups : null);
-            return new KeycloakJitPackageGroupFactory(session, realm);
+            return new KeycloakAccessPackageGroupFactory(session, realm);
         }
 
         private static RoleModel role(String id, boolean clientRole) {

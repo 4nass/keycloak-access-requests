@@ -138,9 +138,9 @@ class AccessRequestJpaChangelogTest {
                             "REVOCATION_STATE", "VERSION"),
                     columnsOf(connection, "AR_ACCESS_GRANT"));
             assertEquals(Set.of("ENTITLEMENT_ID", "REALM_ID", "GROUP_ID", "GROUP_NAME"),
-                    columnsOf(connection, "AR_JIT_PACKAGE"));
+                    columnsOf(connection, "AR_ACCESS_PACKAGE"));
             assertEquals(Set.of("ENTITLEMENT_ID", "MAPPING_ORDER", "ROLE_TYPE", "ROLE_ID"),
-                    columnsOf(connection, "AR_JIT_PACKAGE_ROLE"));
+                    columnsOf(connection, "AR_ACCESS_PACKAGE_ROLE"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
                     .contains("IDX_ACCESS_REQUEST_REQUESTER_CREATED"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
@@ -172,15 +172,15 @@ class AccessRequestJpaChangelogTest {
             insertJitEntitlement(connection, "entitlement-1", "realm-1");
             insertJitEntitlement(connection, "entitlement-2", "realm-2");
             insertJitEntitlement(connection, "entitlement-3", "realm-1");
-            insertJitPackage(connection, "entitlement-1", "realm-1", "group-1", "AR_PKG_one");
+            insertAccessPackage(connection, "entitlement-1", "realm-1", "group-1", "AR_PKG_one");
 
-            assertThrows(SQLException.class, () -> insertJitPackage(connection,
+            assertThrows(SQLException.class, () -> insertAccessPackage(connection,
                     "entitlement-1", "realm-1", "group-2", "AR_PKG_two"));
-            assertThrows(SQLException.class, () -> insertJitPackage(connection,
+            assertThrows(SQLException.class, () -> insertAccessPackage(connection,
                     "entitlement-2", "realm-2", "group-1", "AR_PKG_two"));
-            assertThrows(SQLException.class, () -> insertJitPackage(connection,
+            assertThrows(SQLException.class, () -> insertAccessPackage(connection,
                     "entitlement-3", "realm-1", "group-3", "AR_PKG_one"));
-            assertThrows(SQLException.class, () -> insertJitPackage(connection,
+            assertThrows(SQLException.class, () -> insertAccessPackage(connection,
                     "missing", "realm-1", "group-3", "AR_PKG_missing"));
         }
     }
@@ -192,22 +192,22 @@ class AccessRequestJpaChangelogTest {
 
         try (Connection connection = DriverManager.getConnection(databaseUrl)) {
             insertJitEntitlement(connection, "entitlement-1", "realm-1");
-            insertJitPackage(connection, "entitlement-1", "realm-1", "group-1", "AR_PKG_one");
+            insertAccessPackage(connection, "entitlement-1", "realm-1", "group-1", "AR_PKG_one");
             connection.createStatement().executeUpdate("""
-                    insert into AR_JIT_PACKAGE_ROLE (ENTITLEMENT_ID, MAPPING_ORDER, ROLE_TYPE, ROLE_ID)
+                    insert into AR_ACCESS_PACKAGE_ROLE (ENTITLEMENT_ID, MAPPING_ORDER, ROLE_TYPE, ROLE_ID)
                     values ('entitlement-1', 0, 'REALM_ROLE', 'role-1')
                     """);
 
             assertThrows(SQLException.class, () -> connection.createStatement().executeUpdate("""
-                    insert into AR_JIT_PACKAGE_ROLE (ENTITLEMENT_ID, MAPPING_ORDER, ROLE_TYPE, ROLE_ID)
+                    insert into AR_ACCESS_PACKAGE_ROLE (ENTITLEMENT_ID, MAPPING_ORDER, ROLE_TYPE, ROLE_ID)
                     values ('entitlement-1', 1, 'REALM_ROLE', 'role-1')
                     """));
             assertThrows(SQLException.class, () -> connection.createStatement().executeUpdate("""
-                    insert into AR_JIT_PACKAGE_ROLE (ENTITLEMENT_ID, MAPPING_ORDER, ROLE_TYPE, ROLE_ID)
+                    insert into AR_ACCESS_PACKAGE_ROLE (ENTITLEMENT_ID, MAPPING_ORDER, ROLE_TYPE, ROLE_ID)
                     values ('missing', 0, 'REALM_ROLE', 'role-2')
                     """));
             assertThrows(SQLException.class, () -> connection.createStatement().executeUpdate("""
-                    insert into AR_JIT_PACKAGE_ROLE (ENTITLEMENT_ID, MAPPING_ORDER, ROLE_TYPE, ROLE_ID)
+                    insert into AR_ACCESS_PACKAGE_ROLE (ENTITLEMENT_ID, MAPPING_ORDER, ROLE_TYPE, ROLE_ID)
                     values ('entitlement-1', 2, 'GROUP', 'source-group')
                     """));
         }
@@ -385,7 +385,7 @@ class AccessRequestJpaChangelogTest {
                     ID, REALM_ID, RESOURCE_TYPE, RESOURCE_ID, DISPLAY_NAME, DESCRIPTION,
                     RISK_LEVEL, APPROVER_ROLE_ID, REQUESTABLE, DEFAULT_DURATION_SECONDS,
                     MAX_DURATION_SECONDS, ALLOW_PERMANENT, CREATED_TIMESTAMP, UPDATED_TIMESTAMP, VERSION)
-                values (?, ?, 'REALM_ROLE', ?, 'JIT package', 'Temporary access',
+                values (?, ?, 'REALM_ROLE', ?, 'access package', 'Temporary access',
                     'LOW', 'approver', FALSE, 2592000, 7776000, FALSE, 1, 1, 0)
                 """)) {
             statement.setString(1, entitlementId);
@@ -395,10 +395,10 @@ class AccessRequestJpaChangelogTest {
         }
     }
 
-    private void insertJitPackage(Connection connection, String entitlementId, String realmId,
+    private void insertAccessPackage(Connection connection, String entitlementId, String realmId,
             String groupId, String groupName) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
-                insert into AR_JIT_PACKAGE (ENTITLEMENT_ID, REALM_ID, GROUP_ID, GROUP_NAME)
+                insert into AR_ACCESS_PACKAGE (ENTITLEMENT_ID, REALM_ID, GROUP_ID, GROUP_NAME)
                 values (?, ?, ?, ?)
                 """)) {
             statement.setString(1, entitlementId);

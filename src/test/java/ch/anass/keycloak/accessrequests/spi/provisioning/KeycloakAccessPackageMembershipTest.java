@@ -1,6 +1,6 @@
 package ch.anass.keycloak.accessrequests.spi.provisioning;
 
-import ch.anass.keycloak.accessrequests.core.domain.entitlement.JitAccessPackage;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.AccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantOrigin;
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureCode;
@@ -20,7 +20,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-class KeycloakJitPackageMembershipTest {
+class KeycloakAccessPackageMembershipTest {
 
     @Test
     void joinsOnlyTheDedicatedGroupEvenWhenTheUserHasTheSameRoleElsewhere() {
@@ -109,13 +109,13 @@ class KeycloakJitPackageMembershipTest {
         private final RoleModel extraRole = role("extra-role", false);
         private final List<RoleModel> groupRoles = new ArrayList<>(List.of(realmRole, clientRole));
 
-        JitAccessPackage accessPackage() {
-            return new JitAccessPackage("entitlement-1", "realm-1", "group-1", "AR_PKG_REPORTING", List.of(
-                    new JitAccessPackage.RoleMapping(ResourceType.REALM_ROLE, "realm-role-1"),
-                    new JitAccessPackage.RoleMapping(ResourceType.CLIENT_ROLE, "client-role-1")));
+        AccessPackage accessPackage() {
+            return new AccessPackage("entitlement-1", "realm-1", "group-1", "AR_PKG_REPORTING", List.of(
+                    new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "realm-role-1"),
+                    new AccessPackage.RoleMapping(ResourceType.CLIENT_ROLE, "client-role-1")));
         }
 
-        KeycloakJitPackageMembership membership() {
+        KeycloakAccessPackageMembership membership() {
             RealmModel realm = proxy(RealmModel.class, (self, method, args) ->
                     method.getName().equals("getId") ? "realm-1" : null);
             GroupModel group = proxy(GroupModel.class, (self, method, args) -> switch (method.getName()) {
@@ -147,7 +147,7 @@ class KeycloakJitPackageMembershipTest {
                 case "groups" -> groups;
                 default -> null;
             });
-            return new KeycloakJitPackageMembership(session, realm);
+            return new KeycloakAccessPackageMembership(session, realm);
         }
 
         private static RoleModel role(String id, boolean clientRole) {

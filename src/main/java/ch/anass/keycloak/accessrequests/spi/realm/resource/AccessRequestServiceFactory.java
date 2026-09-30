@@ -14,11 +14,11 @@ import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequ
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlementAuditEventPublisher;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlementRepository;
-import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaJitAccessPackageRepository;
+import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessPackageRepository;
 import ch.anass.keycloak.accessrequests.spi.notification.KeycloakAccessRequestNotificationOutboxPublisher;
 import ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakEntitlementProvisioner;
-import ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakJitPackageGroupFactory;
-import ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakJitPackageMembership;
+import ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakAccessPackageGroupFactory;
+import ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakAccessPackageMembership;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakAccessRequestTransaction;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakEffectiveAccessChecker;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakRoleMembershipReader;
@@ -55,12 +55,12 @@ final class AccessRequestServiceFactory {
         return new JpaEntitlementRepository(entityManager());
     }
 
-    JpaJitAccessPackageRepository jitPackageRepository() {
-        return new JpaJitAccessPackageRepository(entityManager());
+    JpaAccessPackageRepository accessPackageRepository() {
+        return new JpaAccessPackageRepository(entityManager());
     }
 
-    KeycloakJitPackageGroupFactory jitPackageGroupFactory(RealmModel realm) {
-        return new KeycloakJitPackageGroupFactory(session, realm);
+    KeycloakAccessPackageGroupFactory accessPackageGroupFactory(RealmModel realm) {
+        return new KeycloakAccessPackageGroupFactory(session, realm);
     }
 
     JpaAccessRequestRepository requestRepository() {
@@ -89,18 +89,18 @@ final class AccessRequestServiceFactory {
                 new JpaEntitlementRepository(entityManager),
                 new JpaAccessRequestRepository(entityManager),
                 new KeycloakEffectiveAccessChecker(session, realm, user,
-                        new JpaJitAccessPackageRepository(entityManager)));
+                        new JpaAccessPackageRepository(entityManager)));
     }
 
     RequestService requestService(RealmModel realm, UserModel user) {
         EntityManager entityManager = entityManager();
         var entitlementRepository = new JpaEntitlementRepository(entityManager);
-        var jitPackages = new JpaJitAccessPackageRepository(entityManager);
+        var accessPackages = new JpaAccessPackageRepository(entityManager);
         return new RequestService(
                 entitlementRepository,
                 new JpaAccessRequestRepository(entityManager),
                 new JpaAccessGrantRepository(entityManager),
-                new KeycloakEffectiveAccessChecker(session, realm, user, jitPackages),
+                new KeycloakEffectiveAccessChecker(session, realm, user, accessPackages),
                 new KeycloakUserStatusReader(realm, user),
                 REQUEST_POLICY,
                 new JpaAccessRequestEventPublisher(entityManager),
@@ -110,7 +110,7 @@ final class AccessRequestServiceFactory {
                 transaction(),
                 List.of(new KeycloakEntitlementProvisioner(session, realm)),
                 new KeycloakAccessRequestNotificationOutboxPublisher(realm, entityManager),
-                java.time.Clock.systemUTC(), jitPackages, new KeycloakJitPackageMembership(session, realm));
+                java.time.Clock.systemUTC(), accessPackages, new KeycloakAccessPackageMembership(session, realm));
     }
 
     ApprovalQueueService approvalQueueService(RealmModel realm, UserModel user) {

@@ -29,8 +29,15 @@ The Admin Console owns entitlement configuration. **Configure → Access request
 - a paged catalog including drafts and published entitlements;
 - search-backed Keycloak resource and approver-role selectors;
 - creation of draft entitlements;
+- creation of draft access packages from selected realm/client roles, with a dedicated `AR_PKG_` group;
 - metadata, risk, approver-role, duration-policy, and requestable-state updates;
 - optimistic-lock feedback when another administrator changed the same entitlement.
+
+After creating an access package, the editor shows its delivery group and bound roles before the
+administrator makes it requestable. If the group or its role mappings have changed, the console
+disables publication and the server rejects a direct publication request. The source roles remain
+managed by Keycloak or external identity systems; the extension provisions membership in its
+dedicated package group, not direct role assignments.
 
 **Configure → Failed provisioning** lists approved requests whose Keycloak grant failed. It shows a
 localized, safe cause and guidance without exposing technical failure details. A manager

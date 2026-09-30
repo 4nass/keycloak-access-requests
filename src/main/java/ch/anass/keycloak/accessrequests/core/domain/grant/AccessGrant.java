@@ -1,7 +1,7 @@
 package ch.anass.keycloak.accessrequests.core.domain.grant;
 
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
-import ch.anass.keycloak.accessrequests.core.domain.entitlement.JitAccessPackage;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.AccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
@@ -83,7 +83,7 @@ public record AccessGrant(
 
     public static AccessGrant from(
             AccessRequest request, Entitlement entitlement, GrantOrigin origin, Instant recordedAt,
-            JitAccessPackage accessPackage) {
+            AccessPackage accessPackage) {
         Objects.requireNonNull(request, "request must not be null");
         Objects.requireNonNull(entitlement, "entitlement must not be null");
         if (request.decisionStatus() != DecisionStatus.APPROVED
@@ -98,7 +98,7 @@ public record AccessGrant(
         }
         if (accessPackage != null && (!request.realmId().equals(accessPackage.realmId())
                 || !entitlement.id().equals(accessPackage.entitlementId()))) {
-            throw new IllegalArgumentException("The JIT package must match the provisioned entitlement");
+            throw new IllegalArgumentException("The access package must match the provisioned entitlement");
         }
         Instant expiresAt = null;
         // A legacy request without a selected duration cannot acquire an invented expiry here.

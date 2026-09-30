@@ -6,7 +6,7 @@ import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEven
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestNotificationOutboxEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementAuditEventEntity;
-import ch.anass.keycloak.accessrequests.persistence.jpa.entity.JitAccessPackageEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessPackageEntity;
 import ch.anass.keycloak.accessrequests.spi.notification.KeycloakAccessRequestNotificationOutboxDispatcher;
 import org.keycloak.Config;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProvider;
@@ -29,7 +29,7 @@ public final class AccessRequestJpaEntityProvider implements JpaEntityProvider, 
             AccessRequestNotificationOutboxEntity.class,
             EntitlementEntity.class,
             EntitlementAuditEventEntity.class,
-            JitAccessPackageEntity.class);
+            AccessPackageEntity.class);
     private static final long OUTBOX_INITIAL_DELAY_MILLIS = 1_000;
     private static final long OUTBOX_INTERVAL_MILLIS = 5_000;
 

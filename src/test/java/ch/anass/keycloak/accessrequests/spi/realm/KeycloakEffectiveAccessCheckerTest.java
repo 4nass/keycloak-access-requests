@@ -1,10 +1,10 @@
 package ch.anass.keycloak.accessrequests.spi.realm;
 
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
-import ch.anass.keycloak.accessrequests.core.domain.entitlement.JitAccessPackage;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.AccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
-import ch.anass.keycloak.accessrequests.core.port.JitAccessPackageRepository;
+import ch.anass.keycloak.accessrequests.core.port.AccessPackageRepository;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.GroupProvider;
@@ -73,7 +73,7 @@ class KeycloakEffectiveAccessCheckerTest {
     }
 
     @Test
-    void aSourceRoleFromAnotherSystemDoesNotCountAsJitPackageMembership() {
+    void aSourceRoleFromAnotherSystemDoesNotCountAsAccessPackageMembership() {
         RoleModel sourceRole = role(false);
         GroupModel deliveryGroup = proxy(GroupModel.class, (proxy, method, arguments) -> null);
         GroupProvider groups = proxy(GroupProvider.class, (proxy, method, arguments) ->
@@ -92,16 +92,16 @@ class KeycloakEffectiveAccessCheckerTest {
             case "isMemberOf" -> false;
             default -> null;
         });
-        JitAccessPackage accessPackage = new JitAccessPackage("entitlement-1", "realm-1", "jit-group-1",
-                "AR_PKG_example", List.of(new JitAccessPackage.RoleMapping(ResourceType.REALM_ROLE, "role-1")));
-        JitAccessPackageRepository packages = new JitAccessPackageRepository() {
+        AccessPackage accessPackage = new AccessPackage("entitlement-1", "realm-1", "jit-group-1",
+                "AR_PKG_example", List.of(new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "role-1")));
+        AccessPackageRepository packages = new AccessPackageRepository() {
             @Override
-            public void create(JitAccessPackage value) {
+            public void create(AccessPackage value) {
                 throw new UnsupportedOperationException();
             }
 
             @Override
-            public Optional<JitAccessPackage> findByEntitlementId(String realmId, String entitlementId) {
+            public Optional<AccessPackage> findByEntitlementId(String realmId, String entitlementId) {
                 return Optional.of(accessPackage);
             }
         };

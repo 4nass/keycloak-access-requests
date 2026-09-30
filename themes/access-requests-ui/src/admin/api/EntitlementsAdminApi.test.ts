@@ -147,6 +147,43 @@ describe("Entitlements administration API client", () => {
         });
     });
 
+    it("creates a draft access package from selected role IDs and reads its durable binding", async () => {
+        const details = {
+            entitlementId: "package-1", groupId: "group-1", groupName: "AR_PKG_package-1", groupExists: true,
+            configurationValid: true,
+            roleMappings: [{ type: "REALM_ROLE", roleId: "role-1", name: "Reports", missing: false }]
+        };
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(jsonResponse({ ...entitlement, id: "package-1", requestable: false }, 201))
+            .mockResolvedValueOnce(jsonResponse(details));
+        const api = createApi(fetchMock);
+        const submission = {
+            displayName: "Reporting package", description: "Temporary reporting access", riskLevel: "MEDIUM" as const,
+            approverRoleId: "approver-1", defaultDurationSeconds: 604800, maxDurationSeconds: 2592000,
+            allowPermanent: false,
+            roleMappings: [{ type: "REALM_ROLE" as const, roleId: "role-1" }]
+        };
+
+        await expect(api.createAccessPackage(submission)).resolves.toMatchObject({ id: "package-1", requestable: false });
+        expect(request(fetchMock).url).toBe(
+            "https://keycloak.example/realms/finance/access-requests/admin/access-packages"
+        );
+        expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("POST");
+        expect(JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)).toEqual(submission);
+        await expect(api.getAccessPackage("package/1")).resolves.toEqual(details);
+        expect(String(fetchMock.mock.calls[1][0])).toBe(
+            "https://keycloak.example/realms/finance/access-requests/admin/access-packages/package%2F1"
+        );
+    });
+
+    it("treats a legacy group as having no access-package binding, but preserves authorization errors", async () => {
+        const missing = createApi(vi.fn().mockResolvedValue(jsonResponse({ code: "NOT_FOUND" }, 404)));
+        await expect(missing.getAccessPackage("legacy-group")).resolves.toBeNull();
+
+        const forbidden = createApi(vi.fn().mockResolvedValue(jsonResponse({ code: "FORBIDDEN" }, 403)));
+        await expect(forbidden.getAccessPackage("group-1")).rejects.toMatchObject({ status: 403 });
+    });
+
     it("loads failed notification deliveries and their operational summary", async () => {
         const failedDelivery = {
             attemptCount: 10,

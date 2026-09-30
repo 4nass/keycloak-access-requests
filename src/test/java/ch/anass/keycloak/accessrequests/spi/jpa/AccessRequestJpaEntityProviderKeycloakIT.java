@@ -59,8 +59,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     private static final DockerImageName POSTGRESQL_IMAGE = DockerImageName.parse(POSTGRESQL_CONTAINER)
             .asCompatibleSubstituteFor("postgres");
     private static final Network NETWORK = Network.newNetwork();
-    private String jitPackageEntitlementId;
-    private String jitPackageGroupId;
+    private String accessPackageEntitlementId;
+    private String accessPackageGroupId;
 
     @Container
     private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(POSTGRESQL_IMAGE)
@@ -86,7 +86,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertProviderSchemaApplied();
             assertRealmEndpointExposed(firstServer);
             assertEntitlementCatalogAdministration(firstServer);
-            assertJitPackageCreationAndBinding(firstServer);
+            assertAccessPackageCreationAndBinding(firstServer);
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(firstServer);
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(firstServer);
             assertRequesterCanListViewAndCancelOnlyOwnRequests(firstServer);
@@ -100,7 +100,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertAccountThemeMessagesAreServedFromTheDeployedProviderJar(restartedServer);
             assertProviderSchemaApplied();
             assertRealmEndpointExposed(restartedServer);
-            assertJitPackageSurvivesRestart(restartedServer);
+            assertAccessPackageSurvivesRestart(restartedServer);
             assertEntitlementCatalogAdministration(restartedServer);
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(restartedServer);
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(restartedServer);
@@ -281,8 +281,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
             assertTrue(tableExists(connection, "ar_access_request"));
             assertTrue(tableExists(connection, "ar_access_grant"));
-            assertTrue(tableExists(connection, "ar_jit_package"));
-            assertTrue(tableExists(connection, "ar_jit_package_role"));
+            assertTrue(tableExists(connection, "ar_access_package"));
+            assertTrue(tableExists(connection, "ar_access_package_role"));
             assertTrue(tableExists(connection, "ar_access_request_history"));
             try (ResultSet columns = connection.getMetaData().getColumns(
                     null, "public", "ar_access_request_history", "request_version")) {
@@ -295,7 +295,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         }
     }
 
-    private void assertJitPackageCreationAndBinding(GenericContainer<?> server) throws Exception {
+    private void assertAccessPackageCreationAndBinding(GenericContainer<?> server) throws Exception {
         String adminToken = accessToken(server, "admin-cli");
         URI realmEndpoint = URI.create("http://%s:%d/admin/realms/master"
                 .formatted(server.getHost(), server.getMappedPort(8080)));
@@ -304,9 +304,10 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, realmResponse.statusCode());
         String realmId = new ObjectMapper().readTree(realmResponse.body()).path("id").asText();
-        String sourceRoleId = createRealmRole(server, adminToken, "jit-source-" + UUID.randomUUID());
+        String sourceRoleName = "jit-source-" + UUID.randomUUID();
+        String sourceRoleId = createRealmRole(server, adminToken, sourceRoleName);
         String approverRoleId = createRealmRole(server, adminToken, "jit-approver-" + UUID.randomUUID());
-        URI packagesEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/entitlements/jit-packages"
+        URI packagesEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/access-packages"
                 .formatted(server.getHost(), server.getMappedPort(8080)));
         String submission = """
                 {
@@ -327,10 +328,10 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .POST(HttpRequest.BodyPublishers.ofString(submission)).build(),
                 HttpResponse.BodyHandlers.discarding()).statusCode());
 
-        String clientId = "jit-package-admin-test-" + UUID.randomUUID();
+        String clientId = "access-package-admin-test-" + UUID.randomUUID();
         createDirectAccessClient(server, adminToken, clientId);
-        String username = "jit-package-viewer-" + UUID.randomUUID();
-        String password = "jit-package-viewer-password";
+        String username = "access-package-viewer-" + UUID.randomUUID();
+        String password = "access-package-viewer-password";
         createEnabledUser(server, adminToken, username, password);
         String viewerToken = accessToken(server, clientId, username, password);
         assignRealmManagementRoles(server, adminToken, subjectOf(viewerToken), "view-realm");
@@ -341,7 +342,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .POST(HttpRequest.BodyPublishers.ofString(submission)).build(),
                 HttpResponse.BodyHandlers.discarding()).statusCode());
 
-        int groupsBeforeInvalidRequest = jitPackageGroupCount(server, adminToken);
+        int groupsBeforeInvalidRequest = accessPackageGroupCount(server, adminToken);
         for (String invalidSubmission : List.of(
                 submission.replace("\"type\":\"REALM_ROLE\"", "\"type\":\"CLIENT_ROLE\""),
                 submission.replace("\"type\":\"REALM_ROLE\"", "\"type\":\"GROUP\""),
@@ -354,14 +355,19 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                             .POST(HttpRequest.BodyPublishers.ofString(invalidSubmission))
                             .build(), HttpResponse.BodyHandlers.discarding());
             assertEquals(400, invalidRole.statusCode());
-            assertEquals(groupsBeforeInvalidRequest, jitPackageGroupCount(server, adminToken),
+            assertEquals(groupsBeforeInvalidRequest, accessPackageGroupCount(server, adminToken),
                     "Invalid role selections must not leave an orphan Keycloak group");
         }
 
         assertBindingFailureRollsBackKeycloakGroup(server, adminToken, packagesEndpoint, submission);
 
-        ensureRealmRoleAndAssignToUser(server, adminToken, subjectOf(viewerToken), ACCESS_REQUEST_MANAGER_ROLE);
-        String managerToken = accessToken(server, clientId, username, password);
+        String managerUsername = "access-package-manager-" + UUID.randomUUID();
+        String managerPassword = "access-package-manager-password";
+        createEnabledUser(server, adminToken, managerUsername, managerPassword);
+        String initialManagerToken = accessToken(server, clientId, managerUsername, managerPassword);
+        assignRealmManagementRoles(server, adminToken, subjectOf(initialManagerToken), "view-realm");
+        ensureRealmRoleAndAssignToUser(server, adminToken, subjectOf(initialManagerToken), ACCESS_REQUEST_MANAGER_ROLE);
+        String managerToken = accessToken(server, clientId, managerUsername, managerPassword);
 
         HttpResponse<String> created = client.send(HttpRequest.newBuilder(packagesEndpoint)
                         .header("Authorization", "Bearer " + managerToken)
@@ -375,11 +381,11 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertFalse(entitlementId.isBlank());
         assertFalse(groupId.isBlank());
         assertEquals("GROUP", entitlement.path("resourceType").asText());
-        jitPackageEntitlementId = entitlementId;
-        jitPackageGroupId = groupId;
+        accessPackageEntitlementId = entitlementId;
+        accessPackageGroupId = groupId;
         assertFalse(entitlement.path("requestable").asBoolean(),
-                "A newly created JIT package must remain unpublished until the administrator enables it");
-        assertEquals(groupsBeforeInvalidRequest + 1, jitPackageGroupCount(server, adminToken));
+                "A newly created access package must remain unpublished until the administrator enables it");
+        assertEquals(groupsBeforeInvalidRequest + 1, accessPackageGroupCount(server, adminToken));
 
         URI entitlementEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/entitlements/%s"
                 .formatted(server.getHost(), server.getMappedPort(8080), entitlementId));
@@ -388,6 +394,23 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, reloaded.statusCode());
         assertEquals(groupId, new ObjectMapper().readTree(reloaded.body()).path("resourceId").asText());
+
+        URI packageDetailsEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/access-packages/%s"
+                .formatted(server.getHost(), server.getMappedPort(8080), entitlementId));
+        HttpResponse<String> packageDetails = client.send(HttpRequest.newBuilder(packageDetailsEndpoint)
+                        .header("Authorization", "Bearer " + managerToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, packageDetails.statusCode());
+        JsonNode packageResponse = new ObjectMapper().readTree(packageDetails.body());
+        assertEquals(groupId, packageResponse.path("groupId").asText());
+        assertEquals("AR_PKG_" + entitlementId, packageResponse.path("groupName").asText());
+        assertTrue(packageResponse.path("groupExists").asBoolean());
+        assertTrue(packageResponse.path("configurationValid").asBoolean());
+        assertEquals(sourceRoleId, packageResponse.path("roleMappings").get(0).path("roleId").asText());
+        assertEquals(sourceRoleName, packageResponse.path("roleMappings").get(0).path("name").asText());
+        assertEquals(403, client.send(HttpRequest.newBuilder(packageDetailsEndpoint)
+                        .header("Authorization", "Bearer " + viewerToken).GET().build(),
+                HttpResponse.BodyHandlers.discarding()).statusCode());
 
         URI groupEndpoint = URI.create("http://%s:%d/admin/realms/master/groups/%s"
                 .formatted(server.getHost(), server.getMappedPort(8080), groupId));
@@ -406,12 +429,41 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         new ObjectMapper().readTree(groupRoles.body()).spliterator(), false)
                 .anyMatch(role -> sourceRoleId.equals(role.path("id").asText())));
 
+        String roleRepresentations = groupRoles.body();
+        assertEquals(204, client.send(HttpRequest.newBuilder(groupRolesEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .method("DELETE", HttpRequest.BodyPublishers.ofString(roleRepresentations)).build(),
+                HttpResponse.BodyHandlers.discarding()).statusCode());
+        HttpResponse<String> misconfigured = client.send(HttpRequest.newBuilder(packageDetailsEndpoint)
+                        .header("Authorization", "Bearer " + managerToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, misconfigured.statusCode());
+        assertFalse(new ObjectMapper().readTree(misconfigured.body()).path("configurationValid").asBoolean());
+        String publish = """
+                {"displayName":"Temporary reporting access","description":"Time-bound reporting package.",
+                 "riskLevel":"MEDIUM","approverRoleId":"%s","defaultDurationSeconds":604800,
+                 "maxDurationSeconds":2592000,"allowPermanent":false,"requestable":true,"version":0}
+                """.formatted(approverRoleId);
+        HttpResponse<String> rejectedPublish = client.send(HttpRequest.newBuilder(entitlementEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(publish)).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, rejectedPublish.statusCode(), rejectedPublish.body());
+        assertError(rejectedPublish.body(), "INVALID_ACCESS_PACKAGE_CONFIGURATION", null);
+        assertEquals(204, client.send(HttpRequest.newBuilder(groupRolesEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(roleRepresentations)).build(),
+                HttpResponse.BodyHandlers.discarding()).statusCode());
+
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              PreparedStatement binding = connection.prepareStatement(
-                     "select realm_id, group_id, group_name from ar_jit_package where entitlement_id = ?");
+                     "select realm_id, group_id, group_name from ar_access_package where entitlement_id = ?");
              PreparedStatement mapping = connection.prepareStatement(
-                     "select role_type, role_id from ar_jit_package_role where entitlement_id = ?")) {
+                     "select role_type, role_id from ar_access_package_role where entitlement_id = ?")) {
             binding.setString(1, entitlementId);
             try (ResultSet row = binding.executeQuery()) {
                 assertTrue(row.next(), "The group binding must be committed with the entitlement");
@@ -430,7 +482,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         }
     }
 
-    private int jitPackageGroupCount(GenericContainer<?> server, String adminToken) throws Exception {
+    private int accessPackageGroupCount(GenericContainer<?> server, String adminToken) throws Exception {
         URI groupsEndpoint = URI.create("http://%s:%d/admin/realms/master/groups?search=AR_PKG_&exact=false&max=100"
                 .formatted(server.getHost(), server.getMappedPort(8080)));
         HttpResponse<String> groups = HttpClient.newHttpClient().send(
@@ -440,21 +492,21 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         return new ObjectMapper().readTree(groups.body()).size();
     }
 
-    private void assertJitPackageSurvivesRestart(GenericContainer<?> server) throws Exception {
-        assertNotNull(jitPackageEntitlementId);
-        assertNotNull(jitPackageGroupId);
+    private void assertAccessPackageSurvivesRestart(GenericContainer<?> server) throws Exception {
+        assertNotNull(accessPackageEntitlementId);
+        assertNotNull(accessPackageGroupId);
         String adminToken = accessToken(server, "admin-cli");
         URI entitlementEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/entitlements/%s"
-                .formatted(server.getHost(), server.getMappedPort(8080), jitPackageEntitlementId));
+                .formatted(server.getHost(), server.getMappedPort(8080), accessPackageEntitlementId));
         HttpResponse<String> entitlement = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementEndpoint)
                         .header("Authorization", "Bearer " + adminToken).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, entitlement.statusCode());
-        assertEquals(jitPackageGroupId, new ObjectMapper().readTree(entitlement.body()).path("resourceId").asText());
+        assertEquals(accessPackageGroupId, new ObjectMapper().readTree(entitlement.body()).path("resourceId").asText());
 
         URI groupEndpoint = URI.create("http://%s:%d/admin/realms/master/groups/%s"
-                .formatted(server.getHost(), server.getMappedPort(8080), jitPackageGroupId));
+                .formatted(server.getHost(), server.getMappedPort(8080), accessPackageGroupId));
         HttpResponse<Void> group = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(groupEndpoint)
                         .header("Authorization", "Bearer " + adminToken).GET().build(),
@@ -463,18 +515,18 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              PreparedStatement binding = connection.prepareStatement(
-                     "select group_id from ar_jit_package where entitlement_id = ?")) {
-            binding.setString(1, jitPackageEntitlementId);
+                     "select group_id from ar_access_package where entitlement_id = ?")) {
+            binding.setString(1, accessPackageEntitlementId);
             try (ResultSet row = binding.executeQuery()) {
                 assertTrue(row.next());
-                assertEquals(jitPackageGroupId, row.getString(1));
+                assertEquals(accessPackageGroupId, row.getString(1));
             }
         }
     }
 
     private void assertBindingFailureRollsBackKeycloakGroup(GenericContainer<?> server, String adminToken,
             URI packagesEndpoint, String submission) throws Exception {
-        int groupsBefore = jitPackageGroupCount(server, adminToken);
+        int groupsBefore = accessPackageGroupCount(server, adminToken);
         long entitlementsBefore;
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
@@ -489,7 +541,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
-            statement.execute("alter table ar_jit_package add constraint jit_binding_fail_test check (false)");
+            statement.execute("alter table ar_access_package add constraint jit_binding_fail_test check (false)");
         }
         try {
             HttpResponse<Void> failed = HttpClient.newHttpClient().send(HttpRequest.newBuilder(packagesEndpoint)
@@ -502,10 +554,10 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             try (Connection connection = DriverManager.getConnection(
                     POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
                  Statement statement = connection.createStatement()) {
-                statement.execute("alter table ar_jit_package drop constraint jit_binding_fail_test");
+                statement.execute("alter table ar_access_package drop constraint jit_binding_fail_test");
             }
         }
-        assertEquals(groupsBefore, jitPackageGroupCount(server, adminToken),
+        assertEquals(groupsBefore, accessPackageGroupCount(server, adminToken),
                 "A failed binding must roll back the Keycloak group creation");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());

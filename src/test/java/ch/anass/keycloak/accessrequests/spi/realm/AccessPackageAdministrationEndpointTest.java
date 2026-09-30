@@ -17,16 +17,16 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class JitPackageAdministrationEndpointTest {
+class AccessPackageAdministrationEndpointTest {
 
     @Test
     void exposesDedicatedJsonCreationWithoutRetrofittingAnExistingEntitlement() {
         Method endpoint = Arrays.stream(AccessRequestRealmResource.class.getDeclaredMethods())
                 .filter(method -> method.isAnnotationPresent(POST.class)
                         && method.isAnnotationPresent(Path.class)
-                        && "admin/entitlements/jit-packages".equals(method.getAnnotation(Path.class).value()))
+                        && "admin/access-packages".equals(method.getAnnotation(Path.class).value()))
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("JIT packages need an atomic admin creation endpoint"));
+                .orElseThrow(() -> new AssertionError("access packages need an atomic admin creation endpoint"));
 
         assertEquals(Response.class, endpoint.getReturnType());
         assertEquals(MediaType.APPLICATION_JSON, endpoint.getAnnotation(Consumes.class).value()[0]);

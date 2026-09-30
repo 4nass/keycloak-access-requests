@@ -88,6 +88,26 @@ export type EntitlementUpdate = Pick<
     | "defaultDurationSeconds" | "maxDurationSeconds" | "allowPermanent"
 >;
 
+export type AccessPackageRole = {
+    type: "REALM_ROLE" | "CLIENT_ROLE";
+    roleId: string;
+};
+
+export type AccessPackageCreation = Pick<
+    Entitlement,
+    "displayName" | "description" | "riskLevel" | "approverRoleId"
+    | "defaultDurationSeconds" | "maxDurationSeconds" | "allowPermanent"
+> & { roleMappings: AccessPackageRole[] };
+
+export type AccessPackageDetails = {
+    entitlementId: string;
+    groupId: string;
+    groupName: string;
+    groupExists: boolean;
+    configurationValid: boolean;
+    roleMappings: (AccessPackageRole & { name: string | null; missing: boolean })[];
+};
+
 export type AdminCapabilities = {
     canManageCatalog: boolean;
     canManageNotifications: boolean;
@@ -198,6 +218,8 @@ export type EntitlementsAdminApi = {
         signal?: AbortSignal;
     }): Promise<KeycloakReferencePage>;
     create(submission: EntitlementCreation): Promise<Entitlement>;
+    createAccessPackage(submission: AccessPackageCreation): Promise<Entitlement>;
+    getAccessPackage(packageId: string): Promise<AccessPackageDetails | null>;
     update(id: string, submission: EntitlementUpdate): Promise<Entitlement>;
     retryNotificationDelivery(id: string): Promise<void>;
 };
@@ -312,6 +334,17 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
                 { signal: query?.signal });
         },
         create: (submission) => request("/admin/entitlements", json("POST", submission)),
+        createAccessPackage: (submission) => request("/admin/access-packages", json("POST", submission)),
+        getAccessPackage: async (id) => {
+            try {
+                return await request<AccessPackageDetails>(`/admin/access-packages/${encodeURIComponent(id)}`);
+            } catch (error) {
+                if (isEntitlementsAdminApiError(error) && error.status === 404) {
+                    return null;
+                }
+                throw error;
+            }
+        },
         update: (id, submission) => request(`/admin/entitlements/${encodeURIComponent(id)}`, json("PUT", submission)),
         retryNotificationDelivery: (id) => request(
             `/admin/notification-deliveries/${encodeURIComponent(id)}/retry`,

@@ -115,7 +115,9 @@ The server returns `403 Forbidden` when a caller tries to cancel another user's 
 | `GET` | `/admin/references` | Search selectable Keycloak roles or groups |
 | `GET` | `/admin/entitlements` | List all entitlement drafts and published entitlements |
 | `POST` | `/admin/entitlements` | Create a draft entitlement |
+| `POST` | `/admin/access-packages` | Create a draft package with its dedicated group and role bindings |
 | `GET` | `/admin/entitlements/{entitlementId}` | Get one entitlement |
+| `GET` | `/admin/access-packages/{packageId}` | Inspect the bound group, roles, and configuration health |
 | `PUT` | `/admin/entitlements/{entitlementId}` | Update metadata and requestable state |
 
 ### `GET /admin/references`
@@ -149,6 +151,24 @@ An empty or one-character `search` does not enumerate the realm; without `select
 ```
 
 The selected resource must exist and match `resourceType`. The approver role must exist in the same realm. The duration values are configurable per entitlement; omitting them on creation applies the risk-level defaults and `allowPermanent=false`. Creation always produces a draft with `requestable=false` and returns `201 Created`. A duplicate resource in the same realm returns `409 Conflict`.
+
+### Access packages
+
+`POST /admin/access-packages` accepts the same metadata and duration-policy fields as
+entitlement creation, except for `resourceType` and `resourceId`. It requires `roleMappings`, an
+array of 1–100 `{ "type": "REALM_ROLE" | "CLIENT_ROLE", "roleId": "..." }` entries. The server
+creates a dedicated `AR_PKG_{entitlementId}` group, maps the selected roles to it, and persists
+the binding with a draft GROUP entitlement in one transaction. The package ID is the ID of this
+entitlement. The package defines the group and role composition; the entitlement defines the
+catalog policy (`riskLevel`, approvers, duration, `allowPermanent`, and `requestable`). A grant
+records an individual user's resulting access. The administrator must inspect the package and
+publish its entitlement separately.
+
+`GET /admin/access-packages/{packageId}` returns the group ID/name, `groupExists`,
+`configurationValid`, and each bound role's type, ID, name, and `missing` flag. It returns 404 for
+an entitlement without an access-package binding. Publishing an invalid package through the
+entitlement `PUT` returns 409;
+unpublishing remains possible.
 
 ### `PUT /admin/entitlements/{entitlementId}`
 

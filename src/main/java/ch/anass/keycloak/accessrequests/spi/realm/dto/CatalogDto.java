@@ -42,13 +42,21 @@ public final class CatalogDto {
             Long maxDurationSeconds, Boolean allowPermanent) {
     }
 
-    public record JitPackageCreation(
+    public record AccessPackageCreation(
             String displayName, String description, RiskLevel riskLevel, String approverRoleId,
             Long defaultDurationSeconds, Long maxDurationSeconds, Boolean allowPermanent,
-            List<JitPackageRole> roleMappings) {
+            List<AccessPackageRole> roleMappings) {
     }
 
-    public record JitPackageRole(ResourceType type, String roleId) {
+    public record AccessPackageRole(ResourceType type, String roleId) {
+    }
+
+    public record AccessPackageResponse(
+            String entitlementId, String groupId, String groupName, boolean groupExists, boolean configurationValid,
+            List<AccessPackageRoleResponse> roleMappings) {
+    }
+
+    public record AccessPackageRoleResponse(ResourceType type, String roleId, String name, boolean missing) {
     }
 
     public record EntitlementUpdate(

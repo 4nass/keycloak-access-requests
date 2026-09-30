@@ -7,7 +7,7 @@ import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementAuditEvent;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementPage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementQuery;
-import ch.anass.keycloak.accessrequests.core.domain.entitlement.JitAccessPackage;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.AccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.DuplicateEntitlementException;
@@ -19,7 +19,9 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.EntitlementList
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.EntitlementResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.EntitlementUpdate;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.KeycloakReferenceListResponse;
-import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.JitPackageCreation;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.AccessPackageCreation;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.AccessPackageResponse;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.AccessPackageRoleResponse;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.Response;
@@ -30,6 +32,7 @@ import org.keycloak.models.RoleModel;
 import java.time.Instant;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestErrors.error;
@@ -112,27 +115,27 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
         }
     }
 
-    public Response createJitPackage(JitPackageCreation submission) {
+    public Response createAccessPackage(AccessPackageCreation submission) {
         AccessRequestManager manager = requireAccessRequestManager();
-        JitPackageCreation validated = requireJitPackageCreation(submission);
+        AccessPackageCreation validated = requireAccessPackageCreation(submission);
         DurationPolicy durationPolicy = creationDurationPolicy(validated.riskLevel(),
                 validated.defaultDurationSeconds(), validated.maxDurationSeconds(), validated.allowPermanent());
-        List<JitAccessPackage.RoleMapping> mappings = validated.roleMappings().stream()
-                .map(role -> new JitAccessPackage.RoleMapping(role.type(), role.roleId()))
+        List<AccessPackage.RoleMapping> mappings = validated.roleMappings().stream()
+                .map(role -> new AccessPackage.RoleMapping(role.type(), role.roleId()))
                 .toList();
         String entitlementId = UUID.randomUUID().toString();
 
         try {
             Entitlement persisted = transaction().execute(() -> {
                 validateApproverRole(manager.realm(), validated.approverRoleId());
-                JitAccessPackage accessPackage = jitPackageGroupFactory(manager.realm())
+                AccessPackage accessPackage = accessPackageGroupFactory(manager.realm())
                         .create(entitlementId, manager.realm().getId(), mappings);
                 Entitlement created = Entitlement.create(entitlementId, manager.realm().getId(),
                         ResourceType.GROUP, accessPackage.groupId(), validated.displayName(),
                         validated.description(), validated.riskLevel(), validated.approverRoleId(),
                         durationPolicy, Instant.now());
                 Entitlement saved = entitlementRepository().create(created);
-                jitPackageRepository().create(accessPackage);
+                accessPackageRepository().create(accessPackage);
                 entitlementAuditEventPublisher().publish(
                         EntitlementAuditEvent.created(saved, manager.user().getId()));
                 new KeycloakEntitlementAdminEventPublisher(session, manager.realm(), manager.auth()).created(saved);
@@ -142,8 +145,30 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
         } catch (DuplicateEntitlementException exception) {
             return error(Response.Status.CONFLICT, "ENTITLEMENT_ALREADY_EXISTS", exception.getMessage(), null);
         } catch (IllegalArgumentException exception) {
-            return error(Response.Status.BAD_REQUEST, "INVALID_JIT_PACKAGE", exception.getMessage(), null);
+            return error(Response.Status.BAD_REQUEST, "INVALID_ACCESS_PACKAGE", exception.getMessage(), null);
         }
+    }
+
+    public AccessPackageResponse getAccessPackage(String packageId) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        AccessPackage accessPackage = accessPackageRepository()
+                .findByEntitlementId(manager.realm().getId(), packageId)
+                .orElseThrow(() -> new NotFoundException("Access package not found: " + packageId));
+        Entitlement entitlement = findEntitlement(manager.realm(), packageId);
+        if (entitlement.resourceType() != ResourceType.GROUP
+                || !entitlement.resourceId().equals(accessPackage.groupId())) {
+            throw new IllegalStateException("The package binding does not match its entitlement");
+        }
+        GroupModel group = session.groups().getGroupById(manager.realm(), accessPackage.groupId());
+        List<AccessPackageRoleResponse> roles = accessPackage.roleMappings().stream().map(mapping -> {
+            RoleModel role = manager.realm().getRoleById(mapping.roleId());
+            boolean missing = role == null || role.isClientRole() != (mapping.type() == ResourceType.CLIENT_ROLE);
+            return new AccessPackageRoleResponse(mapping.type(), mapping.roleId(),
+                    missing ? null : role.getName(), missing);
+        }).toList();
+        return new AccessPackageResponse(packageId, accessPackage.groupId(), accessPackage.groupName(),
+                group != null && accessPackage.groupName().equals(group.getName()),
+                isPackageConfigured(group, accessPackage), roles);
     }
 
     public Response getEntitlement(String entitlementId) {
@@ -158,6 +183,14 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
         EntitlementUpdate validatedSubmission = requireEntitlementUpdate(submission);
         validateApproverRole(manager.realm(), validatedSubmission.approverRoleId());
         Entitlement current = findEntitlement(manager.realm(), entitlementId);
+        if (validatedSubmission.requestable()) {
+            var binding = accessPackageRepository().findByEntitlementId(manager.realm().getId(), entitlementId);
+            if (binding.isPresent() && !isPackageConfigured(
+                    session.groups().getGroupById(manager.realm(), binding.get().groupId()), binding.get())) {
+                return error(Response.Status.CONFLICT, "INVALID_ACCESS_PACKAGE_CONFIGURATION",
+                        "The access package group or its role mappings have changed", null);
+            }
+        }
         try {
             Instant updatedAt = Instant.now();
             DurationPolicy durationPolicy = updateDurationPolicy(current, validatedSubmission);
@@ -202,6 +235,18 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
         return Response.ok(new KeycloakReferenceListResponse(page.items(), page.nextFirst(), page.hasMore())).build();
     }
 
+    private static boolean isPackageConfigured(GroupModel group, AccessPackage accessPackage) {
+        if (group == null || group.getParent() != null || !accessPackage.groupName().equals(group.getName())) {
+            return false;
+        }
+        List<AccessPackage.RoleMapping> actual = group.getRoleMappingsStream()
+                .map(role -> new AccessPackage.RoleMapping(
+                        role.isClientRole() ? ResourceType.CLIENT_ROLE : ResourceType.REALM_ROLE, role.getId()))
+                .toList();
+        return actual.size() == accessPackage.roleMappings().size()
+                && Set.copyOf(actual).equals(Set.copyOf(accessPackage.roleMappings()));
+    }
+
     private static EntitlementCreation requireEntitlementCreation(EntitlementCreation submission) {
         if (submission == null
                 || submission.resourceType() == null
@@ -216,14 +261,14 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
         return submission;
     }
 
-    private static JitPackageCreation requireJitPackageCreation(JitPackageCreation submission) {
+    private static AccessPackageCreation requireAccessPackageCreation(AccessPackageCreation submission) {
         if (submission == null || isBlank(submission.displayName()) || isBlank(submission.description())
                 || submission.riskLevel() == null || isBlank(submission.approverRoleId())
                 || submission.roleMappings() == null || submission.roleMappings().isEmpty()
                 || submission.roleMappings().size() > 100
                 || submission.roleMappings().stream().anyMatch(role -> role == null || role.type() == null
                         || role.type() == ResourceType.GROUP || isBlank(role.roleId()))) {
-            throw new BadRequestException("JIT package metadata and 1 to 100 realm or client roles must be provided");
+            throw new BadRequestException("access package metadata and 1 to 100 realm or client roles must be provided");
         }
         return submission;
     }

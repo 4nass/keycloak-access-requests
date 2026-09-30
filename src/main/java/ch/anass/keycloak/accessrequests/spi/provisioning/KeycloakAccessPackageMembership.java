@@ -1,10 +1,10 @@
 package ch.anass.keycloak.accessrequests.spi.provisioning;
 
-import ch.anass.keycloak.accessrequests.core.domain.entitlement.JitAccessPackage;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.AccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.grant.ProvisioningResult;
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureCode;
-import ch.anass.keycloak.accessrequests.core.port.JitAccessPackageProvisioner;
+import ch.anass.keycloak.accessrequests.core.port.AccessPackageProvisioner;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -18,20 +18,20 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /** Assigns package membership, never the underlying roles directly. */
-public final class KeycloakJitPackageMembership implements JitAccessPackageProvisioner {
+public final class KeycloakAccessPackageMembership implements AccessPackageProvisioner {
 
-    private static final Logger LOG = Logger.getLogger(KeycloakJitPackageMembership.class.getName());
+    private static final Logger LOG = Logger.getLogger(KeycloakAccessPackageMembership.class.getName());
 
     private final KeycloakSession session;
     private final RealmModel realm;
 
-    public KeycloakJitPackageMembership(KeycloakSession session, RealmModel realm) {
+    public KeycloakAccessPackageMembership(KeycloakSession session, RealmModel realm) {
         this.session = Objects.requireNonNull(session, "session must not be null");
         this.realm = Objects.requireNonNull(realm, "realm must not be null");
     }
 
     @Override
-    public ProvisioningResult grant(String realmId, String requesterId, JitAccessPackage accessPackage) {
+    public ProvisioningResult grant(String realmId, String requesterId, AccessPackage accessPackage) {
         Objects.requireNonNull(accessPackage, "accessPackage must not be null");
         if (!realm.getId().equals(realmId) || !accessPackage.realmId().equals(realmId)) {
             return ProvisioningResult.failed(ProvisioningFailureCode.REALM_MISMATCH,
@@ -48,8 +48,8 @@ public final class KeycloakJitPackageMembership implements JitAccessPackageProvi
                 return ProvisioningResult.failed(ProvisioningFailureCode.RESOURCE_MISSING,
                         "The package delivery group no longer exists.");
             }
-            List<JitAccessPackage.RoleMapping> actualMappings = group.getRoleMappingsStream()
-                    .map(KeycloakJitPackageMembership::mapping)
+            List<AccessPackage.RoleMapping> actualMappings = group.getRoleMappingsStream()
+                    .map(KeycloakAccessPackageMembership::mapping)
                     .toList();
             if (!accessPackage.groupId().equals(group.getId())
                     || !accessPackage.groupName().equals(group.getName())
@@ -74,8 +74,8 @@ public final class KeycloakJitPackageMembership implements JitAccessPackageProvi
         }
     }
 
-    private static JitAccessPackage.RoleMapping mapping(RoleModel role) {
-        return new JitAccessPackage.RoleMapping(
+    private static AccessPackage.RoleMapping mapping(RoleModel role) {
+        return new AccessPackage.RoleMapping(
                 role.isClientRole() ? ResourceType.CLIENT_ROLE : ResourceType.REALM_ROLE, role.getId());
     }
 }

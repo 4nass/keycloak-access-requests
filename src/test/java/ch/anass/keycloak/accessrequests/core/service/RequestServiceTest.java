@@ -12,7 +12,7 @@ import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.request.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
-import ch.anass.keycloak.accessrequests.core.domain.entitlement.JitAccessPackage;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.AccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidRequestStateException;
 import ch.anass.keycloak.accessrequests.core.domain.grant.ProvisioningResult;
@@ -29,8 +29,8 @@ import ch.anass.keycloak.accessrequests.core.port.ApprovalAuthorizer;
 import ch.anass.keycloak.accessrequests.core.port.EffectiveAccessChecker;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementProvisioner;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
-import ch.anass.keycloak.accessrequests.core.port.JitAccessPackageProvisioner;
-import ch.anass.keycloak.accessrequests.core.port.JitAccessPackageRepository;
+import ch.anass.keycloak.accessrequests.core.port.AccessPackageProvisioner;
+import ch.anass.keycloak.accessrequests.core.port.AccessPackageRepository;
 import ch.anass.keycloak.accessrequests.core.port.UserStatusReader;
 import org.junit.jupiter.api.Test;
 
@@ -102,7 +102,7 @@ class RequestServiceTest {
             notifications);
 
     @Test
-    void approvedJitPackageJoinsItsGroupWithoutGrantingTheSourceRoleDirectly() {
+    void approvedAccessPackageJoinsItsGroupWithoutGrantingTheSourceRoleDirectly() {
         entitlements.add(financeEntitlement());
         AtomicInteger directGrants = new AtomicInteger();
         AtomicInteger groupJoins = new AtomicInteger();
@@ -162,19 +162,19 @@ class RequestServiceTest {
         assertEquals(null, grant.expiresAt());
     }
 
-    private RequestService packageService(JitAccessPackageProvisioner packageProvisioner,
+    private RequestService packageService(AccessPackageProvisioner packageProvisioner,
             AtomicInteger directGrants) {
-        JitAccessPackage accessPackage = new JitAccessPackage("entitlement-1", "realm-1", "jit-group-1",
+        AccessPackage accessPackage = new AccessPackage("entitlement-1", "realm-1", "jit-group-1",
                 "AR_PKG_entitlement-1", List.of(
-                        new JitAccessPackage.RoleMapping(ResourceType.REALM_ROLE, "finance-reader")));
-        JitAccessPackageRepository packageRepository = new JitAccessPackageRepository() {
+                        new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "finance-reader")));
+        AccessPackageRepository packageRepository = new AccessPackageRepository() {
             @Override
-            public void create(JitAccessPackage value) {
+            public void create(AccessPackage value) {
                 throw new UnsupportedOperationException();
             }
 
             @Override
-            public Optional<JitAccessPackage> findByEntitlementId(String realmId, String entitlementId) {
+            public Optional<AccessPackage> findByEntitlementId(String realmId, String entitlementId) {
                 return realmId.equals(accessPackage.realmId()) && entitlementId.equals(accessPackage.entitlementId())
                         ? Optional.of(accessPackage) : Optional.empty();
             }

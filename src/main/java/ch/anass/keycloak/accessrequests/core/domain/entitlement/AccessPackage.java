@@ -10,24 +10,24 @@ import java.util.Set;
  * <p>The group identifier must come from a group created by the extension and stored with the package.
  * The name prefix is a convention, not evidence of ownership or a permission boundary.
  */
-public record JitAccessPackage(
+public record AccessPackage(
         String entitlementId,
         String realmId,
         String groupId,
         String groupName,
         List<RoleMapping> roleMappings) {
 
-    public JitAccessPackage {
+    public AccessPackage {
         entitlementId = requireText(entitlementId, "entitlementId");
         realmId = requireText(realmId, "realmId");
         groupId = requireText(groupId, "groupId");
         groupName = requireText(groupName, "groupName");
         if (!groupName.startsWith("AR_PKG_") || groupName.length() == "AR_PKG_".length()) {
-            throw new IllegalArgumentException("A JIT package group must use the AR_PKG_ namespace");
+            throw new IllegalArgumentException("An access package group must use the AR_PKG_ namespace");
         }
         roleMappings = List.copyOf(Objects.requireNonNull(roleMappings, "roleMappings must not be null"));
         if (roleMappings.isEmpty() || Set.copyOf(roleMappings).size() != roleMappings.size()) {
-            throw new IllegalArgumentException("A JIT package needs distinct role mappings");
+            throw new IllegalArgumentException("An access package needs distinct role mappings");
         }
     }
 
@@ -36,7 +36,7 @@ public record JitAccessPackage(
         public RoleMapping {
             type = Objects.requireNonNull(type, "type must not be null");
             if (type == ResourceType.GROUP) {
-                throw new IllegalArgumentException("A JIT package maps roles, not source groups");
+                throw new IllegalArgumentException("An access package maps roles, not source groups");
             }
             roleId = requireText(roleId, "roleId");
         }

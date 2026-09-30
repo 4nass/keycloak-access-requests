@@ -1,6 +1,6 @@
 package ch.anass.keycloak.accessrequests.persistence.jpa.entity;
 
-import ch.anass.keycloak.accessrequests.core.domain.entitlement.JitAccessPackage;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.AccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
@@ -20,11 +20,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "AR_JIT_PACKAGE", uniqueConstraints = {
-        @UniqueConstraint(name = "UK_JIT_PACKAGE_GROUP_ID", columnNames = "GROUP_ID"),
-        @UniqueConstraint(name = "UK_JIT_PACKAGE_GROUP_NAME", columnNames = {"REALM_ID", "GROUP_NAME"})
+@Table(name = "AR_ACCESS_PACKAGE", uniqueConstraints = {
+        @UniqueConstraint(name = "UK_ACCESS_PACKAGE_GROUP_ID", columnNames = "GROUP_ID"),
+        @UniqueConstraint(name = "UK_ACCESS_PACKAGE_GROUP_NAME", columnNames = {"REALM_ID", "GROUP_NAME"})
 })
-public class JitAccessPackageEntity {
+public class AccessPackageEntity {
 
     @Id
     @Column(name = "ENTITLEMENT_ID", nullable = false, length = 36)
@@ -40,16 +40,16 @@ public class JitAccessPackageEntity {
     private String groupName;
 
     @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "AR_JIT_PACKAGE_ROLE", joinColumns = @JoinColumn(name = "ENTITLEMENT_ID"),
-            uniqueConstraints = @UniqueConstraint(name = "UK_JIT_PACKAGE_ROLE",
+    @CollectionTable(name = "AR_ACCESS_PACKAGE_ROLE", joinColumns = @JoinColumn(name = "ENTITLEMENT_ID"),
+            uniqueConstraints = @UniqueConstraint(name = "UK_ACCESS_PACKAGE_ROLE",
                     columnNames = {"ENTITLEMENT_ID", "ROLE_TYPE", "ROLE_ID"}))
     @OrderColumn(name = "MAPPING_ORDER", nullable = false)
     private List<RoleMappingValue> roleMappings = new ArrayList<>();
 
-    protected JitAccessPackageEntity() {
+    protected AccessPackageEntity() {
     }
 
-    private JitAccessPackageEntity(JitAccessPackage accessPackage) {
+    private AccessPackageEntity(AccessPackage accessPackage) {
         entitlementId = accessPackage.entitlementId();
         realmId = accessPackage.realmId();
         groupId = accessPackage.groupId();
@@ -58,12 +58,12 @@ public class JitAccessPackageEntity {
                 .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
     }
 
-    public static JitAccessPackageEntity from(JitAccessPackage accessPackage) {
-        return new JitAccessPackageEntity(accessPackage);
+    public static AccessPackageEntity from(AccessPackage accessPackage) {
+        return new AccessPackageEntity(accessPackage);
     }
 
-    public JitAccessPackage toDomain() {
-        return new JitAccessPackage(entitlementId, realmId, groupId, groupName,
+    public AccessPackage toDomain() {
+        return new AccessPackage(entitlementId, realmId, groupId, groupName,
                 roleMappings.stream().map(RoleMappingValue::toDomain).toList());
     }
 
@@ -84,13 +84,13 @@ public class JitAccessPackageEntity {
         protected RoleMappingValue() {
         }
 
-        private RoleMappingValue(JitAccessPackage.RoleMapping mapping) {
+        private RoleMappingValue(AccessPackage.RoleMapping mapping) {
             type = mapping.type();
             roleId = mapping.roleId();
         }
 
-        private JitAccessPackage.RoleMapping toDomain() {
-            return new JitAccessPackage.RoleMapping(type, roleId);
+        private AccessPackage.RoleMapping toDomain() {
+            return new AccessPackage.RoleMapping(type, roleId);
         }
     }
 }

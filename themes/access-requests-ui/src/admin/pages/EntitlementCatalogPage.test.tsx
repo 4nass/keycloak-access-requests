@@ -1,10 +1,12 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
     create: vi.fn(),
+    createAccessPackage: vi.fn(),
+    getAccessPackage: vi.fn(),
     list: vi.fn(),
     references: vi.fn(),
     update: vi.fn()
@@ -46,11 +48,15 @@ function deferred<T>() {
 describe("EntitlementCatalogPage", () => {
     beforeEach(() => {
         api.create.mockReset();
+        api.createAccessPackage.mockReset();
+        api.getAccessPackage.mockReset().mockResolvedValue(null);
         api.list.mockReset().mockResolvedValue({ items: [entitlement], page: 0, size: 20, total: 1 });
         api.references.mockReset().mockImplementation((type) => Promise.resolve({
             items: type === "REALM_ROLE" ? [
                 { description: "Access to finance reports", id: "finance-reader-role", name: "Finance Reader", type },
                 { description: "Approves finance access", id: "finance-approvers", name: "Finance Approvers", type }
+            ] : type === "CLIENT_ROLE" ? [
+                { description: "Package client role", id: "client-role-id", name: "Client Role", type }
             ] : [],
             nextFirst: 2,
             hasMore: false
@@ -155,6 +161,79 @@ describe("EntitlementCatalogPage", () => {
         }));
         expect(screen.queryByRole("textbox", { name: "accessRequestsAdminResourceId" })).not.toBeInTheDocument();
         expect(screen.queryByRole("textbox", { name: "accessRequestsAdminApproverRole" })).not.toBeInTheDocument();
+    });
+
+    it("creates a closed access package from selected Keycloak roles and shows its group before publishing", async () => {
+        const user = userEvent.setup();
+        const created = {
+            ...entitlement, id: "access-package-id", displayName: "Temporary access",
+            resourceType: "GROUP" as const, resourceId: "jit-group-id", requestable: false, version: 0
+        };
+        api.createAccessPackage.mockResolvedValue(created);
+        api.getAccessPackage.mockResolvedValue({
+            entitlementId: created.id, groupId: "jit-group-id", groupName: "AR_PKG_TEMPORARY_ACCESS",
+            groupExists: true, configurationValid: true,
+            roleMappings: [
+                { type: "REALM_ROLE", roleId: "finance-reader-role", name: "Finance Reader", missing: false },
+                { type: "CLIENT_ROLE", roleId: "client-role-id", name: "Client Role", missing: false }
+            ]
+        });
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminPackageCreate" }));
+        const dialog = within(screen.getByRole("dialog", { name: "accessRequestsAdminPackageCreate" }));
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminDisplayName" }), "Temporary access");
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminDescription" }), "Temporary package");
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminSearchApproverRoles" }), "finance");
+        await waitFor(() => expect(screen.getByRole("combobox", { name: "accessRequestsAdminSelectApproverRole" }))
+            .toHaveTextContent("Finance Approvers"));
+        await user.selectOptions(screen.getByRole("combobox", { name: "accessRequestsAdminSelectApproverRole" }), "finance-approvers");
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminPackageSearchRoles" }), "finance");
+        await waitFor(() => expect(screen.getByRole("combobox", { name: "accessRequestsAdminPackageSelectRole" }))
+            .toHaveTextContent("Finance Reader"));
+        await user.selectOptions(screen.getByRole("combobox", { name: "accessRequestsAdminPackageSelectRole" }), "finance-reader-role");
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminPackageAddRole" }));
+        expect(screen.getByRole("list", { name: "accessRequestsAdminPackageSelectedRoles" })).toHaveTextContent("Finance Reader");
+        await user.selectOptions(screen.getByRole("combobox", { name: "accessRequestsAdminPackageRoles" }), "CLIENT_ROLE");
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminPackageSearchRoles" }), "client");
+        await waitFor(() => expect(screen.getByRole("combobox", { name: "accessRequestsAdminPackageSelectRole" }))
+            .toHaveTextContent("Client Role"));
+        await user.selectOptions(screen.getByRole("combobox", { name: "accessRequestsAdminPackageSelectRole" }), "client-role-id");
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminPackageAddRole" }));
+        expect(screen.getByRole("list", { name: "accessRequestsAdminPackageSelectedRoles" })).toHaveTextContent("Client Role");
+        expect(screen.getByRole("combobox", { name: "accessRequestsAdminPackageSelectRole" })).not.toBeRequired();
+        await user.click(dialog.getByRole("button", { name: "accessRequestsAdminPackageCreate" }));
+
+        await waitFor(() => expect(api.createAccessPackage).toHaveBeenCalledWith(expect.objectContaining({
+            displayName: "Temporary access",
+            roleMappings: [
+                { type: "REALM_ROLE", roleId: "finance-reader-role" },
+                { type: "CLIENT_ROLE", roleId: "client-role-id" }
+            ]
+        })));
+        await waitFor(() => expect(screen.getByText("AR_PKG_TEMPORARY_ACCESS")).toBeVisible());
+        expect(screen.getByRole("checkbox", { name: "accessRequestsAdminRequestable" })).not.toBeChecked();
+        expect(screen.getByText("accessRequestsAdminPackageCreated")).toBeVisible();
+    });
+
+    it("blocks publication when the JIT group configuration has changed", async () => {
+        const user = userEvent.setup();
+        api.list.mockResolvedValue({
+            items: [{ ...entitlement, id: "jit-id", resourceId: "jit-group", resourceType: "GROUP", requestable: false }],
+            page: 0, size: 20, total: 1
+        });
+        api.getAccessPackage.mockResolvedValue({
+            entitlementId: "jit-id", groupId: "jit-group", groupName: "AR_PKG_JIT", groupExists: true,
+            configurationValid: false,
+            roleMappings: [{ type: "REALM_ROLE", roleId: "role-id", name: "Role", missing: false }]
+        });
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminEditEntitlement" }));
+        expect(await screen.findByText("accessRequestsAdminPackageInvalidConfiguration")).toBeVisible();
+        expect(screen.getByRole("checkbox", { name: "accessRequestsAdminRequestable" })).toBeDisabled();
     });
 
     it("lets the administrator change default, maximum, and permanent access independently", async () => {

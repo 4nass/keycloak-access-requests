@@ -126,27 +126,27 @@
                 columnNames="REALM_ID, RESOURCE_TYPE, RESOURCE_ID"
                 constraintName="UK_ENTITLEMENT_RESOURCE"/>
 
-        <createTable tableName="AR_JIT_PACKAGE">
+        <createTable tableName="AR_ACCESS_PACKAGE">
             <column name="ENTITLEMENT_ID" type="VARCHAR(36)">
-                <constraints nullable="false" primaryKey="true" primaryKeyName="PK_JIT_PACKAGE"/>
+                <constraints nullable="false" primaryKey="true" primaryKeyName="PK_ACCESS_PACKAGE"/>
             </column>
             <column name="REALM_ID" type="VARCHAR(255)">
                 <constraints nullable="false"/>
             </column>
             <column name="GROUP_ID" type="VARCHAR(255)">
-                <constraints nullable="false" unique="true" uniqueConstraintName="UK_JIT_PACKAGE_GROUP_ID"/>
+                <constraints nullable="false" unique="true" uniqueConstraintName="UK_ACCESS_PACKAGE_GROUP_ID"/>
             </column>
             <column name="GROUP_NAME" type="VARCHAR(255)">
                 <constraints nullable="false"/>
             </column>
         </createTable>
-        <addUniqueConstraint tableName="AR_JIT_PACKAGE" columnNames="REALM_ID, GROUP_NAME"
-                constraintName="UK_JIT_PACKAGE_GROUP_NAME"/>
-        <addForeignKeyConstraint baseTableName="AR_JIT_PACKAGE" baseColumnNames="ENTITLEMENT_ID"
+        <addUniqueConstraint tableName="AR_ACCESS_PACKAGE" columnNames="REALM_ID, GROUP_NAME"
+                constraintName="UK_ACCESS_PACKAGE_GROUP_NAME"/>
+        <addForeignKeyConstraint baseTableName="AR_ACCESS_PACKAGE" baseColumnNames="ENTITLEMENT_ID"
                 referencedTableName="AR_ENTITLEMENT" referencedColumnNames="ID"
-                constraintName="FK_JIT_PACKAGE_ENTITLEMENT"/>
+                constraintName="FK_ACCESS_PACKAGE_ENTITLEMENT"/>
 
-        <createTable tableName="AR_JIT_PACKAGE_ROLE">
+        <createTable tableName="AR_ACCESS_PACKAGE_ROLE">
             <column name="ENTITLEMENT_ID" type="VARCHAR(36)">
                 <constraints nullable="false"/>
             </column>
@@ -160,14 +160,14 @@
                 <constraints nullable="false"/>
             </column>
         </createTable>
-        <addPrimaryKey tableName="AR_JIT_PACKAGE_ROLE" columnNames="ENTITLEMENT_ID, MAPPING_ORDER"
-                constraintName="PK_JIT_PACKAGE_ROLE"/>
-        <addUniqueConstraint tableName="AR_JIT_PACKAGE_ROLE" columnNames="ENTITLEMENT_ID, ROLE_TYPE, ROLE_ID"
-                constraintName="UK_JIT_PACKAGE_ROLE"/>
-        <addForeignKeyConstraint baseTableName="AR_JIT_PACKAGE_ROLE" baseColumnNames="ENTITLEMENT_ID"
-                referencedTableName="AR_JIT_PACKAGE" referencedColumnNames="ENTITLEMENT_ID"
-                constraintName="FK_JIT_PACKAGE_ROLE_PACKAGE"/>
-        <sql>ALTER TABLE AR_JIT_PACKAGE_ROLE ADD CONSTRAINT CK_JIT_PACKAGE_ROLE_TYPE
+        <addPrimaryKey tableName="AR_ACCESS_PACKAGE_ROLE" columnNames="ENTITLEMENT_ID, MAPPING_ORDER"
+                constraintName="PK_ACCESS_PACKAGE_ROLE"/>
+        <addUniqueConstraint tableName="AR_ACCESS_PACKAGE_ROLE" columnNames="ENTITLEMENT_ID, ROLE_TYPE, ROLE_ID"
+                constraintName="UK_ACCESS_PACKAGE_ROLE"/>
+        <addForeignKeyConstraint baseTableName="AR_ACCESS_PACKAGE_ROLE" baseColumnNames="ENTITLEMENT_ID"
+                referencedTableName="AR_ACCESS_PACKAGE" referencedColumnNames="ENTITLEMENT_ID"
+                constraintName="FK_ACCESS_PACKAGE_ROLE_PACKAGE"/>
+        <sql>ALTER TABLE AR_ACCESS_PACKAGE_ROLE ADD CONSTRAINT CK_ACCESS_PACKAGE_ROLE_TYPE
             CHECK (CASE WHEN ROLE_TYPE = 'REALM_ROLE' THEN TRUE
                         WHEN ROLE_TYPE = 'CLIENT_ROLE' THEN TRUE ELSE FALSE END)</sql>
 

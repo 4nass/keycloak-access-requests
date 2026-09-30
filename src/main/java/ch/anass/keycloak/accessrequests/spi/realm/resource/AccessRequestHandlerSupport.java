@@ -10,8 +10,8 @@ import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequ
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlementRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlementAuditEventPublisher;
-import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaJitAccessPackageRepository;
-import ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakJitPackageGroupFactory;
+import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessPackageRepository;
+import ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakAccessPackageGroupFactory;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakAccessRequestManagerAuthorizer;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.NotAuthorizedException;
@@ -74,12 +74,12 @@ abstract class AccessRequestHandlerSupport {
         return services.entitlementRepository();
     }
 
-    protected JpaJitAccessPackageRepository jitPackageRepository() {
-        return services.jitPackageRepository();
+    protected JpaAccessPackageRepository accessPackageRepository() {
+        return services.accessPackageRepository();
     }
 
-    protected KeycloakJitPackageGroupFactory jitPackageGroupFactory(RealmModel realm) {
-        return services.jitPackageGroupFactory(realm);
+    protected KeycloakAccessPackageGroupFactory accessPackageGroupFactory(RealmModel realm) {
+        return services.accessPackageGroupFactory(realm);
     }
 
     protected JpaAccessRequestRepository requestRepository() {

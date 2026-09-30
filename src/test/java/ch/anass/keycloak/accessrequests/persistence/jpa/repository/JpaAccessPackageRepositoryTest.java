@@ -1,7 +1,7 @@
 package ch.anass.keycloak.accessrequests.persistence.jpa.repository;
 
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
-import ch.anass.keycloak.accessrequests.core.domain.entitlement.JitAccessPackage;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.AccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementEntity;
@@ -21,11 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class JpaJitAccessPackageRepositoryTest {
+class JpaAccessPackageRepositoryTest {
 
     private static EntityManagerFactory entityManagerFactory;
     private EntityManager entityManager;
-    private JpaJitAccessPackageRepository repository;
+    private JpaAccessPackageRepository repository;
 
     @BeforeAll
     static void startDatabase() {
@@ -40,10 +40,10 @@ class JpaJitAccessPackageRepositoryTest {
     @BeforeEach
     void openEntityManager() {
         entityManager = entityManagerFactory.createEntityManager();
-        repository = new JpaJitAccessPackageRepository(entityManager);
+        repository = new JpaAccessPackageRepository(entityManager);
         inTransaction(() -> {
-            entityManager.createNativeQuery("delete from AR_JIT_PACKAGE_ROLE").executeUpdate();
-            entityManager.createNativeQuery("delete from AR_JIT_PACKAGE").executeUpdate();
+            entityManager.createNativeQuery("delete from AR_ACCESS_PACKAGE_ROLE").executeUpdate();
+            entityManager.createNativeQuery("delete from AR_ACCESS_PACKAGE").executeUpdate();
             entityManager.createQuery("delete from EntitlementEntity").executeUpdate();
         });
     }
@@ -56,7 +56,7 @@ class JpaJitAccessPackageRepositoryTest {
     @Test
     void persistsTheStableGroupBindingAndAllRoleMappingsWithoutCrossRealmReads() {
         persistEntitlement("entitlement-1", "realm-1");
-        JitAccessPackage accessPackage = accessPackage("entitlement-1", "realm-1", "group-1",
+        AccessPackage accessPackage = accessPackage("entitlement-1", "realm-1", "group-1",
                 "AR_PKG_entitlement-1");
 
         inTransaction(() -> repository.create(accessPackage));
@@ -65,7 +65,7 @@ class JpaJitAccessPackageRepositoryTest {
         assertEquals(accessPackage, repository.findByEntitlementId("realm-1", "entitlement-1").orElseThrow());
         assertTrue(repository.findByEntitlementId("other-realm", "entitlement-1").isEmpty());
         assertTrue(repository.findByEntitlementId("realm-1", "missing").isEmpty());
-        assertEquals(2L, count("AR_JIT_PACKAGE_ROLE"));
+        assertEquals(2L, count("AR_ACCESS_PACKAGE_ROLE"));
     }
 
     @Test
@@ -92,7 +92,7 @@ class JpaJitAccessPackageRepositoryTest {
                 accessPackage("entitlement-2", "realm-2", "group-1", "AR_PKG_entitlement-2"))));
         entityManager.clear();
         assertTrue(repository.findByEntitlementId("realm-2", "entitlement-2").isEmpty());
-        assertEquals(2L, count("AR_JIT_PACKAGE_ROLE"));
+        assertEquals(2L, count("AR_ACCESS_PACKAGE_ROLE"));
     }
 
     @Test
@@ -117,7 +117,7 @@ class JpaJitAccessPackageRepositoryTest {
         assertThrows(RuntimeException.class, () -> inTransaction(() -> repository.create(
                 accessPackage("entitlement-1", "realm-2", "group-2", "AR_PKG_wrong_realm"))));
         entityManager.clear();
-        assertEquals(0L, count("AR_JIT_PACKAGE"));
+        assertEquals(0L, count("AR_ACCESS_PACKAGE"));
     }
 
     @Test
@@ -133,22 +133,22 @@ class JpaJitAccessPackageRepositoryTest {
 
         entityManager.clear();
         assertTrue(repository.findByEntitlementId("realm-1", "entitlement-1").isEmpty());
-        assertEquals(0L, count("AR_JIT_PACKAGE"));
-        assertEquals(0L, count("AR_JIT_PACKAGE_ROLE"));
+        assertEquals(0L, count("AR_ACCESS_PACKAGE"));
+        assertEquals(0L, count("AR_ACCESS_PACKAGE_ROLE"));
     }
 
     private void persistEntitlement(String entitlementId, String realmId) {
         Entitlement entitlement = Entitlement.create(entitlementId, realmId, ResourceType.REALM_ROLE,
-                "role-" + entitlementId, "JIT package", "Temporary access via a package.",
+                "role-" + entitlementId, "access package", "Temporary access via a package.",
                 RiskLevel.LOW, "approver-role", Instant.parse("2026-09-01T10:00:00Z"));
         inTransaction(() -> entityManager.persist(EntitlementEntity.from(entitlement)));
     }
 
-    private static JitAccessPackage accessPackage(String entitlementId, String realmId, String groupId,
+    private static AccessPackage accessPackage(String entitlementId, String realmId, String groupId,
             String groupName) {
-        return new JitAccessPackage(entitlementId, realmId, groupId, groupName, List.of(
-                new JitAccessPackage.RoleMapping(ResourceType.REALM_ROLE, "realm-role"),
-                new JitAccessPackage.RoleMapping(ResourceType.CLIENT_ROLE, "client-role")));
+        return new AccessPackage(entitlementId, realmId, groupId, groupName, List.of(
+                new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "realm-role"),
+                new AccessPackage.RoleMapping(ResourceType.CLIENT_ROLE, "client-role")));
     }
 
     private long count(String table) {
