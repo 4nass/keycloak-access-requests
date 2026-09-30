@@ -37,6 +37,8 @@ class AccessRequestRouteContractTest {
                 "OPTIONS catalog | consumes=- | produces=- | params=-",
                 "GET admin/entitlements | consumes=- | produces=application/json | params=query:page=0,query:size=20",
                 "POST admin/entitlements | consumes=application/json | produces=application/json | params=body",
+                "POST admin/entitlements/jit-packages | consumes=application/json | "
+                        + "produces=application/json | params=body",
                 "GET admin/entitlements/{entitlementId} | consumes=- | produces=application/json | "
                         + "params=path:entitlementId",
                 "PUT admin/entitlements/{entitlementId} | consumes=application/json | "
@@ -70,8 +72,8 @@ class AccessRequestRouteContractTest {
                         + "params=body,path:requestId",
                 "POST {requestId}/reject | consumes=application/json | produces=application/json | "
                         + "params=body,path:requestId"), routes);
-        assertEquals(24, routes.size());
-        assertEquals(24, Arrays.stream(methods).filter(method -> method.isAnnotationPresent(Path.class)).count());
+        assertEquals(25, routes.size());
+        assertEquals(25, Arrays.stream(methods).filter(method -> method.isAnnotationPresent(Path.class)).count());
     }
 
     private static String route(Method method) {
