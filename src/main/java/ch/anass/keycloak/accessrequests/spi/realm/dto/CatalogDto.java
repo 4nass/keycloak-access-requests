@@ -42,6 +42,15 @@ public final class CatalogDto {
             Long maxDurationSeconds, Boolean allowPermanent) {
     }
 
+    public record JitPackageCreation(
+            String displayName, String description, RiskLevel riskLevel, String approverRoleId,
+            Long defaultDurationSeconds, Long maxDurationSeconds, Boolean allowPermanent,
+            List<JitPackageRole> roleMappings) {
+    }
+
+    public record JitPackageRole(ResourceType type, String roleId) {
+    }
+
     public record EntitlementUpdate(
             String displayName, String description, RiskLevel riskLevel, String approverRoleId,
             Boolean requestable, Long version, Long defaultDurationSeconds,

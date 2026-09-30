@@ -2,11 +2,12 @@ package ch.anass.keycloak.accessrequests.spi.realm.resource;
 
 import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogResult;
-import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementAuditEvent;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementPage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementQuery;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.JitAccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.DuplicateEntitlementException;
@@ -18,6 +19,7 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.EntitlementList
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.EntitlementResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.EntitlementUpdate;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.KeycloakReferenceListResponse;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.JitPackageCreation;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.Response;
@@ -110,6 +112,40 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
         }
     }
 
+    public Response createJitPackage(JitPackageCreation submission) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        JitPackageCreation validated = requireJitPackageCreation(submission);
+        DurationPolicy durationPolicy = creationDurationPolicy(validated.riskLevel(),
+                validated.defaultDurationSeconds(), validated.maxDurationSeconds(), validated.allowPermanent());
+        List<JitAccessPackage.RoleMapping> mappings = validated.roleMappings().stream()
+                .map(role -> new JitAccessPackage.RoleMapping(role.type(), role.roleId()))
+                .toList();
+        String entitlementId = UUID.randomUUID().toString();
+
+        try {
+            Entitlement persisted = transaction().execute(() -> {
+                validateApproverRole(manager.realm(), validated.approverRoleId());
+                JitAccessPackage accessPackage = jitPackageGroupFactory(manager.realm())
+                        .create(entitlementId, manager.realm().getId(), mappings);
+                Entitlement created = Entitlement.create(entitlementId, manager.realm().getId(),
+                        ResourceType.GROUP, accessPackage.groupId(), validated.displayName(),
+                        validated.description(), validated.riskLevel(), validated.approverRoleId(),
+                        durationPolicy, Instant.now());
+                Entitlement saved = entitlementRepository().create(created);
+                jitPackageRepository().create(accessPackage);
+                entitlementAuditEventPublisher().publish(
+                        EntitlementAuditEvent.created(saved, manager.user().getId()));
+                new KeycloakEntitlementAdminEventPublisher(session, manager.realm(), manager.auth()).created(saved);
+                return saved;
+            });
+            return Response.status(Response.Status.CREATED).entity(EntitlementResponse.from(persisted)).build();
+        } catch (DuplicateEntitlementException exception) {
+            return error(Response.Status.CONFLICT, "ENTITLEMENT_ALREADY_EXISTS", exception.getMessage(), null);
+        } catch (IllegalArgumentException exception) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_JIT_PACKAGE", exception.getMessage(), null);
+        }
+    }
+
     public Response getEntitlement(String entitlementId) {
         AccessRequestManager manager = requireAccessRequestManager();
         return Response.ok(EntitlementResponse.from(findEntitlement(manager.realm(), entitlementId))).build();
@@ -180,18 +216,35 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
         return submission;
     }
 
+    private static JitPackageCreation requireJitPackageCreation(JitPackageCreation submission) {
+        if (submission == null || isBlank(submission.displayName()) || isBlank(submission.description())
+                || submission.riskLevel() == null || isBlank(submission.approverRoleId())
+                || submission.roleMappings() == null || submission.roleMappings().isEmpty()
+                || submission.roleMappings().size() > 100
+                || submission.roleMappings().stream().anyMatch(role -> role == null || role.type() == null
+                        || role.type() == ResourceType.GROUP || isBlank(role.roleId()))) {
+            throw new BadRequestException("JIT package metadata and 1 to 100 realm or client roles must be provided");
+        }
+        return submission;
+    }
+
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
 
     private static DurationPolicy creationDurationPolicy(EntitlementCreation submission) {
-        if (submission.defaultDurationSeconds() == null && submission.maxDurationSeconds() == null) {
-            DurationPolicy defaults = DurationPolicy.defaultsFor(submission.riskLevel());
+        return creationDurationPolicy(submission.riskLevel(), submission.defaultDurationSeconds(),
+                submission.maxDurationSeconds(), submission.allowPermanent());
+    }
+
+    private static DurationPolicy creationDurationPolicy(RiskLevel riskLevel, Long defaultDurationSeconds,
+            Long maxDurationSeconds, Boolean allowPermanent) {
+        if (defaultDurationSeconds == null && maxDurationSeconds == null) {
+            DurationPolicy defaults = DurationPolicy.defaultsFor(riskLevel);
             return new DurationPolicy(defaults.defaultDuration(), defaults.maxDuration(),
-                    Boolean.TRUE.equals(submission.allowPermanent()));
+                    Boolean.TRUE.equals(allowPermanent));
         }
-        return requireDurationPolicy(submission.defaultDurationSeconds(), submission.maxDurationSeconds(),
-                submission.allowPermanent());
+        return requireDurationPolicy(defaultDurationSeconds, maxDurationSeconds, allowPermanent);
     }
 
     private static DurationPolicy updateDurationPolicy(Entitlement current, EntitlementUpdate submission) {

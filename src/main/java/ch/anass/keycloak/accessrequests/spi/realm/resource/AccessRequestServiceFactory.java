@@ -17,6 +17,7 @@ import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlemen
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaJitAccessPackageRepository;
 import ch.anass.keycloak.accessrequests.spi.notification.KeycloakAccessRequestNotificationOutboxPublisher;
 import ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakEntitlementProvisioner;
+import ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakJitPackageGroupFactory;
 import ch.anass.keycloak.accessrequests.spi.provisioning.KeycloakJitPackageMembership;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakAccessRequestTransaction;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakEffectiveAccessChecker;
@@ -52,6 +53,14 @@ final class AccessRequestServiceFactory {
 
     JpaEntitlementRepository entitlementRepository() {
         return new JpaEntitlementRepository(entityManager());
+    }
+
+    JpaJitAccessPackageRepository jitPackageRepository() {
+        return new JpaJitAccessPackageRepository(entityManager());
+    }
+
+    KeycloakJitPackageGroupFactory jitPackageGroupFactory(RealmModel realm) {
+        return new KeycloakJitPackageGroupFactory(session, realm);
     }
 
     JpaAccessRequestRepository requestRepository() {

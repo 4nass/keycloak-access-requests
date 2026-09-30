@@ -297,6 +297,13 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
     private void assertJitPackageCreationAndBinding(GenericContainer<?> server) throws Exception {
         String adminToken = accessToken(server, "admin-cli");
+        URI realmEndpoint = URI.create("http://%s:%d/admin/realms/master"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpResponse<String> realmResponse = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(realmEndpoint).header("Authorization", "Bearer " + adminToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, realmResponse.statusCode());
+        String realmId = new ObjectMapper().readTree(realmResponse.body()).path("id").asText();
         String sourceRoleId = createRealmRole(server, adminToken, "jit-source-" + UUID.randomUUID());
         String approverRoleId = createRealmRole(server, adminToken, "jit-approver-" + UUID.randomUUID());
         URI packagesEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/entitlements/jit-packages"
@@ -408,7 +415,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             binding.setString(1, entitlementId);
             try (ResultSet row = binding.executeQuery()) {
                 assertTrue(row.next(), "The group binding must be committed with the entitlement");
-                assertEquals("master", row.getString("realm_id"));
+                assertEquals(realmId, row.getString("realm_id"));
                 assertEquals(groupId, row.getString("group_id"));
                 assertEquals("AR_PKG_" + entitlementId, row.getString("group_name"));
                 assertFalse(row.next());

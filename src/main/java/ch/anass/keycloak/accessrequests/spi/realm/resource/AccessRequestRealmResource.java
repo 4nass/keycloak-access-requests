@@ -8,6 +8,7 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.DecisionSubmis
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.CatalogResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.EntitlementCreation;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.EntitlementUpdate;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.JitPackageCreation;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.NotificationDto.NotificationDeliverySummaryResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ProvisioningDto.ProvisioningClosureSubmission;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RequestDto.RequestSubmission;
@@ -73,6 +74,14 @@ public final class AccessRequestRealmResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response createEntitlement(EntitlementCreation submission) {
         return catalogHandler.createEntitlement(submission);
+    }
+
+    @POST
+    @Path("admin/entitlements/jit-packages")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response createJitPackage(JitPackageCreation submission) {
+        return catalogHandler.createJitPackage(submission);
     }
 
     @GET
