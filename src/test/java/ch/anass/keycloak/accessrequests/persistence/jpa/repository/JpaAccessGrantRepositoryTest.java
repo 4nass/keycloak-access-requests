@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -153,6 +154,68 @@ class JpaAccessGrantRepositoryTest {
         assertEquals(GrantRevocationState.AUTHORIZED, saved.revocationState());
         assertEquals(1, saved.version());
         assertTrue(saved.canAutoRevoke());
+    }
+
+    @Test
+    void selectsOnlyAuthorizedExtensionOwnedPackageGrantsAtOrBeforeTheDeadline() {
+        Instant now = packageGrant("due-exact", GrantRevocationState.AUTHORIZED).expiresAt();
+        AccessGrant early = withExpiry(packageGrant("due-early", GrantRevocationState.AUTHORIZED),
+                now.minusSeconds(1));
+        AccessGrant exact = packageGrant("due-exact", GrantRevocationState.AUTHORIZED);
+        AccessGrant otherRealm = withRealm(packageGrant("due-other-realm", GrantRevocationState.AUTHORIZED),
+                "realm-2");
+        AccessGrant future = withExpiry(packageGrant("future", GrantRevocationState.AUTHORIZED),
+                now.plusMillis(1));
+        AccessGrant unverified = packageGrant("unverified", GrantRevocationState.UNVERIFIED);
+        AccessGrant invalidated = packageGrant("invalidated", GrantRevocationState.INVALIDATED);
+        AccessGrant revoked = packageGrant("revoked", GrantRevocationState.REVOKED);
+        AccessGrant preexisting = new AccessGrant("preexisting", "realm-1", "user-1", "entitlement-1",
+                ResourceType.REALM_ROLE, "source-role", GrantOrigin.PREEXISTING, exact.recordedAt(),
+                null, GrantRevocationState.UNVERIFIED, 0, "jit-group-1");
+        AccessGrant permanent = withExpiry(packageGrant("permanent", GrantRevocationState.UNVERIFIED), null);
+        AccessGrant direct = temporaryGrant("direct-role", GrantRevocationState.AUTHORIZED);
+        inTransaction(() -> List.of(early, exact, otherRealm, future, unverified, invalidated, revoked,
+                preexisting, permanent, direct).forEach(repository::create));
+        entityManager.clear();
+
+        assertEquals(List.of("due-early", "due-exact", "due-other-realm"),
+                repository.findDuePackageGrants(now, null, null, 10).stream()
+                        .map(AccessGrant::requestId).toList());
+    }
+
+    @Test
+    void pagesDuePackageGrantsByExpiryAndRequestIdWithoutRepeatingOrStarvingLaterGrants() {
+        Instant now = packageGrant("page-a", GrantRevocationState.AUTHORIZED).expiresAt();
+        AccessGrant first = withExpiry(packageGrant("page-first", GrantRevocationState.AUTHORIZED),
+                now.minusSeconds(1));
+        inTransaction(() -> {
+            repository.create(first);
+            for (String requestId : List.of("page-a", "page-b", "page-c", "page-d")) {
+                repository.create(packageGrant(requestId, GrantRevocationState.AUTHORIZED));
+            }
+        });
+        entityManager.clear();
+
+        List<AccessGrant> page1 = repository.findDuePackageGrants(now, null, null, 2);
+        assertEquals(List.of("page-first", "page-a"), page1.stream().map(AccessGrant::requestId).toList());
+        AccessGrant cursor1 = page1.getLast();
+        List<AccessGrant> page2 = repository.findDuePackageGrants(now, cursor1.expiresAt(), cursor1.requestId(), 2);
+        assertEquals(List.of("page-b", "page-c"), page2.stream().map(AccessGrant::requestId).toList());
+        AccessGrant cursor2 = page2.getLast();
+        List<AccessGrant> page3 = repository.findDuePackageGrants(now, cursor2.expiresAt(), cursor2.requestId(), 2);
+        assertEquals(List.of("page-d"), page3.stream().map(AccessGrant::requestId).toList());
+        AccessGrant cursor3 = page3.getLast();
+        assertTrue(repository.findDuePackageGrants(now, cursor3.expiresAt(), cursor3.requestId(), 2).isEmpty());
+    }
+
+    @Test
+    void rejectsUnboundedOrIncompleteDuePackageGrantScans() {
+        Instant now = Instant.parse("2026-09-01T14:15:30Z");
+
+        assertThrows(IllegalArgumentException.class, () -> repository.findDuePackageGrants(now, null, null, 0));
+        assertThrows(IllegalArgumentException.class, () -> repository.findDuePackageGrants(now, null, null, 101));
+        assertThrows(IllegalArgumentException.class, () -> repository.findDuePackageGrants(now, null, "page-a", 10));
+        assertThrows(IllegalArgumentException.class, () -> repository.findDuePackageGrants(now, now, null, 10));
     }
 
     @Test
@@ -493,6 +556,12 @@ class JpaAccessGrantRepositoryTest {
         return new AccessGrant(grant.requestId(), grant.realmId(), grant.requesterId(), grant.entitlementId(),
                 grant.resourceType(), grant.resourceId(), grant.origin(), grant.recordedAt(), grant.expiresAt(),
                 grant.revocationState(), grant.version(), deliveryGroupId);
+    }
+
+    private static AccessGrant withExpiry(AccessGrant grant, Instant expiresAt) {
+        return new AccessGrant(grant.requestId(), grant.realmId(), grant.requesterId(), grant.entitlementId(),
+                grant.resourceType(), grant.resourceId(), grant.origin(), grant.recordedAt(), expiresAt,
+                grant.revocationState(), grant.version(), grant.deliveryGroupId());
     }
 
     private static AccessGrant withRealm(AccessGrant grant, String realmId) {
