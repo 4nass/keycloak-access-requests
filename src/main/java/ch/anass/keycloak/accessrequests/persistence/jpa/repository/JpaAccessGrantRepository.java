@@ -5,9 +5,11 @@ import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessGrantEntity
 import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantOrigin;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationState;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.port.AccessGrantRevocationRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.Query;
 
 import java.util.List;
 import java.util.Objects;
@@ -61,14 +63,26 @@ public final class JpaAccessGrantRepository implements AccessGrantRevocationRepo
         if (expectedVersion < 0) {
             throw new IllegalArgumentException("expectedVersion must not be negative");
         }
-        if (updated.version() != expectedVersion || updated.revocationState() != GrantRevocationState.REVOKED
-                || updated.origin() != GrantOrigin.CREATED_BY_EXTENSION || updated.expiresAt() == null) {
+        GrantRevocationState previousState;
+        if (updated.revocationState() == GrantRevocationState.AUTHORIZED) {
+            previousState = GrantRevocationState.UNVERIFIED;
+        } else if (updated.revocationState() == GrantRevocationState.REVOKED) {
+            previousState = GrantRevocationState.AUTHORIZED;
+        } else {
+            return Optional.empty();
+        }
+        if (updated.version() != expectedVersion || updated.origin() != GrantOrigin.CREATED_BY_EXTENSION
+                || updated.expiresAt() == null
+                || (updated.resourceType() == ResourceType.GROUP && updated.deliveryGroupId() == null)) {
             return Optional.empty();
         }
 
-        int changed = entityManager.createQuery("""
+        String deliveryGroupCondition = updated.deliveryGroupId() == null
+                ? " and entity.deliveryGroupId is null"
+                : " and entity.deliveryGroupId = :deliveryGroupId";
+        Query query = entityManager.createQuery("""
                         update AccessGrantEntity entity
-                           set entity.revocationState = :revoked,
+                           set entity.revocationState = :nextState,
                                entity.version = entity.version + 1
                          where entity.requestId = :requestId
                            and entity.realmId = :realmId
@@ -76,14 +90,13 @@ public final class JpaAccessGrantRepository implements AccessGrantRevocationRepo
                            and entity.entitlementId = :entitlementId
                            and entity.resourceType = :resourceType
                            and entity.resourceId = :resourceId
-                           and entity.deliveryGroupId is null
                            and entity.origin = :origin
                            and entity.recordedTimestamp = :recordedTimestamp
                            and entity.expiresTimestamp = :expiresTimestamp
                            and entity.version = :expectedVersion
-                           and entity.revocationState = :authorized
-                        """)
-                .setParameter("revoked", GrantRevocationState.REVOKED)
+                           and entity.revocationState = :previousState
+                        """ + deliveryGroupCondition)
+                .setParameter("nextState", updated.revocationState())
                 .setParameter("requestId", updated.requestId())
                 .setParameter("realmId", updated.realmId())
                 .setParameter("requesterId", updated.requesterId())
@@ -94,8 +107,11 @@ public final class JpaAccessGrantRepository implements AccessGrantRevocationRepo
                 .setParameter("recordedTimestamp", updated.recordedAt().toEpochMilli())
                 .setParameter("expiresTimestamp", updated.expiresAt().toEpochMilli())
                 .setParameter("expectedVersion", expectedVersion)
-                .setParameter("authorized", GrantRevocationState.AUTHORIZED)
-                .executeUpdate();
+                .setParameter("previousState", previousState);
+        if (updated.deliveryGroupId() != null) {
+            query.setParameter("deliveryGroupId", updated.deliveryGroupId());
+        }
+        int changed = query.executeUpdate();
         if (changed == 0) {
             return Optional.empty();
         }

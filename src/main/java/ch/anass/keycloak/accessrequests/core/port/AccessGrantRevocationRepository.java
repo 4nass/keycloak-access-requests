@@ -10,6 +10,10 @@ public interface AccessGrantRevocationRepository extends AccessGrantRepository {
     /** Lock the grant until the containing transaction completes, including on another node. */
     Optional<AccessGrant> findByRequestIdForUpdate(String realmId, String requestId);
 
-    /** Update only if the version and revocation eligibility have not changed. */
+    /**
+     * Persist UNVERIFIED to AUTHORIZED or AUTHORIZED to REVOKED only when the version,
+     * grant identity, and delivery group still match. The caller verifies revocation
+     * authority while holding the grant lock; persistence enforces the state transition.
+     */
     Optional<AccessGrant> updateIfVersionMatches(AccessGrant updated, long expectedVersion);
 }

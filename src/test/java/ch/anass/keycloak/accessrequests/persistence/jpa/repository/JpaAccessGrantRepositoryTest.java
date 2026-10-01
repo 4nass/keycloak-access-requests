@@ -151,6 +151,7 @@ class JpaAccessGrantRepositoryTest {
 
         AccessGrant saved = inTransactionResult(() -> revocation.updateIfVersionMatches(authorized, 0).orElseThrow());
         assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(authorized, 0)).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(saved, 1)).isEmpty());
         assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
                 withDeliveryGroup(saved.markRevoked(), "other-group"), 1)).isEmpty());
         assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
@@ -202,6 +203,10 @@ class JpaAccessGrantRepositoryTest {
                 unverified.authorizeForRevocation(packageEntitlement(), true), 0)).isEmpty());
         assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
                 authorized.markRevoked(), 0)).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                withVersion(unverified.authorizeForRevocation(packageEntitlement(), true), 1), 1)).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                withVersion(authorized.markRevoked(), 1), 1)).isEmpty());
         assertEquals("jit-group-1", invalidUnverified.deliveryGroupId());
         assertEquals("jit-group-1", invalidAuthorized.deliveryGroupId());
         assertEquals(GrantRevocationState.INVALIDATED,
@@ -485,6 +490,12 @@ class JpaAccessGrantRepositoryTest {
         return new AccessGrant(grant.requestId(), grant.realmId(), grant.requesterId(), grant.entitlementId(),
                 grant.resourceType(), grant.resourceId(), origin, grant.recordedAt(), grant.expiresAt(),
                 state, grant.version(), grant.deliveryGroupId());
+    }
+
+    private static AccessGrant withVersion(AccessGrant grant, long version) {
+        return new AccessGrant(grant.requestId(), grant.realmId(), grant.requesterId(), grant.entitlementId(),
+                grant.resourceType(), grant.resourceId(), grant.origin(), grant.recordedAt(), grant.expiresAt(),
+                grant.revocationState(), version, grant.deliveryGroupId());
     }
 
     private static AccessGrant temporaryGrant(String requestId, GrantRevocationState state) {
