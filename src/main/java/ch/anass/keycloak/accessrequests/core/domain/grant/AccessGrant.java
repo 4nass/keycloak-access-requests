@@ -117,7 +117,7 @@ public record AccessGrant(
      */
     public boolean canAutoRevoke() {
         return origin == GrantOrigin.CREATED_BY_EXTENSION
-                && deliveryGroupId == null
+                && (resourceType != ResourceType.GROUP || deliveryGroupId != null)
                 && expiresAt != null
                 && revocationState == GrantRevocationState.AUTHORIZED;
     }
@@ -134,8 +134,10 @@ public record AccessGrant(
     }
 
     /**
-     * Authorizes expiry only when current entitlement policy and an independent check agree.
-     * The caller must obtain that check while holding the grant and entitlement locks.
+     * Authorizes expiry only when the current entitlement matches and independent management
+     * has been verified. Direct mappings additionally need the legacy exclusive-JIT policy;
+     * package memberships need a recorded delivery group. The caller must obtain the check
+     * while holding the grant and entitlement locks.
      */
     public AccessGrant authorizeForRevocation(Entitlement entitlement, boolean exclusivelyManaged) {
         Objects.requireNonNull(entitlement, "entitlement must not be null");
@@ -143,10 +145,12 @@ public record AccessGrant(
                 || resourceType != entitlement.resourceType() || !resourceId.equals(entitlement.resourceId())) {
             throw new IllegalArgumentException("Grant and entitlement must identify the same resource");
         }
+        boolean eligiblePolicy = deliveryGroupId != null
+                || (resourceType != ResourceType.GROUP && entitlement.exclusiveJit());
         if (origin != GrantOrigin.CREATED_BY_EXTENSION || expiresAt == null
                 || revocationState == GrantRevocationState.INVALIDATED
                 || revocationState == GrantRevocationState.REVOKED
-                || deliveryGroupId != null || !entitlement.exclusiveJit() || !exclusivelyManaged) {
+                || !eligiblePolicy || !exclusivelyManaged) {
             throw new IllegalStateException("Exclusive JIT revocation authority has not been verified");
         }
         return revocationState == GrantRevocationState.AUTHORIZED

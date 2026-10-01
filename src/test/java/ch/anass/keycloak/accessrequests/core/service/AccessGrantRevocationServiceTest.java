@@ -157,8 +157,8 @@ class AccessGrantRevocationServiceTest {
                 GrantRevocationState.AUTHORIZED), true, AT_EXPIRY);
         fixture.revoker = current -> {
             assertTrue(fixture.insideTransaction.get());
-            assertEquals(ResourceType.GROUP, current.resourceType());
-            assertEquals("package-group-1", current.resourceId());
+            assertEquals(ResourceType.REALM_ROLE, current.resourceType());
+            assertEquals("source-role-1", current.resourceId());
             assertEquals("package-group-1", current.deliveryGroupId());
             assertEquals(GrantRevocationState.AUTHORIZED, fixture.repository.current().revocationState());
             fixture.removals.incrementAndGet();
@@ -272,8 +272,8 @@ class AccessGrantRevocationServiceTest {
     }
 
     private static AccessGrant packageGrant(GrantOrigin origin, Instant expiresAt, GrantRevocationState state) {
-        return new AccessGrant("request-1", "realm-1", "user-1", "entitlement-1", ResourceType.GROUP,
-                "package-group-1", origin, EXPIRES_AT.minus(Duration.ofHours(4)), expiresAt, state, 0,
+        return new AccessGrant("request-1", "realm-1", "user-1", "entitlement-1", ResourceType.REALM_ROLE,
+                "source-role-1", origin, EXPIRES_AT.minus(Duration.ofHours(4)), expiresAt, state, 0,
                 "package-group-1");
     }
 

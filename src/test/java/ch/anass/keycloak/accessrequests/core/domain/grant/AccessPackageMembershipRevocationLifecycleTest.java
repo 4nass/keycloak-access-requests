@@ -35,6 +35,7 @@ class AccessPackageMembershipRevocationLifecycleTest {
 
         assertEquals(GrantRevocationState.AUTHORIZED, authorized.revocationState());
         assertEquals(GROUP_ID, authorized.deliveryGroupId());
+        assertEquals("source-role-1", authorized.resourceId(), "The source role is distinct from its delivery group");
         assertSame(authorized, authorized.authorizeForRevocation(entitlement(), true));
         assertFalse(authorized.canAutoRevokeAt(EXPIRES_AT.minusNanos(1)));
         assertTrue(authorized.canAutoRevokeAt(EXPIRES_AT));
@@ -52,6 +53,20 @@ class AccessPackageMembershipRevocationLifecycleTest {
     }
 
     @Test
+    void anUnboundGroupGrantCannotBorrowTheLegacyDirectMappingPolicy() {
+        AccessGrant unbound = new AccessGrant("request-1", "realm-1", "user-1", "entitlement-1",
+                ResourceType.GROUP, GROUP_ID, GrantOrigin.CREATED_BY_EXTENSION, ACTIVATED_AT, EXPIRES_AT,
+                GrantRevocationState.AUTHORIZED, 0);
+        Entitlement flaggedEntitlement = Entitlement.create("entitlement-1", "realm-1", ResourceType.GROUP,
+                GROUP_ID, "Legacy group", "No package binding", RiskLevel.LOW, "approver-role", ACTIVATED_AT)
+                .withExclusiveJit(true, ACTIVATED_AT);
+
+        assertFalse(unbound.canAutoRevokeAt(EXPIRES_AT));
+        assertThrows(IllegalStateException.class,
+                () -> unbound.authorizeForRevocation(flaggedEntitlement, true));
+    }
+
+    @Test
     void preexistingPermanentAndInvalidatedMembershipsCannotBeRemovedAtExpiry() {
         AccessGrant preexisting = membership(GrantOrigin.PREEXISTING, null, GrantRevocationState.UNVERIFIED);
         AccessGrant permanent = membership(GrantOrigin.CREATED_BY_EXTENSION, null, GrantRevocationState.UNVERIFIED);
@@ -66,46 +81,46 @@ class AccessPackageMembershipRevocationLifecycleTest {
     }
 
     @Test
-    void theRecordedDeliveryGroupMustBeTheProvisionedGroupResource() {
-        assertThrows(IllegalArgumentException.class, () -> new AccessGrant("request-1", "realm-1", "user-1",
-                "entitlement-1", ResourceType.GROUP, GROUP_ID, GrantOrigin.CREATED_BY_EXTENSION,
-                ACTIVATED_AT, EXPIRES_AT, GrantRevocationState.UNVERIFIED, 0, "other-group"));
+    void theRecordedDeliveryGroupMustBePresentButMayDifferFromTheSourceResource() {
         assertThrows(IllegalArgumentException.class, () -> new AccessGrant("request-1", "realm-1", "user-1",
                 "entitlement-1", ResourceType.REALM_ROLE, "role-1", GrantOrigin.CREATED_BY_EXTENSION,
-                ACTIVATED_AT, EXPIRES_AT, GrantRevocationState.UNVERIFIED, 0, GROUP_ID));
+                ACTIVATED_AT, EXPIRES_AT, GrantRevocationState.UNVERIFIED, 0, " "));
+        assertEquals(GROUP_ID, membership(GrantOrigin.CREATED_BY_EXTENSION, EXPIRES_AT,
+                GrantRevocationState.UNVERIFIED).deliveryGroupId());
     }
 
     @Test
-    void aPackageBindingForAnotherGroupOrRealmCannotBeRecordedAsTheDeliveryTarget() {
+    void aPackageBindingForAnotherEntitlementOrRealmCannotBeRecordedAsTheDeliveryTarget() {
         AccessRequest request = AccessRequest.create("request-1", "realm-1", "user-1", "entitlement-1",
-                ResourceType.GROUP, GROUP_ID, "Package", "Business need", ACTIVATED_AT.minusSeconds(3600),
+                ResourceType.REALM_ROLE, "source-role-1", "Package", "Business need", ACTIVATED_AT.minusSeconds(3600),
                 Duration.ofHours(4).toSeconds(), false);
         request.approve("approver-1", "Approved", ACTIVATED_AT.minusSeconds(300));
         request.markProvisioningSucceeded(ACTIVATED_AT);
 
-        AccessPackage wrongGroup = packageBinding("realm-1", "other-group");
         AccessPackage wrongRealm = packageBinding("other-realm", GROUP_ID);
+        AccessPackage wrongEntitlement = new AccessPackage("other-entitlement", "realm-1", GROUP_ID,
+                "AR_PKG_OTHER", List.of(new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "source-role-1")));
 
         assertThrows(IllegalArgumentException.class, () -> AccessGrant.from(request, entitlement(),
-                GrantOrigin.CREATED_BY_EXTENSION, ACTIVATED_AT, wrongGroup));
-        assertThrows(IllegalArgumentException.class, () -> AccessGrant.from(request, entitlement(),
                 GrantOrigin.CREATED_BY_EXTENSION, ACTIVATED_AT, wrongRealm));
+        assertThrows(IllegalArgumentException.class, () -> AccessGrant.from(request, entitlement(),
+                GrantOrigin.CREATED_BY_EXTENSION, ACTIVATED_AT, wrongEntitlement));
         assertEquals(GROUP_ID, AccessGrant.from(request, entitlement(), GrantOrigin.CREATED_BY_EXTENSION,
                 ACTIVATED_AT, packageBinding("realm-1", GROUP_ID)).deliveryGroupId());
     }
 
     private static AccessGrant membership(GrantOrigin origin, Instant expiresAt, GrantRevocationState state) {
-        return new AccessGrant("request-1", "realm-1", "user-1", "entitlement-1", ResourceType.GROUP,
-                GROUP_ID, origin, ACTIVATED_AT, expiresAt, state, 0, GROUP_ID);
+        return new AccessGrant("request-1", "realm-1", "user-1", "entitlement-1", ResourceType.REALM_ROLE,
+                "source-role-1", origin, ACTIVATED_AT, expiresAt, state, 0, GROUP_ID);
     }
 
     private static Entitlement entitlement() {
-        return Entitlement.create("entitlement-1", "realm-1", ResourceType.GROUP, GROUP_ID,
+        return Entitlement.create("entitlement-1", "realm-1", ResourceType.REALM_ROLE, "source-role-1",
                 "Package", "Dedicated delivery group", RiskLevel.LOW, "approver-role", ACTIVATED_AT);
     }
 
     private static AccessPackage packageBinding(String realmId, String groupId) {
         return new AccessPackage("entitlement-1", realmId, groupId, "AR_PKG_PACKAGE",
-                List.of(new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "source-role")));
+                List.of(new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "source-role-1")));
     }
 }
