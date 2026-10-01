@@ -65,7 +65,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     private ScheduledPackageGrant scheduledPackageGrant;
 
     private record ScheduledPackageGrant(String requestId, String requesterId, String groupId,
-            String sourceRoleId, String preexistingRequesterId, String permanentRequesterId) {
+            String sourceRoleId, String preexistingRequesterId, String permanentRequesterId,
+            String failedRequestId, String failedRequesterId) {
     }
 
     @Container
@@ -100,9 +101,9 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertAdministrativeAuditEventSearch(firstServer);
         }
 
-        // Advance one real provisioned grant in the disposable database before the next Keycloak startup.
-        // The timer's five-second initial delay then exercises scheduling without a five-minute test wait.
-        expireScheduledPackageGrant();
+        // Make two real grants due in the disposable database, but reject the first revocation's state update.
+        // Restarting Keycloak exercises the timer's initial delay without waiting for its five-minute interval.
+        prepareScheduledPackageRevocations();
 
         try (KeycloakContainer restartedServer = keycloak()) {
             restartedServer.start();
@@ -112,12 +113,20 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertRealmEndpointExposed(restartedServer);
             assertAccessPackageSurvivesRestart(restartedServer);
             assertScheduledPackageGrantRevoked(restartedServer);
+            assertFailedScheduledPackageGrantRetained(restartedServer);
             assertEntitlementCatalogAdministration(restartedServer);
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(restartedServer);
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(restartedServer);
             assertRequesterCanListViewAndCancelOnlyOwnRequests(restartedServer);
             assertEntitlementScopedApproversCanDecideRequests(restartedServer);
             assertAdministrativeAuditEventSearch(restartedServer);
+        }
+
+        allowFailedScheduledPackageGrantRevocation();
+        try (KeycloakContainer retryServer = keycloak()) {
+            retryServer.start();
+            configureAdminCliTokenBehavior(retryServer);
+            assertFailedScheduledPackageGrantRetried(retryServer);
         }
     }
 
@@ -654,48 +663,41 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 "Temporary access needed.", 3600L);
         assertNoGroupMembership(server, adminToken, rollbackId, groupId);
         scheduledPackageGrant = new ScheduledPackageGrant(requestId, requesterId, groupId,
-                sourceRoleId, preexistingId, permanentId);
+                sourceRoleId, preexistingId, permanentId, retryRequestId, retryId);
     }
 
-    private void expireScheduledPackageGrant() throws SQLException {
+    private void prepareScheduledPackageRevocations() throws SQLException {
         assertNotNull(scheduledPackageGrant, "The first Keycloak run must provision a temporary package grant");
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              PreparedStatement statement = connection.prepareStatement("""
                      update AR_ACCESS_GRANT set EXPIRES_TIMESTAMP = ?
                       where REQUEST_ID = ? and REVOCATION_STATE = 'AUTHORIZED'
-                     """)) {
+                     """);
+             Statement constraint = connection.createStatement()) {
+            statement.setLong(1, Instant.now().minusSeconds(3).toEpochMilli());
+            statement.setString(2, scheduledPackageGrant.failedRequestId());
+            assertEquals(1, statement.executeUpdate(), "The failed candidate must be a real authorized grant");
             statement.setLong(1, Instant.now().minusSeconds(1).toEpochMilli());
             statement.setString(2, scheduledPackageGrant.requestId());
-            assertEquals(1, statement.executeUpdate(), "Only the selected temporary package grant should become due");
+            assertEquals(1, statement.executeUpdate(), "The succeeding candidate must be a real authorized grant");
+            String failedRequestId = UUID.fromString(scheduledPackageGrant.failedRequestId()).toString();
+            constraint.execute("alter table AR_ACCESS_GRANT add constraint CK_AR_GRANT_SCHEDULED_RETRY_IT "
+                    + "check (REQUEST_ID <> '" + failedRequestId + "' or REVOCATION_STATE <> 'REVOKED')");
+        }
+    }
+
+    private void allowFailedScheduledPackageGrantRevocation() throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute("alter table AR_ACCESS_GRANT drop constraint CK_AR_GRANT_SCHEDULED_RETRY_IT");
         }
     }
 
     private void assertScheduledPackageGrantRevoked(GenericContainer<?> server) throws Exception {
         String adminToken = accessToken(server, "admin-cli");
-        Instant deadline = Instant.now().plusSeconds(30);
-        String state;
-        do {
-            try (Connection connection = DriverManager.getConnection(
-                    POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
-                 PreparedStatement statement = connection.prepareStatement("""
-                         select REVOCATION_STATE, VERSION from AR_ACCESS_GRANT where REQUEST_ID = ?
-                         """)) {
-                statement.setString(1, scheduledPackageGrant.requestId());
-                try (ResultSet row = statement.executeQuery()) {
-                    assertTrue(row.next());
-                    state = row.getString("REVOCATION_STATE");
-                    if ("REVOKED".equals(state)) {
-                        assertEquals(2, row.getLong("VERSION"), "The scheduled revocation must happen exactly once");
-                    }
-                    assertFalse(row.next());
-                }
-            }
-            if (!"REVOKED".equals(state) && Instant.now().isBefore(deadline)) {
-                Thread.sleep(250);
-            }
-        } while (!"REVOKED".equals(state) && Instant.now().isBefore(deadline));
-        assertEquals("REVOKED", state, "The deployed provider's Keycloak timer must revoke the due grant");
+        awaitGrantRevocation(scheduledPackageGrant.requestId());
 
         assertNoGroupMembership(server, adminToken,
                 scheduledPackageGrant.requesterId(), scheduledPackageGrant.groupId());
@@ -713,6 +715,65 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         new ObjectMapper().readTree(roles.body()).spliterator(), false)
                 .anyMatch(role -> scheduledPackageGrant.sourceRoleId().equals(role.path("id").asText())),
                 "Revocation must leave the package's source role mapping intact");
+    }
+
+    private void assertFailedScheduledPackageGrantRetained(GenericContainer<?> server) throws Exception {
+        assertTrue(server.getLogs().contains("Could not revoke expired package grant "
+                        + scheduledPackageGrant.failedRequestId()),
+                "The timer must attempt and report the failing grant before moving to the next candidate");
+        assertGrantRevocationState(scheduledPackageGrant.failedRequestId(), "AUTHORIZED", 1);
+        assertGroupMembership(server, accessToken(server, "admin-cli"),
+                scheduledPackageGrant.failedRequesterId(), scheduledPackageGrant.groupId());
+    }
+
+    private void assertFailedScheduledPackageGrantRetried(GenericContainer<?> server) throws Exception {
+        awaitGrantRevocation(scheduledPackageGrant.failedRequestId());
+        assertNoGroupMembership(server, accessToken(server, "admin-cli"),
+                scheduledPackageGrant.failedRequesterId(), scheduledPackageGrant.groupId());
+        assertGrantRevocationState(scheduledPackageGrant.requestId(), "REVOKED", 2);
+    }
+
+    private void awaitGrantRevocation(String requestId) throws Exception {
+        Instant deadline = Instant.now().plusSeconds(30);
+        while (Instant.now().isBefore(deadline)) {
+            if ("REVOKED".equals(grantRevocationState(requestId))) {
+                assertGrantRevocationState(requestId, "REVOKED", 2);
+                return;
+            }
+            Thread.sleep(250);
+        }
+        assertGrantRevocationState(requestId, "REVOKED", 2);
+    }
+
+    private String grantRevocationState(String requestId) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement statement = connection.prepareStatement(
+                     "select REVOCATION_STATE from AR_ACCESS_GRANT where REQUEST_ID = ?")) {
+            statement.setString(1, requestId);
+            try (ResultSet row = statement.executeQuery()) {
+                assertTrue(row.next(), "The provisioned grant must remain persisted");
+                String state = row.getString("REVOCATION_STATE");
+                assertFalse(row.next());
+                return state;
+            }
+        }
+    }
+
+    private void assertGrantRevocationState(String requestId, String expectedState, long expectedVersion)
+            throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement statement = connection.prepareStatement(
+                     "select REVOCATION_STATE, VERSION from AR_ACCESS_GRANT where REQUEST_ID = ?")) {
+            statement.setString(1, requestId);
+            try (ResultSet row = statement.executeQuery()) {
+                assertTrue(row.next(), "The provisioned grant must remain persisted");
+                assertEquals(expectedState, row.getString("REVOCATION_STATE"));
+                assertEquals(expectedVersion, row.getLong("VERSION"));
+                assertFalse(row.next());
+            }
+        }
     }
 
     private String submitTemporaryPackageRequest(URI endpoint, String requesterToken, String entitlementId)
