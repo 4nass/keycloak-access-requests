@@ -9,6 +9,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.lifecycle.Startables;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -35,6 +36,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.jar.JarFile;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -123,11 +125,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         }
 
         allowFailedScheduledPackageGrantRevocation();
-        try (KeycloakContainer retryServer = keycloak()) {
-            retryServer.start();
-            configureAdminCliTokenBehavior(retryServer);
-            assertFailedScheduledPackageGrantRetried(retryServer);
-        }
+        assertConcurrentScheduledPackageGrantRetry();
     }
 
     private KeycloakContainer keycloak() {
@@ -731,6 +729,60 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertNoGroupMembership(server, accessToken(server, "admin-cli"),
                 scheduledPackageGrant.failedRequesterId(), scheduledPackageGrant.groupId());
         assertGrantRevocationState(scheduledPackageGrant.requestId(), "REVOKED", 2);
+    }
+
+    private void assertConcurrentScheduledPackageGrantRetry() throws Exception {
+        // Both node-local timers must select the same due grant before either may acquire its row lock.
+        try (Connection blocker = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             KeycloakContainer firstNode = keycloak();
+             KeycloakContainer secondNode = keycloak()) {
+            blocker.setAutoCommit(false);
+            try (PreparedStatement lock = blocker.prepareStatement(
+                    "select REQUEST_ID from AR_ACCESS_GRANT where REQUEST_ID = ? for update")) {
+                lock.setString(1, scheduledPackageGrant.failedRequestId());
+                try (ResultSet row = lock.executeQuery()) {
+                    assertTrue(row.next(), "The grant must exist before starting both Keycloak nodes");
+                }
+            }
+
+            Startables.deepStart(Stream.of(firstNode, secondNode)).join();
+            try {
+                awaitTwoBlockedRevocationTransactions();
+            } finally {
+                blocker.commit();
+            }
+            configureAdminCliTokenBehavior(firstNode);
+            assertFailedScheduledPackageGrantRetried(firstNode);
+            assertRealmEndpointExposed(secondNode);
+        }
+    }
+
+    private void awaitTwoBlockedRevocationTransactions() throws Exception {
+        Instant deadline = Instant.now().plusSeconds(30);
+        int waiting = 0;
+        try (Connection monitor = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement query = monitor.prepareStatement("""
+                     select count(*) from pg_stat_activity
+                      where datname = current_database()
+                        and wait_event_type = 'Lock'
+                        and lower(query) like '%ar_access_grant%'
+                     """)) {
+            do {
+                try (ResultSet row = query.executeQuery()) {
+                    assertTrue(row.next());
+                    waiting = row.getInt(1);
+                }
+                if (waiting >= 2) {
+                    return;
+                }
+                Thread.sleep(250);
+            } while (Instant.now().isBefore(deadline));
+        }
+        assertTrue(waiting >= 2,
+                "Both Keycloak timers must contend for the same grant lock before it is released; observed "
+                        + waiting + " waiting transactions");
     }
 
     private void awaitGrantRevocation(String requestId) throws Exception {
