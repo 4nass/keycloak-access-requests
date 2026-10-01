@@ -40,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Testcontainers(disabledWithoutDocker = true)
@@ -306,7 +307,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         String realmId = new ObjectMapper().readTree(realmResponse.body()).path("id").asText();
         String sourceRoleName = "jit-source-" + UUID.randomUUID();
         String sourceRoleId = createRealmRole(server, adminToken, sourceRoleName);
-        String approverRoleId = createRealmRole(server, adminToken, "jit-approver-" + UUID.randomUUID());
+        String approverRoleName = "package-approver-" + UUID.randomUUID();
+        String approverRoleId = createRealmRole(server, adminToken, approverRoleName);
         URI packagesEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/access-packages"
                 .formatted(server.getHost(), server.getMappedPort(8080)));
         String submission = """
@@ -480,6 +482,235 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 assertFalse(row.next());
             }
         }
+        assertPackageGrantAuthorizationAfterProvisioning(server, adminToken, managerToken, entitlementEndpoint,
+                entitlementId, groupId, approverRoleName, approverRoleId);
+    }
+
+    private void assertPackageGrantAuthorizationAfterProvisioning(
+            GenericContainer<?> server, String adminToken, String managerToken, URI entitlementEndpoint,
+            String entitlementId, String groupId, String approverRoleName, String approverRoleId) throws Exception {
+        String publish = """
+                {"displayName":"Temporary reporting access","description":"Time-bound reporting package.",
+                 "riskLevel":"MEDIUM","approverRoleId":"%s","defaultDurationSeconds":604800,
+                 "maxDurationSeconds":2592000,"allowPermanent":true,"requestable":true,"version":0}
+                """.formatted(approverRoleId);
+        HttpResponse<String> published = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(entitlementEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(publish)).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, published.statusCode(), published.body());
+
+        String clientId = "package-grant-client-" + UUID.randomUUID();
+        createDirectAccessClient(server, adminToken, clientId);
+        addAccessRequestsAudience(server, adminToken, clientId);
+        String approverUsername = "package-grant-approver-" + UUID.randomUUID();
+        String password = "package-grant-password";
+        createEnabledUser(server, adminToken, approverUsername, password);
+        String approverToken = accessToken(server, clientId, approverUsername, password);
+        assertEquals(approverRoleId, ensureRealmRoleAndAssignToUser(
+                server, adminToken, subjectOf(approverToken), approverRoleName));
+        approverToken = accessToken(server, clientId, approverUsername, password);
+
+        URI accessRequestsEndpoint = URI.create("http://%s:%d/realms/master/access-requests"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        URI requestsEndpoint = URI.create(accessRequestsEndpoint + "/requests");
+        String requesterUsername = "package-grant-requester-" + UUID.randomUUID();
+        createEnabledUser(server, adminToken, requesterUsername, password);
+        String requesterToken = accessToken(server, clientId, requesterUsername, password);
+        String requesterId = subjectOf(requesterToken);
+        String requestId = submitTemporaryPackageRequest(requestsEndpoint, requesterToken, entitlementId);
+        HttpResponse<String> approval = HttpClient.newHttpClient().send(
+                requestDecision(accessRequestsEndpoint, approverToken, requestId, "approve", "Approved."),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, approval.statusCode(), approval.body());
+        assertTrue(approval.body().contains("\"provisioningStatus\":\"SUCCEEDED\""));
+        assertGroupMembership(server, adminToken, requesterId, groupId);
+        assertPackageGrantState(requestId, requesterId, groupId, "CREATED_BY_EXTENSION", "AUTHORIZED", 1);
+
+        String preexistingUsername = "package-preexisting-requester-" + UUID.randomUUID();
+        createEnabledUser(server, adminToken, preexistingUsername, password);
+        String preexistingToken = accessToken(server, clientId, preexistingUsername, password);
+        String preexistingId = subjectOf(preexistingToken);
+        String preexistingRequestId = submitTemporaryPackageRequest(requestsEndpoint, preexistingToken, entitlementId);
+        URI membershipEndpoint = URI.create("http://%s:%d/admin/realms/master/users/%s/groups/%s"
+                .formatted(server.getHost(), server.getMappedPort(8080), preexistingId, groupId));
+        assertEquals(204, HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(membershipEndpoint).header("Authorization", "Bearer " + adminToken)
+                        .PUT(HttpRequest.BodyPublishers.noBody()).build(),
+                HttpResponse.BodyHandlers.discarding()).statusCode());
+        HttpResponse<String> preexistingApproval = HttpClient.newHttpClient().send(
+                requestDecision(accessRequestsEndpoint, approverToken, preexistingRequestId, "approve", "Approved."),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, preexistingApproval.statusCode(), preexistingApproval.body());
+        assertPackageGrantState(preexistingRequestId, preexistingId, groupId, "PREEXISTING", "UNVERIFIED", 0);
+
+        String permanentUsername = "package-permanent-requester-" + UUID.randomUUID();
+        createEnabledUser(server, adminToken, permanentUsername, password);
+        String permanentToken = accessToken(server, clientId, permanentUsername, password);
+        String permanentId = subjectOf(permanentToken);
+        HttpResponse<String> permanentSubmission = HttpClient.newHttpClient().send(
+                requestSubmission(requestsEndpoint, permanentToken, """
+                        {"entitlementId":"%s","justification":"Permanent access approved by policy.","permanent":true}
+                        """.formatted(entitlementId)), HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, permanentSubmission.statusCode(), permanentSubmission.body());
+        String permanentRequestId = responseId(permanentSubmission.body());
+        HttpResponse<String> permanentApproval = HttpClient.newHttpClient().send(
+                requestDecision(accessRequestsEndpoint, approverToken, permanentRequestId, "approve", "Approved."),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, permanentApproval.statusCode(), permanentApproval.body());
+        assertGroupMembership(server, adminToken, permanentId, groupId);
+        assertPackageGrantState(permanentRequestId, permanentId, groupId,
+                "CREATED_BY_EXTENSION", "UNVERIFIED", 0);
+
+        String retryUsername = "package-retry-requester-" + UUID.randomUUID();
+        createEnabledUser(server, adminToken, retryUsername, password);
+        String retryToken = accessToken(server, clientId, retryUsername, password);
+        String retryId = subjectOf(retryToken);
+        String retryRequestId = submitTemporaryPackageRequest(requestsEndpoint, retryToken, entitlementId);
+        URI groupRolesEndpoint = URI.create("http://%s:%d/admin/realms/master/groups/%s/role-mappings/realm"
+                .formatted(server.getHost(), server.getMappedPort(8080), groupId));
+        HttpResponse<String> groupRoles = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(groupRolesEndpoint).header("Authorization", "Bearer " + adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, groupRoles.statusCode());
+        assertEquals(204, HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(groupRolesEndpoint).header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .method("DELETE", HttpRequest.BodyPublishers.ofString(groupRoles.body())).build(),
+                HttpResponse.BodyHandlers.discarding()).statusCode());
+        HttpResponse<String> failedProvisioning;
+        try {
+            failedProvisioning = HttpClient.newHttpClient().send(
+                    requestDecision(accessRequestsEndpoint, approverToken, retryRequestId, "approve", "Approved."),
+                    HttpResponse.BodyHandlers.ofString());
+        } finally {
+            assertEquals(204, HttpClient.newHttpClient().send(
+                    HttpRequest.newBuilder(groupRolesEndpoint).header("Authorization", "Bearer " + adminToken)
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(groupRoles.body())).build(),
+                    HttpResponse.BodyHandlers.discarding()).statusCode());
+        }
+        assertEquals(200, failedProvisioning.statusCode(), failedProvisioning.body());
+        assertTrue(failedProvisioning.body().contains("\"provisioningStatus\":\"FAILED\""));
+        assertNoGrantForRequest(retryRequestId);
+        URI retryEndpoint = URI.create(accessRequestsEndpoint + "/admin/requests/" + retryRequestId
+                + "/provisioning/retry");
+        rejectGrantAuthorizationForRequest(retryRequestId);
+        HttpResponse<String> rolledBackRetry;
+        try {
+            rolledBackRetry = HttpClient.newHttpClient().send(
+                    HttpRequest.newBuilder(retryEndpoint).header("Authorization", "Bearer " + managerToken)
+                            .POST(HttpRequest.BodyPublishers.noBody()).build(),
+                    HttpResponse.BodyHandlers.ofString());
+        } finally {
+            allowGrantAuthorizationForRequest();
+        }
+        assertTrue(rolledBackRetry.statusCode() >= 400,
+                "A failed grant authorization must roll back the provisioning retry");
+        assertNoGrantForRequest(retryRequestId);
+        assertProvisioningResultAndAuditEvents(retryRequestId, "FAILED", "PROVISIONING_FAILED",
+                subjectOf(approverToken));
+        assertNoGroupMembership(server, adminToken, retryId, groupId);
+        HttpResponse<String> successfulRetry = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(retryEndpoint).header("Authorization", "Bearer " + managerToken)
+                        .POST(HttpRequest.BodyPublishers.noBody()).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, successfulRetry.statusCode(), successfulRetry.body());
+        assertTrue(successfulRetry.body().contains("\"provisioningStatus\":\"SUCCEEDED\""));
+        assertGroupMembership(server, adminToken, retryId, groupId);
+        assertPackageGrantState(retryRequestId, retryId, groupId, "CREATED_BY_EXTENSION", "AUTHORIZED", 1);
+
+        String rollbackUsername = "package-rollback-requester-" + UUID.randomUUID();
+        createEnabledUser(server, adminToken, rollbackUsername, password);
+        String rollbackToken = accessToken(server, clientId, rollbackUsername, password);
+        String rollbackId = subjectOf(rollbackToken);
+        String rollbackRequestId = submitTemporaryPackageRequest(requestsEndpoint, rollbackToken, entitlementId);
+        rejectGrantAuthorizationForRequest(rollbackRequestId);
+        HttpResponse<String> failedApproval;
+        try {
+            failedApproval = HttpClient.newHttpClient().send(
+                    requestDecision(accessRequestsEndpoint, approverToken, rollbackRequestId, "approve", "Approved."),
+                    HttpResponse.BodyHandlers.ofString());
+        } finally {
+            allowGrantAuthorizationForRequest();
+        }
+        assertTrue(failedApproval.statusCode() >= 400,
+                "A failed grant authorization must roll back the whole approval transaction");
+        assertNoGrantForRequest(rollbackRequestId);
+        assertPendingRequestAndCreatedAuditEvent(rollbackRequestId, entitlementId, rollbackId,
+                "Temporary access needed.", 3600L);
+        assertNoGroupMembership(server, adminToken, rollbackId, groupId);
+    }
+
+    private String submitTemporaryPackageRequest(URI endpoint, String requesterToken, String entitlementId)
+            throws Exception {
+        HttpResponse<String> created = HttpClient.newHttpClient().send(
+                requestSubmission(endpoint, requesterToken, """
+                        {"entitlementId":"%s","justification":"Temporary access needed.","durationSeconds":3600}
+                        """.formatted(entitlementId)), HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, created.statusCode(), created.body());
+        return responseId(created.body());
+    }
+
+    private void assertPackageGrantState(String requestId, String requesterId, String groupId,
+            String origin, String revocationState, long version) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement statement = connection.prepareStatement("""
+                     select REQUESTER_ID, RESOURCE_TYPE, RESOURCE_ID, DELIVERY_GROUP_ID,
+                            GRANT_ORIGIN, REVOCATION_STATE, EXPIRES_TIMESTAMP, VERSION
+                       from AR_ACCESS_GRANT where REQUEST_ID = ?
+                     """)) {
+            statement.setString(1, requestId);
+            try (ResultSet row = statement.executeQuery()) {
+                assertTrue(row.next(), "Successful package provisioning must persist one grant");
+                assertEquals(requesterId, row.getString("REQUESTER_ID"));
+                assertEquals("GROUP", row.getString("RESOURCE_TYPE"));
+                assertEquals(groupId, row.getString("RESOURCE_ID"));
+                assertEquals(groupId, row.getString("DELIVERY_GROUP_ID"));
+                assertEquals(origin, row.getString("GRANT_ORIGIN"));
+                assertEquals(revocationState, row.getString("REVOCATION_STATE"));
+                if ("AUTHORIZED".equals(revocationState)) {
+                    assertTrue(row.getLong("EXPIRES_TIMESTAMP") > 0);
+                } else {
+                    assertNull(row.getObject("EXPIRES_TIMESTAMP", Long.class));
+                }
+                assertEquals(version, row.getLong("VERSION"));
+                assertFalse(row.next());
+            }
+        }
+    }
+
+    private void rejectGrantAuthorizationForRequest(String requestId) throws SQLException {
+        String safeRequestId = UUID.fromString(requestId).toString();
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute("alter table AR_ACCESS_GRANT add constraint CK_AR_GRANT_AUTHORIZATION_IT "
+                    + "check (REQUEST_ID <> '" + safeRequestId + "' or REVOCATION_STATE <> 'AUTHORIZED')");
+        }
+    }
+
+    private void allowGrantAuthorizationForRequest() throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute("alter table AR_ACCESS_GRANT drop constraint CK_AR_GRANT_AUTHORIZATION_IT");
+        }
+    }
+
+    private void assertNoGroupMembership(GenericContainer<?> server, String adminToken, String userId, String groupId)
+            throws Exception {
+        URI endpoint = URI.create("http://%s:%d/admin/realms/master/users/%s/groups"
+                .formatted(server.getHost(), server.getMappedPort(8080), userId));
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(endpoint).header("Authorization", "Bearer " + adminToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+        assertFalse(response.body().contains("\"id\":\"" + groupId + "\""),
+                "Rolled-back grant authorization must also roll back the group membership");
     }
 
     private int accessPackageGroupCount(GenericContainer<?> server, String adminToken) throws Exception {
