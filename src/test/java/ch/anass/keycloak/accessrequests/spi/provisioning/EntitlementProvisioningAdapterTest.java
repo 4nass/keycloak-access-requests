@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class KeycloakEntitlementProvisionerTest {
+class EntitlementProvisioningAdapterTest {
 
     @ParameterizedTest
     @EnumSource(ResourceType.class)
@@ -97,7 +97,7 @@ class KeycloakEntitlementProvisionerTest {
         RuntimeException failure = new IllegalStateException("Sensitive Keycloak diagnostic");
         fixture.failRequesterLookup(failure);
         List<LogRecord> records = new ArrayList<>();
-        Logger logger = Logger.getLogger(KeycloakEntitlementProvisioner.class.getName());
+        Logger logger = Logger.getLogger(EntitlementProvisioningAdapter.class.getName());
         Handler handler = new Handler() {
             @Override
             public void publish(LogRecord record) {
@@ -168,7 +168,7 @@ class KeycloakEntitlementProvisionerTest {
     }
 
     private static EntitlementProvisioner provisioner(KeycloakFixture fixture) {
-        return new KeycloakEntitlementProvisioner(fixture.session(), fixture.realm());
+        return new EntitlementProvisioningAdapter(fixture.session(), fixture.realm());
     }
 
     private static ProvisioningResult grant(EntitlementProvisioner provisioner, Entitlement entitlement) {

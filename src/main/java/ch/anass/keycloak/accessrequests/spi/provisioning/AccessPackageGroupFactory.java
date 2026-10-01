@@ -11,12 +11,12 @@ import java.util.List;
 import java.util.Objects;
 
 /** Creates a dedicated root group; the caller must persist the binding in the same transaction. */
-public final class KeycloakAccessPackageGroupFactory {
+public final class AccessPackageGroupFactory {
 
     private final KeycloakSession session;
     private final RealmModel realm;
 
-    public KeycloakAccessPackageGroupFactory(KeycloakSession session, RealmModel realm) {
+    public AccessPackageGroupFactory(KeycloakSession session, RealmModel realm) {
         this.session = Objects.requireNonNull(session, "session must not be null");
         this.realm = Objects.requireNonNull(realm, "realm must not be null");
     }

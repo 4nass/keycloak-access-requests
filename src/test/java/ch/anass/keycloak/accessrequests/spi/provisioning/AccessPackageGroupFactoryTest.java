@@ -16,7 +16,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-class KeycloakAccessPackageGroupFactoryTest {
+class AccessPackageGroupFactoryTest {
 
     @Test
     void createsAnExtensionNamedRootGroupWithBothKindsOfRoleMapping() {
@@ -56,7 +56,7 @@ class KeycloakAccessPackageGroupFactoryTest {
         private final RoleModel realmRole = role("realm-role", false);
         private final RoleModel clientRole = role("client-role", true);
 
-        KeycloakAccessPackageGroupFactory factory() {
+        AccessPackageGroupFactory factory() {
             RealmModel realm = proxy(RealmModel.class, (self, method, args) -> switch (method.getName()) {
                 case "getId" -> "realm-1";
                 case "getRoleById" -> switch ((String) args[0]) {
@@ -85,7 +85,7 @@ class KeycloakAccessPackageGroupFactoryTest {
             });
             KeycloakSession session = proxy(KeycloakSession.class, (self, method, args) ->
                     method.getName().equals("groups") ? groups : null);
-            return new KeycloakAccessPackageGroupFactory(session, realm);
+            return new AccessPackageGroupFactory(session, realm);
         }
 
         private static RoleModel role(String id, boolean clientRole) {

@@ -20,7 +20,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-class KeycloakAccessPackageMembershipTest {
+class AccessPackageMembershipProvisionerTest {
 
     @Test
     void joinsOnlyTheDedicatedGroupEvenWhenTheUserHasTheSameRoleElsewhere() {
@@ -115,7 +115,7 @@ class KeycloakAccessPackageMembershipTest {
                     new AccessPackage.RoleMapping(ResourceType.CLIENT_ROLE, "client-role-1")));
         }
 
-        KeycloakAccessPackageMembership membership() {
+        AccessPackageMembershipProvisioner membership() {
             RealmModel realm = proxy(RealmModel.class, (self, method, args) ->
                     method.getName().equals("getId") ? "realm-1" : null);
             GroupModel group = proxy(GroupModel.class, (self, method, args) -> switch (method.getName()) {
@@ -147,7 +147,7 @@ class KeycloakAccessPackageMembershipTest {
                 case "groups" -> groups;
                 default -> null;
             });
-            return new KeycloakAccessPackageMembership(session, realm);
+            return new AccessPackageMembershipProvisioner(session, realm);
         }
 
         private static RoleModel role(String id, boolean clientRole) {

@@ -18,13 +18,13 @@ import java.util.logging.Logger;
 /**
  * Assigns Keycloak realm roles, client roles, and groups to a user in the current realm.
  */
-public final class KeycloakEntitlementProvisioner implements EntitlementProvisioner {
+public final class EntitlementProvisioningAdapter implements EntitlementProvisioner {
 
-    private static final Logger LOG = Logger.getLogger(KeycloakEntitlementProvisioner.class.getName());
+    private static final Logger LOG = Logger.getLogger(EntitlementProvisioningAdapter.class.getName());
     private final KeycloakSession session;
     private final RealmModel realm;
 
-    public KeycloakEntitlementProvisioner(KeycloakSession session, RealmModel realm) {
+    public EntitlementProvisioningAdapter(KeycloakSession session, RealmModel realm) {
         this.session = Objects.requireNonNull(session, "session must not be null");
         this.realm = Objects.requireNonNull(realm, "realm must not be null");
     }

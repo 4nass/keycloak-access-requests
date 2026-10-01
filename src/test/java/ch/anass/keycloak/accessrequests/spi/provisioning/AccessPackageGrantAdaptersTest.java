@@ -27,14 +27,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class KeycloakAccessPackageGrantLifecycleTest {
+class AccessPackageGrantAdaptersTest {
 
     @Test
     void authorizesOnlyThePersistedRootPackageWithItsOriginalRoleMappings() {
         Fixture fixture = new Fixture();
         fixture.effectiveSourceRoleElsewhere = true;
 
-        assertTrue(fixture.lifecycle().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
+        assertTrue(fixture.authority().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
         assertEquals(0, fixture.groupLeaves);
         assertEquals(0, fixture.directRoleRemovals);
     }
@@ -43,38 +43,38 @@ class KeycloakAccessPackageGrantLifecycleTest {
     void aMatchingNameAloneNeverEstablishesOwnership() {
         Fixture fixture = new Fixture();
         fixture.bindingPresent = false;
-        assertFalse(fixture.lifecycle().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
+        assertFalse(fixture.authority().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
 
         fixture.bindingPresent = true;
         fixture.bindingGroupId = "other-group";
-        assertFalse(fixture.lifecycle().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
+        assertFalse(fixture.authority().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
 
         fixture.bindingGroupId = "jit-group-1";
         fixture.bindingRealmId = "other-realm";
-        assertFalse(fixture.lifecycle().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
+        assertFalse(fixture.authority().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
     }
 
     @Test
     void rejectsAReplacedMovedRenamedOrRemappedDeliveryGroup() {
         Fixture fixture = new Fixture();
         fixture.groupId = "replacement-id";
-        assertFalse(fixture.lifecycle().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
+        assertFalse(fixture.authority().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
 
         fixture.groupId = "jit-group-1";
         fixture.groupName = "business-group";
-        assertFalse(fixture.lifecycle().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
+        assertFalse(fixture.authority().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
 
         fixture.groupName = "AR_PKG_REPORTING";
         fixture.nestedGroup = true;
-        assertFalse(fixture.lifecycle().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
+        assertFalse(fixture.authority().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
 
         fixture.nestedGroup = false;
         fixture.groupRoles.removeLast();
-        assertFalse(fixture.lifecycle().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
+        assertFalse(fixture.authority().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
 
         fixture.groupRoles.add(fixture.clientRole);
         fixture.groupRoles.add(fixture.extraRole);
-        assertFalse(fixture.lifecycle().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
+        assertFalse(fixture.authority().isExclusivelyManaged(fixture.grant(GrantRevocationState.UNVERIFIED)));
     }
 
     @Test
@@ -84,14 +84,14 @@ class KeycloakAccessPackageGrantLifecycleTest {
                 ResourceType.REALM_ROLE, "realm-role-1", GrantOrigin.CREATED_BY_EXTENSION,
                 Fixture.GRANTED_AT, Fixture.GRANTED_AT.plus(Duration.ofHours(4)),
                 GrantRevocationState.AUTHORIZED, 0, "jit-group-1");
-        assertFalse(fixture.lifecycle().isExclusivelyManaged(anotherRealm));
+        assertFalse(fixture.authority().isExclusivelyManaged(anotherRealm));
 
         fixture.userExists = false;
-        assertFalse(fixture.lifecycle().isExclusivelyManaged(fixture.grant(GrantRevocationState.AUTHORIZED)));
+        assertFalse(fixture.authority().isExclusivelyManaged(fixture.grant(GrantRevocationState.AUTHORIZED)));
 
         fixture.userExists = true;
         fixture.groupExists = false;
-        assertFalse(fixture.lifecycle().isExclusivelyManaged(fixture.grant(GrantRevocationState.AUTHORIZED)));
+        assertFalse(fixture.authority().isExclusivelyManaged(fixture.grant(GrantRevocationState.AUTHORIZED)));
     }
 
     @Test
@@ -108,9 +108,9 @@ class KeycloakAccessPackageGrantLifecycleTest {
                 ResourceType.REALM_ROLE, "realm-role-1", GrantOrigin.CREATED_BY_EXTENSION,
                 Fixture.GRANTED_AT, null, GrantRevocationState.UNVERIFIED, 0, "jit-group-1");
 
-        assertFalse(fixture.lifecycle().isExclusivelyManaged(unbound));
-        assertFalse(fixture.lifecycle().isExclusivelyManaged(preexisting));
-        assertFalse(fixture.lifecycle().isExclusivelyManaged(permanent));
+        assertFalse(fixture.authority().isExclusivelyManaged(unbound));
+        assertFalse(fixture.authority().isExclusivelyManaged(preexisting));
+        assertFalse(fixture.authority().isExclusivelyManaged(permanent));
     }
 
     @Test
@@ -119,7 +119,7 @@ class KeycloakAccessPackageGrantLifecycleTest {
         fixture.effectiveSourceRoleElsewhere = true;
         AccessGrant grant = fixture.grant(GrantRevocationState.AUTHORIZED);
 
-        fixture.lifecycle().revoke(grant);
+        fixture.revoker().revoke(grant);
 
         assertEquals(1, fixture.groupLeaves);
         assertEquals("jit-group-1", fixture.lastLeftGroupId);
@@ -133,8 +133,8 @@ class KeycloakAccessPackageGrantLifecycleTest {
         Fixture fixture = new Fixture();
         AccessGrant grant = fixture.grant(GrantRevocationState.AUTHORIZED);
 
-        fixture.lifecycle().revoke(grant);
-        fixture.lifecycle().revoke(grant);
+        fixture.revoker().revoke(grant);
+        fixture.revoker().revoke(grant);
 
         assertEquals(1, fixture.groupLeaves);
         assertEquals(0, fixture.directRoleRemovals);
@@ -146,9 +146,24 @@ class KeycloakAccessPackageGrantLifecycleTest {
         fixture.member = false;
         AccessGrant grant = fixture.grant(GrantRevocationState.AUTHORIZED);
 
-        assertTrue(fixture.lifecycle().isExclusivelyManaged(grant));
-        fixture.lifecycle().revoke(grant);
+        assertTrue(fixture.authority().isExclusivelyManaged(grant));
+        fixture.revoker().revoke(grant);
         assertEquals(0, fixture.groupLeaves);
+        assertEquals(0, fixture.directRoleRemovals);
+    }
+
+    @Test
+    void inheritedMembershipDoesNotCauseAFalseDirectRemoval() {
+        Fixture fixture = new Fixture();
+        fixture.member = false;
+        fixture.indirectMember = true;
+        AccessGrant grant = fixture.grant(GrantRevocationState.AUTHORIZED);
+
+        assertTrue(fixture.authority().isExclusivelyManaged(grant));
+        fixture.revoker().revoke(grant);
+
+        assertEquals(0, fixture.groupLeaves);
+        assertEquals(0, fixture.otherGroupLeaves);
         assertEquals(0, fixture.directRoleRemovals);
     }
 
@@ -161,8 +176,8 @@ class KeycloakAccessPackageGrantLifecycleTest {
                 Fixture.GRANTED_AT, Fixture.GRANTED_AT.plus(Duration.ofHours(4)),
                 GrantRevocationState.AUTHORIZED, 0, "jit-group-1");
 
-        assertThrows(IllegalStateException.class, () -> fixture.lifecycle().revoke(unverified));
-        assertThrows(IllegalStateException.class, () -> fixture.lifecycle().revoke(anotherRealm));
+        assertThrows(IllegalStateException.class, () -> fixture.revoker().revoke(unverified));
+        assertThrows(IllegalStateException.class, () -> fixture.revoker().revoke(anotherRealm));
         assertEquals(0, fixture.groupLeaves);
         assertEquals(0, fixture.directRoleRemovals);
     }
@@ -171,15 +186,15 @@ class KeycloakAccessPackageGrantLifecycleTest {
     void revocationRechecksBindingAndGroupInsteadOfTrustingAnEarlierAuthorization() {
         Fixture fixture = new Fixture();
         AccessGrant grant = fixture.grant(GrantRevocationState.AUTHORIZED);
-        assertTrue(fixture.lifecycle().isExclusivelyManaged(grant));
+        assertTrue(fixture.authority().isExclusivelyManaged(grant));
 
         fixture.groupName = "renamed-after-authorization";
-        assertThrows(IllegalStateException.class, () -> fixture.lifecycle().revoke(grant));
+        assertThrows(IllegalStateException.class, () -> fixture.revoker().revoke(grant));
         assertEquals(0, fixture.groupLeaves);
 
         fixture.groupName = "AR_PKG_REPORTING";
         fixture.bindingGroupId = "other-group";
-        assertThrows(IllegalStateException.class, () -> fixture.lifecycle().revoke(grant));
+        assertThrows(IllegalStateException.class, () -> fixture.revoker().revoke(grant));
         assertEquals(0, fixture.groupLeaves);
     }
 
@@ -189,13 +204,13 @@ class KeycloakAccessPackageGrantLifecycleTest {
         AccessGrant grant = fixture.grant(GrantRevocationState.AUTHORIZED);
 
         fixture.userExists = false;
-        assertThrows(IllegalStateException.class, () -> fixture.lifecycle().revoke(grant));
+        assertThrows(IllegalStateException.class, () -> fixture.revoker().revoke(grant));
         fixture.userExists = true;
         fixture.groupExists = false;
-        assertThrows(IllegalStateException.class, () -> fixture.lifecycle().revoke(grant));
+        assertThrows(IllegalStateException.class, () -> fixture.revoker().revoke(grant));
         fixture.groupExists = true;
         fixture.leaveFails = true;
-        assertThrows(IllegalStateException.class, () -> fixture.lifecycle().revoke(grant));
+        assertThrows(IllegalStateException.class, () -> fixture.revoker().revoke(grant));
         assertEquals(0, fixture.groupLeaves);
         assertEquals(0, fixture.directRoleRemovals);
     }
@@ -209,6 +224,7 @@ class KeycloakAccessPackageGrantLifecycleTest {
         private boolean userExists = true;
         private boolean groupExists = true;
         private boolean member = true;
+        private boolean indirectMember;
         private boolean nestedGroup;
         private boolean leaveFails;
         private boolean effectiveSourceRoleElsewhere;
@@ -229,7 +245,17 @@ class KeycloakAccessPackageGrantLifecycleTest {
                     GRANTED_AT.plus(Duration.ofHours(4)), state, 0, "jit-group-1");
         }
 
-        KeycloakAccessPackageGrantLifecycle lifecycle() {
+        AccessPackageGrantAuthority authority() {
+            Context current = context();
+            return new AccessPackageGrantAuthority(current.session(), current.realm(), current.packages());
+        }
+
+        AccessPackageMembershipRevoker revoker() {
+            Context current = context();
+            return new AccessPackageMembershipRevoker(current.session(), current.realm(), current.packages());
+        }
+
+        private Context context() {
             RealmModel realm = proxy(RealmModel.class, (self, method, args) ->
                     method.getName().equals("getId") ? "realm-1" : null);
             GroupModel group = proxy(GroupModel.class, (self, method, args) -> switch (method.getName()) {
@@ -240,7 +266,16 @@ class KeycloakAccessPackageGrantLifecycleTest {
                 default -> null;
             });
             UserModel user = proxy(UserModel.class, (self, method, args) -> switch (method.getName()) {
-                case "isMemberOf" -> member;
+                case "getGroupsStream" -> {
+                    GroupModel child = proxy(GroupModel.class, (childSelf, call, values) -> switch (call.getName()) {
+                        case "getId" -> "child-of-jit-group";
+                        case "getParent" -> group;
+                        default -> null;
+                    });
+                    yield member ? java.util.stream.Stream.of(group)
+                            : indirectMember ? java.util.stream.Stream.of(child) : java.util.stream.Stream.empty();
+                }
+                case "isMemberOf" -> member || indirectMember;
                 case "leaveGroup" -> {
                     if (leaveFails) {
                         throw new IllegalStateException("Keycloak group removal failed");
@@ -288,7 +323,10 @@ class KeycloakAccessPackageGrantLifecycleTest {
                                     new AccessPackage.RoleMapping(ResourceType.CLIENT_ROLE, "client-role-1"))));
                 }
             };
-            return new KeycloakAccessPackageGrantLifecycle(session, realm, packages);
+            return new Context(session, realm, packages);
+        }
+
+        private record Context(KeycloakSession session, RealmModel realm, AccessPackageRepository packages) {
         }
 
         private static RoleModel role(String id, boolean clientRole) {

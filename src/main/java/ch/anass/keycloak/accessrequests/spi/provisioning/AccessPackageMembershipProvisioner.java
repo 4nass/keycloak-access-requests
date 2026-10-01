@@ -1,31 +1,27 @@
 package ch.anass.keycloak.accessrequests.spi.provisioning;
 
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.AccessPackage;
-import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.grant.ProvisioningResult;
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureCode;
 import ch.anass.keycloak.accessrequests.core.port.AccessPackageProvisioner;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
 
 import java.util.Objects;
-import java.util.List;
-import java.util.stream.Collectors;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /** Assigns package membership, never the underlying roles directly. */
-public final class KeycloakAccessPackageMembership implements AccessPackageProvisioner {
+public final class AccessPackageMembershipProvisioner implements AccessPackageProvisioner {
 
-    private static final Logger LOG = Logger.getLogger(KeycloakAccessPackageMembership.class.getName());
+    private static final Logger LOG = Logger.getLogger(AccessPackageMembershipProvisioner.class.getName());
 
     private final KeycloakSession session;
     private final RealmModel realm;
 
-    public KeycloakAccessPackageMembership(KeycloakSession session, RealmModel realm) {
+    public AccessPackageMembershipProvisioner(KeycloakSession session, RealmModel realm) {
         this.session = Objects.requireNonNull(session, "session must not be null");
         this.realm = Objects.requireNonNull(realm, "realm must not be null");
     }
@@ -48,15 +44,7 @@ public final class KeycloakAccessPackageMembership implements AccessPackageProvi
                 return ProvisioningResult.failed(ProvisioningFailureCode.RESOURCE_MISSING,
                         "The package delivery group no longer exists.");
             }
-            List<AccessPackage.RoleMapping> actualMappings = group.getRoleMappingsStream()
-                    .map(KeycloakAccessPackageMembership::mapping)
-                    .toList();
-            if (!accessPackage.groupId().equals(group.getId())
-                    || !accessPackage.groupName().equals(group.getName())
-                    || group.getParent() != null
-                    || actualMappings.size() != accessPackage.roleMappings().size()
-                    || !actualMappings.stream().collect(Collectors.toSet())
-                            .equals(accessPackage.roleMappings().stream().collect(Collectors.toSet()))) {
+            if (!AccessPackageGroupVerifier.matches(accessPackage, group)) {
                 return ProvisioningResult.failed(ProvisioningFailureCode.RESOURCE_TYPE_MISMATCH,
                         "The package delivery group configuration has changed.");
             }
@@ -74,8 +62,4 @@ public final class KeycloakAccessPackageMembership implements AccessPackageProvi
         }
     }
 
-    private static AccessPackage.RoleMapping mapping(RoleModel role) {
-        return new AccessPackage.RoleMapping(
-                role.isClientRole() ? ResourceType.CLIENT_ROLE : ResourceType.REALM_ROLE, role.getId());
-    }
 }
