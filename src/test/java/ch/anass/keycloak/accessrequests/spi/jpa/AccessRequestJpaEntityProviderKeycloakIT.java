@@ -62,6 +62,11 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     private static final Network NETWORK = Network.newNetwork();
     private String accessPackageEntitlementId;
     private String accessPackageGroupId;
+    private ScheduledPackageGrant scheduledPackageGrant;
+
+    private record ScheduledPackageGrant(String requestId, String requesterId, String groupId,
+            String sourceRoleId, String preexistingRequesterId, String permanentRequesterId) {
+    }
 
     @Container
     private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(POSTGRESQL_IMAGE)
@@ -95,6 +100,10 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertAdministrativeAuditEventSearch(firstServer);
         }
 
+        // Advance one real provisioned grant in the disposable database before the next Keycloak startup.
+        // The timer's five-second initial delay then exercises scheduling without a five-minute test wait.
+        expireScheduledPackageGrant();
+
         try (KeycloakContainer restartedServer = keycloak()) {
             restartedServer.start();
             configureAdminCliTokenBehavior(restartedServer);
@@ -102,6 +111,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertProviderSchemaApplied();
             assertRealmEndpointExposed(restartedServer);
             assertAccessPackageSurvivesRestart(restartedServer);
+            assertScheduledPackageGrantRevoked(restartedServer);
             assertEntitlementCatalogAdministration(restartedServer);
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(restartedServer);
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(restartedServer);
@@ -483,12 +493,13 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             }
         }
         assertPackageGrantAuthorizationAfterProvisioning(server, adminToken, managerToken, entitlementEndpoint,
-                entitlementId, groupId, approverRoleName, approverRoleId);
+                entitlementId, groupId, sourceRoleId, approverRoleName, approverRoleId);
     }
 
     private void assertPackageGrantAuthorizationAfterProvisioning(
             GenericContainer<?> server, String adminToken, String managerToken, URI entitlementEndpoint,
-            String entitlementId, String groupId, String approverRoleName, String approverRoleId) throws Exception {
+            String entitlementId, String groupId, String sourceRoleId,
+            String approverRoleName, String approverRoleId) throws Exception {
         String publish = """
                 {"displayName":"Temporary reporting access","description":"Time-bound reporting package.",
                  "riskLevel":"MEDIUM","approverRoleId":"%s","defaultDurationSeconds":604800,
@@ -642,6 +653,66 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertPendingRequestAndCreatedAuditEvent(rollbackRequestId, entitlementId, rollbackId,
                 "Temporary access needed.", 3600L);
         assertNoGroupMembership(server, adminToken, rollbackId, groupId);
+        scheduledPackageGrant = new ScheduledPackageGrant(requestId, requesterId, groupId,
+                sourceRoleId, preexistingId, permanentId);
+    }
+
+    private void expireScheduledPackageGrant() throws SQLException {
+        assertNotNull(scheduledPackageGrant, "The first Keycloak run must provision a temporary package grant");
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement statement = connection.prepareStatement("""
+                     update AR_ACCESS_GRANT set EXPIRES_TIMESTAMP = ?
+                      where REQUEST_ID = ? and REVOCATION_STATE = 'AUTHORIZED'
+                     """)) {
+            statement.setLong(1, Instant.now().minusSeconds(1).toEpochMilli());
+            statement.setString(2, scheduledPackageGrant.requestId());
+            assertEquals(1, statement.executeUpdate(), "Only the selected temporary package grant should become due");
+        }
+    }
+
+    private void assertScheduledPackageGrantRevoked(GenericContainer<?> server) throws Exception {
+        String adminToken = accessToken(server, "admin-cli");
+        Instant deadline = Instant.now().plusSeconds(30);
+        String state;
+        do {
+            try (Connection connection = DriverManager.getConnection(
+                    POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                 PreparedStatement statement = connection.prepareStatement("""
+                         select REVOCATION_STATE, VERSION from AR_ACCESS_GRANT where REQUEST_ID = ?
+                         """)) {
+                statement.setString(1, scheduledPackageGrant.requestId());
+                try (ResultSet row = statement.executeQuery()) {
+                    assertTrue(row.next());
+                    state = row.getString("REVOCATION_STATE");
+                    if ("REVOKED".equals(state)) {
+                        assertEquals(2, row.getLong("VERSION"), "The scheduled revocation must happen exactly once");
+                    }
+                    assertFalse(row.next());
+                }
+            }
+            if (!"REVOKED".equals(state) && Instant.now().isBefore(deadline)) {
+                Thread.sleep(250);
+            }
+        } while (!"REVOKED".equals(state) && Instant.now().isBefore(deadline));
+        assertEquals("REVOKED", state, "The deployed provider's Keycloak timer must revoke the due grant");
+
+        assertNoGroupMembership(server, adminToken,
+                scheduledPackageGrant.requesterId(), scheduledPackageGrant.groupId());
+        assertGroupMembership(server, adminToken,
+                scheduledPackageGrant.preexistingRequesterId(), scheduledPackageGrant.groupId());
+        assertGroupMembership(server, adminToken,
+                scheduledPackageGrant.permanentRequesterId(), scheduledPackageGrant.groupId());
+        URI groupRoles = URI.create("http://%s:%d/admin/realms/master/groups/%s/role-mappings/realm"
+                .formatted(server.getHost(), server.getMappedPort(8080), scheduledPackageGrant.groupId()));
+        HttpResponse<String> roles = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(groupRoles).header("Authorization", "Bearer " + adminToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, roles.statusCode(), roles.body());
+        assertTrue(java.util.stream.StreamSupport.stream(
+                        new ObjectMapper().readTree(roles.body()).spliterator(), false)
+                .anyMatch(role -> scheduledPackageGrant.sourceRoleId().equals(role.path("id").asText())),
+                "Revocation must leave the package's source role mapping intact");
     }
 
     private String submitTemporaryPackageRequest(URI endpoint, String requesterToken, String entitlementId)
@@ -710,7 +781,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, response.statusCode());
         assertFalse(response.body().contains("\"id\":\"" + groupId + "\""),
-                "Rolled-back grant authorization must also roll back the group membership");
+                "The user must not have direct membership in the package group");
     }
 
     private int accessPackageGroupCount(GenericContainer<?> server, String adminToken) throws Exception {
