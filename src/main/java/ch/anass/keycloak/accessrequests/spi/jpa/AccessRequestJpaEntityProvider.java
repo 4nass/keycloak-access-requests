@@ -45,11 +45,15 @@ public final class AccessRequestJpaEntityProvider implements JpaEntityProvider, 
 
     @Override
     public void postInit(KeycloakSessionFactory factory) {
-        KeycloakModelUtils.runJobInTransaction(factory, session -> session.getProvider(TimerProvider.class).scheduleTask(
+        KeycloakModelUtils.runJobInTransaction(factory, session -> scheduleTasks(session.getProvider(TimerProvider.class)));
+    }
+
+    static void scheduleTasks(TimerProvider timer) {
+        timer.scheduleTask(
                 new KeycloakAccessRequestNotificationOutboxDispatcher(),
                 OUTBOX_INITIAL_DELAY_MILLIS,
                 OUTBOX_INTERVAL_MILLIS,
-                KeycloakAccessRequestNotificationOutboxDispatcher.TASK_NAME));
+                KeycloakAccessRequestNotificationOutboxDispatcher.TASK_NAME);
     }
 
     @Override
