@@ -5,6 +5,8 @@ import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantOrigin;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationState;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.AccessGrantRevocationRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.JpaAccessRequestTransaction;
 import jakarta.persistence.EntityManager;
@@ -97,24 +99,178 @@ class JpaAccessGrantRepositoryTest {
     }
 
     @Test
-    void persistsPackageDeliveryGroupWhileJpaRevocationRemainsUnsupported() {
-        Instant recordedAt = Instant.parse("2026-09-01T10:15:30Z");
-        AccessGrant jitGrant = new AccessGrant("request-jit", "realm-1", "user-1", "entitlement-1",
-                ResourceType.REALM_ROLE, "source-role", GrantOrigin.CREATED_BY_EXTENSION,
-                recordedAt, recordedAt.plus(Duration.ofHours(4)), GrantRevocationState.AUTHORIZED, 0,
-                "jit-group-1");
+    void authorizesAndRevokesPackageMembershipWithoutLosingItsSourceOrDeliveryGroup() {
+        AccessGrant jitGrant = packageGrant("request-jit", GrantRevocationState.UNVERIFIED);
         inTransaction(() -> repository.create(jitGrant));
         entityManager.clear();
 
         AccessGrant persisted = repository.findByRequestId("realm-1", "request-jit").orElseThrow();
         assertEquals(jitGrant, persisted);
         assertEquals("jit-group-1", persisted.deliveryGroupId());
-        assertTrue(persisted.canAutoRevoke(), "Core eligibility still requires a fresh authority check before removal");
+        assertFalse(persisted.canAutoRevoke());
+
+        AccessGrant authorized = inTransactionResult(() -> revocationRepository().updateIfVersionMatches(
+                persisted.authorizeForRevocation(packageEntitlement(), true), persisted.version()).orElseThrow());
+        assertEquals(GrantRevocationState.AUTHORIZED, authorized.revocationState());
+        assertEquals(1, authorized.version());
+        assertEquals("jit-group-1", authorized.deliveryGroupId());
+        assertEquals("source-role", authorized.resourceId());
+        assertEquals(jitGrant.expiresAt(), authorized.expiresAt());
+        assertEquals(authorized, repository.findByRequestId("realm-1", "request-jit").orElseThrow());
+
+        AccessGrant revoked = inTransactionResult(() -> revocationRepository().updateIfVersionMatches(
+                authorized.markRevoked(), authorized.version()).orElseThrow());
+        assertEquals(GrantRevocationState.REVOKED, revoked.revocationState());
+        assertEquals(2, revoked.version());
+        assertEquals("jit-group-1", revoked.deliveryGroupId());
+        assertEquals("source-role", revoked.resourceId());
+        assertEquals(jitGrant.expiresAt(), revoked.expiresAt());
+        assertEquals(revoked, repository.findByRequestId("realm-1", "request-jit").orElseThrow());
         assertTrue(inTransactionResult(() -> revocationRepository().updateIfVersionMatches(
-                new AccessGrant(persisted.requestId(), persisted.realmId(), persisted.requesterId(),
-                        persisted.entitlementId(), persisted.resourceType(), persisted.resourceId(),
-                        persisted.origin(), persisted.recordedAt(), persisted.expiresAt(),
-                        GrantRevocationState.REVOKED, persisted.version(), persisted.deliveryGroupId()), 0)).isEmpty());
+                authorized.markRevoked(), authorized.version())).isEmpty());
+    }
+
+    @Test
+    void packageTransitionsRejectStaleVersionsAndForgedDeliveryGroups() {
+        AccessGrant unverified = packageGrant("request-package-cas", GrantRevocationState.UNVERIFIED);
+        inTransaction(() -> repository.create(unverified));
+        entityManager.clear();
+        AccessGrantRevocationRepository revocation = revocationRepository();
+        AccessGrant authorized = unverified.authorizeForRevocation(packageEntitlement(), true);
+
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(authorized, 1)).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                withDeliveryGroup(authorized, "other-group"), 0)).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                withDeliveryGroup(authorized, null), 0)).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                withRealm(authorized, "other-realm"), 0)).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                withResourceId(authorized, "other-role"), 0)).isEmpty());
+        assertEquals(unverified, repository.findByRequestId("realm-1", unverified.requestId()).orElseThrow());
+
+        AccessGrant saved = inTransactionResult(() -> revocation.updateIfVersionMatches(authorized, 0).orElseThrow());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(authorized, 0)).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                withDeliveryGroup(saved.markRevoked(), "other-group"), 1)).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                withDeliveryGroup(saved.markRevoked(), null), 1)).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                withResourceId(saved.markRevoked(), "other-role"), 1)).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(saved.markRevoked(), 0)).isEmpty());
+        assertEquals(saved, repository.findByRequestId("realm-1", unverified.requestId()).orElseThrow());
+    }
+
+    @Test
+    void sourceGroupPackageAlsoRequiresTheBoundDeliveryGroupForRevocation() {
+        AccessGrant unverified = new AccessGrant("request-source-group", "realm-1", "user-1", "entitlement-1",
+                ResourceType.GROUP, "source-group", GrantOrigin.CREATED_BY_EXTENSION,
+                Instant.parse("2026-09-01T10:15:30Z"), Instant.parse("2026-09-01T14:15:30Z"),
+                GrantRevocationState.UNVERIFIED, 0, "jit-group-1");
+        Entitlement entitlement = Entitlement.create("entitlement-1", "realm-1", ResourceType.GROUP,
+                "source-group", "Source group", "Delivered through a JIT package", RiskLevel.LOW,
+                "approver-role", Instant.parse("2026-09-01T10:00:00Z"));
+        inTransaction(() -> repository.create(unverified));
+        entityManager.clear();
+
+        AccessGrant authorized = inTransactionResult(() -> revocationRepository().updateIfVersionMatches(
+                unverified.authorizeForRevocation(entitlement, true), 0).orElseThrow());
+        AccessGrant revoked = inTransactionResult(() -> revocationRepository().updateIfVersionMatches(
+                authorized.markRevoked(), authorized.version()).orElseThrow());
+        assertEquals(ResourceType.GROUP, revoked.resourceType());
+        assertEquals("source-group", revoked.resourceId());
+        assertEquals("jit-group-1", revoked.deliveryGroupId());
+        assertEquals(2, revoked.version());
+    }
+
+    @Test
+    void invalidationWinsAgainstStalePackageAuthorizationAndRevocation() {
+        AccessGrant unverified = packageGrant("request-package-invalid-auth", GrantRevocationState.UNVERIFIED);
+        AccessGrant authorized = packageGrant("request-package-invalid-revoke", GrantRevocationState.AUTHORIZED);
+        inTransaction(() -> {
+            repository.create(unverified);
+            repository.create(authorized);
+        });
+        entityManager.clear();
+        AccessGrantRevocationRepository revocation = revocationRepository();
+
+        AccessGrant invalidUnverified = inTransactionResult(() -> repository.invalidateIfVersionMatches(
+                "realm-1", unverified.requestId(), 0).orElseThrow());
+        AccessGrant invalidAuthorized = inTransactionResult(() -> repository.invalidateIfVersionMatches(
+                "realm-1", authorized.requestId(), 0).orElseThrow());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                unverified.authorizeForRevocation(packageEntitlement(), true), 0)).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                authorized.markRevoked(), 0)).isEmpty());
+        assertEquals("jit-group-1", invalidUnverified.deliveryGroupId());
+        assertEquals("jit-group-1", invalidAuthorized.deliveryGroupId());
+        assertEquals(GrantRevocationState.INVALIDATED,
+                repository.findByRequestId("realm-1", unverified.requestId()).orElseThrow().revocationState());
+        assertEquals(GrantRevocationState.INVALIDATED,
+                repository.findByRequestId("realm-1", authorized.requestId()).orElseThrow().revocationState());
+    }
+
+    @Test
+    void packageRevocationRequiresPriorAuthorizationAndAnExtensionOwnedTemporaryGrant() {
+        AccessGrant unverified = packageGrant("request-package-unverified", GrantRevocationState.UNVERIFIED);
+        AccessGrant preexisting = new AccessGrant("request-package-preexisting", "realm-1", "user-1",
+                "entitlement-1", ResourceType.REALM_ROLE, "source-role", GrantOrigin.PREEXISTING,
+                unverified.recordedAt(), null, GrantRevocationState.UNVERIFIED, 0, "jit-group-1");
+        AccessGrant permanent = new AccessGrant("request-package-permanent", "realm-1", "user-1",
+                "entitlement-1", ResourceType.REALM_ROLE, "source-role", GrantOrigin.CREATED_BY_EXTENSION,
+                unverified.recordedAt(), null, GrantRevocationState.UNVERIFIED, 0, "jit-group-1");
+        inTransaction(() -> {
+            repository.create(unverified);
+            repository.create(preexisting);
+            repository.create(permanent);
+        });
+        entityManager.clear();
+        AccessGrantRevocationRepository revocation = revocationRepository();
+
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                withState(unverified, GrantRevocationState.REVOKED), 0)).isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                withState(preexisting, GrantRevocationState.AUTHORIZED, GrantOrigin.CREATED_BY_EXTENSION), 0))
+                .isEmpty());
+        assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
+                withState(permanent, GrantRevocationState.AUTHORIZED), 0)).isEmpty());
+        assertEquals(unverified, repository.findByRequestId("realm-1", unverified.requestId()).orElseThrow());
+        assertEquals(preexisting, repository.findByRequestId("realm-1", preexisting.requestId()).orElseThrow());
+        assertEquals(permanent, repository.findByRequestId("realm-1", permanent.requestId()).orElseThrow());
+    }
+
+    @Test
+    void rolledBackPackageAuthorizationAndRevocationRemainRetryable() {
+        AccessGrant unverified = packageGrant("request-package-rollback", GrantRevocationState.UNVERIFIED);
+        inTransaction(() -> repository.create(unverified));
+        entityManager.clear();
+        AccessGrantRevocationRepository revocation = revocationRepository();
+
+        entityManager.getTransaction().begin();
+        try {
+            AccessGrant locked = revocation.findByRequestIdForUpdate("realm-1", unverified.requestId()).orElseThrow();
+            assertEquals(GrantRevocationState.AUTHORIZED, revocation.updateIfVersionMatches(
+                    locked.authorizeForRevocation(packageEntitlement(), true), 0).orElseThrow().revocationState());
+        } finally {
+            entityManager.getTransaction().rollback();
+            entityManager.clear();
+        }
+        assertEquals(unverified, repository.findByRequestId("realm-1", unverified.requestId()).orElseThrow());
+
+        AccessGrant authorized = inTransactionResult(() -> revocation.updateIfVersionMatches(
+                unverified.authorizeForRevocation(packageEntitlement(), true), 0).orElseThrow());
+        entityManager.getTransaction().begin();
+        try {
+            AccessGrant locked = revocation.findByRequestIdForUpdate("realm-1", authorized.requestId()).orElseThrow();
+            assertEquals(GrantRevocationState.REVOKED, revocation.updateIfVersionMatches(
+                    locked.markRevoked(), locked.version()).orElseThrow().revocationState());
+        } finally {
+            entityManager.getTransaction().rollback();
+            entityManager.clear();
+        }
+        assertEquals(authorized, repository.findByRequestId("realm-1", authorized.requestId()).orElseThrow());
+        assertEquals(GrantRevocationState.REVOKED, inTransactionResult(() -> revocation.updateIfVersionMatches(
+                authorized.markRevoked(), authorized.version()).orElseThrow()).revocationState());
     }
 
     @Test
@@ -288,6 +444,47 @@ class JpaAccessGrantRepositoryTest {
 
     private static AccessGrant authorizedGrant(String requestId) {
         return temporaryGrant(requestId, GrantRevocationState.AUTHORIZED);
+    }
+
+    private static AccessGrant packageGrant(String requestId, GrantRevocationState state) {
+        Instant recordedAt = Instant.parse("2026-09-01T10:15:30Z");
+        return new AccessGrant(requestId, "realm-1", "user-1", "entitlement-1", ResourceType.REALM_ROLE,
+                "source-role", GrantOrigin.CREATED_BY_EXTENSION, recordedAt,
+                recordedAt.plus(Duration.ofHours(4)), state, 0, "jit-group-1");
+    }
+
+    private static Entitlement packageEntitlement() {
+        return Entitlement.create("entitlement-1", "realm-1", ResourceType.REALM_ROLE, "source-role",
+                "Source role", "Delivered through a JIT package", RiskLevel.LOW, "approver-role",
+                Instant.parse("2026-09-01T10:00:00Z"));
+    }
+
+    private static AccessGrant withDeliveryGroup(AccessGrant grant, String deliveryGroupId) {
+        return new AccessGrant(grant.requestId(), grant.realmId(), grant.requesterId(), grant.entitlementId(),
+                grant.resourceType(), grant.resourceId(), grant.origin(), grant.recordedAt(), grant.expiresAt(),
+                grant.revocationState(), grant.version(), deliveryGroupId);
+    }
+
+    private static AccessGrant withRealm(AccessGrant grant, String realmId) {
+        return new AccessGrant(grant.requestId(), realmId, grant.requesterId(), grant.entitlementId(),
+                grant.resourceType(), grant.resourceId(), grant.origin(), grant.recordedAt(), grant.expiresAt(),
+                grant.revocationState(), grant.version(), grant.deliveryGroupId());
+    }
+
+    private static AccessGrant withResourceId(AccessGrant grant, String resourceId) {
+        return new AccessGrant(grant.requestId(), grant.realmId(), grant.requesterId(), grant.entitlementId(),
+                grant.resourceType(), resourceId, grant.origin(), grant.recordedAt(), grant.expiresAt(),
+                grant.revocationState(), grant.version(), grant.deliveryGroupId());
+    }
+
+    private static AccessGrant withState(AccessGrant grant, GrantRevocationState state) {
+        return withState(grant, state, grant.origin());
+    }
+
+    private static AccessGrant withState(AccessGrant grant, GrantRevocationState state, GrantOrigin origin) {
+        return new AccessGrant(grant.requestId(), grant.realmId(), grant.requesterId(), grant.entitlementId(),
+                grant.resourceType(), grant.resourceId(), origin, grant.recordedAt(), grant.expiresAt(),
+                state, grant.version(), grant.deliveryGroupId());
     }
 
     private static AccessGrant temporaryGrant(String requestId, GrantRevocationState state) {

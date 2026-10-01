@@ -68,10 +68,21 @@ class JpaAccessGrantRevocationPostgresIT {
 
     @Test
     void aSecondNodeWaitsForTheFirstRevocationAndObservesItsCommittedState() throws Exception {
+        assertSecondNodeWaitsForRevocation(false);
+    }
+
+    @Test
+    void aSecondNodeCannotRevokeTheSamePackageMembershipAfterTheFirstCommits() throws Exception {
+        assertSecondNodeWaitsForRevocation(true);
+    }
+
+    private static void assertSecondNodeWaitsForRevocation(boolean packageMembership) throws Exception {
         Instant activatedAt = Instant.parse("2026-09-01T10:00:00Z");
-        AccessGrant authorized = new AccessGrant("request-postgres-lock", "realm-1", "user-1", "entitlement-1",
-                ResourceType.REALM_ROLE, "jit-role-1", GrantOrigin.CREATED_BY_EXTENSION,
-                activatedAt, activatedAt.plus(Duration.ofHours(4)), GrantRevocationState.AUTHORIZED, 0);
+        AccessGrant authorized = new AccessGrant(packageMembership ? "request-postgres-package" : "request-postgres-lock",
+                "realm-1", "user-1", "entitlement-1", ResourceType.REALM_ROLE,
+                packageMembership ? "source-role" : "jit-role-1", GrantOrigin.CREATED_BY_EXTENSION,
+                activatedAt, activatedAt.plus(Duration.ofHours(4)), GrantRevocationState.AUTHORIZED, 0,
+                packageMembership ? "jit-group-1" : null);
         EntityManager setup = factory.createEntityManager();
         try {
             revocationRepository(setup);
@@ -124,6 +135,14 @@ class JpaAccessGrantRevocationPostgresIT {
             AccessGrant afterFirstCommit = second.get(20, TimeUnit.SECONDS).orElseThrow();
             assertEquals(GrantRevocationState.REVOKED, afterFirstCommit.revocationState());
             assertEquals(1, afterFirstCommit.version());
+            assertEquals(authorized.deliveryGroupId(), afterFirstCommit.deliveryGroupId());
+            EntityManager verifier = factory.createEntityManager();
+            try {
+                assertTrue(new JpaAccessRequestTransaction(verifier).execute(() ->
+                        revocationRepository(verifier).updateIfVersionMatches(authorized.markRevoked(), 0)).isEmpty());
+            } finally {
+                verifier.close();
+            }
         } finally {
             releaseFirst.countDown();
             workers.shutdownNow();
