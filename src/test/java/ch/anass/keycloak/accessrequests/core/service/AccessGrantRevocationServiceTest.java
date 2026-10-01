@@ -14,6 +14,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -326,6 +327,12 @@ class AccessGrantRevocationServiceTest {
 
         private InMemoryGrantRepository(AccessGrant grant) {
             current = grant;
+        }
+
+        @Override
+        public List<AccessGrant> findDuePackageGrants(
+                Instant dueAt, Instant afterExpiry, String afterRequestId, int limit) {
+            throw new UnsupportedOperationException("Due-grant scans are not used by this test");
         }
 
         @Override

@@ -15,6 +15,7 @@ import ch.anass.keycloak.accessrequests.core.port.EntitlementRepository;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -193,6 +194,12 @@ class AccessGrantAuthorizationServiceTest {
                     packageGrant ? "package-group-1" : "jit-role-1", GrantOrigin.CREATED_BY_EXTENSION, GRANTED_AT,
                     GRANTED_AT.plusSeconds(3600), GrantRevocationState.UNVERIFIED, 0,
                     packageGrant ? "package-group-1" : null);
+        }
+
+        @Override
+        public List<AccessGrant> findDuePackageGrants(
+                Instant dueAt, Instant afterExpiry, String afterRequestId, int limit) {
+            throw new UnsupportedOperationException("Due-grant scans are not used by this test");
         }
 
         @Override

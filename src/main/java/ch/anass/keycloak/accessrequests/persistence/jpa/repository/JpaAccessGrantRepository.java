@@ -11,6 +11,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.Query;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -36,6 +37,39 @@ public final class JpaAccessGrantRepository implements AccessGrantRevocationRepo
         return entity != null && realmId.equals(entity.realmId())
                 ? Optional.of(entity.toDomain())
                 : Optional.empty();
+    }
+
+    @Override
+    public List<AccessGrant> findDuePackageGrants(
+            Instant dueAt, Instant afterExpiry, String afterRequestId, int limit) {
+        Objects.requireNonNull(dueAt, "dueAt must not be null");
+        if (limit < 1 || limit > 100 || (afterExpiry == null) != (afterRequestId == null)
+                || (afterRequestId != null && afterRequestId.isBlank())) {
+            throw new IllegalArgumentException("A bounded page and a complete cursor are required");
+        }
+        String cursorCondition = afterExpiry == null ? "" : """
+                       and (entity.expiresTimestamp > :afterExpiry
+                            or (entity.expiresTimestamp = :afterExpiry and entity.requestId > :afterRequestId))
+                """;
+        var query = entityManager.createQuery("""
+                       select entity from AccessGrantEntity entity
+                        where entity.revocationState = :authorized
+                          and entity.origin = :createdByExtension
+                          and entity.deliveryGroupId is not null
+                          and entity.expiresTimestamp is not null
+                          and entity.expiresTimestamp <= :dueAt
+                """ + cursorCondition + """
+                        order by entity.expiresTimestamp, entity.requestId
+                """, AccessGrantEntity.class)
+                .setParameter("authorized", GrantRevocationState.AUTHORIZED)
+                .setParameter("createdByExtension", GrantOrigin.CREATED_BY_EXTENSION)
+                .setParameter("dueAt", dueAt.toEpochMilli())
+                .setMaxResults(limit);
+        if (afterExpiry != null) {
+            query.setParameter("afterExpiry", afterExpiry.toEpochMilli());
+            query.setParameter("afterRequestId", afterRequestId);
+        }
+        return query.getResultList().stream().map(AccessGrantEntity::toDomain).toList();
     }
 
     @Override

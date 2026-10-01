@@ -368,6 +368,12 @@
         <addColumn tableName="AR_ACCESS_GRANT">
             <column name="EXPIRES_TIMESTAMP" type="BIGINT"/>
         </addColumn>
+        <createIndex indexName="IDX_ACCESS_GRANT_DUE_PACKAGE" tableName="AR_ACCESS_GRANT">
+            <column name="REVOCATION_STATE"/>
+            <column name="GRANT_ORIGIN"/>
+            <column name="EXPIRES_TIMESTAMP"/>
+            <column name="REQUEST_ID"/>
+        </createIndex>
         <addColumn tableName="AR_ACCESS_REQUEST">
             <column name="REQUESTED_DURATION_SECONDS" type="BIGINT"/>
             <column name="PERMANENT" type="BOOLEAN" defaultValueBoolean="false">

@@ -15,10 +15,7 @@ public interface AccessGrantRevocationRepository extends AccessGrantRepository {
      * The implementation must bound the page size to 1..100 and omit permanent, preexisting,
      * direct-mapping, unverified, invalidated, revoked, and future grants.
      */
-    default List<AccessGrant> findDuePackageGrants(
-            Instant dueAt, Instant afterExpiry, String afterRequestId, int limit) {
-        throw new UnsupportedOperationException("Due package grant scanning is not implemented");
-    }
+    List<AccessGrant> findDuePackageGrants(Instant dueAt, Instant afterExpiry, String afterRequestId, int limit);
 
     /** Lock the grant until the containing transaction completes, including on another node. */
     Optional<AccessGrant> findByRequestIdForUpdate(String realmId, String requestId);
