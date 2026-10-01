@@ -131,6 +131,31 @@ class JpaAccessGrantRepositoryTest {
     }
 
     @Test
+    void authorizesANewPackageGrantBeforeTheProvisioningTransactionCommits() {
+        AccessGrant created = packageGrant("request-package-same-transaction", GrantRevocationState.UNVERIFIED);
+        entityManager.getTransaction().begin();
+        try {
+            repository.create(created);
+            AccessGrant locked = revocationRepository().findByRequestIdForUpdate(
+                    created.realmId(), created.requestId()).orElseThrow();
+            AccessGrant authorized = locked.authorizeForRevocation(packageEntitlement(), true);
+            assertEquals(GrantRevocationState.AUTHORIZED, revocationRepository()
+                    .updateIfVersionMatches(authorized, locked.version()).orElseThrow().revocationState());
+            entityManager.getTransaction().commit();
+        } finally {
+            if (entityManager.getTransaction().isActive()) {
+                entityManager.getTransaction().rollback();
+            }
+        }
+        entityManager.clear();
+
+        AccessGrant saved = repository.findByRequestId(created.realmId(), created.requestId()).orElseThrow();
+        assertEquals(GrantRevocationState.AUTHORIZED, saved.revocationState());
+        assertEquals(1, saved.version());
+        assertTrue(saved.canAutoRevoke());
+    }
+
+    @Test
     void packageTransitionsRejectStaleVersionsAndForgedDeliveryGroups() {
         AccessGrant unverified = packageGrant("request-package-cas", GrantRevocationState.UNVERIFIED);
         inTransaction(() -> repository.create(unverified));

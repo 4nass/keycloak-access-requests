@@ -2,6 +2,7 @@ package ch.anass.keycloak.accessrequests.spi.realm.resource;
 
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
 import ch.anass.keycloak.accessrequests.core.service.ApprovalQueueService;
+import ch.anass.keycloak.accessrequests.core.service.AccessGrantAuthorizationService;
 import ch.anass.keycloak.accessrequests.core.service.CatalogService;
 import ch.anass.keycloak.accessrequests.core.service.EntitlementScopedApprovalAuthorizer;
 import ch.anass.keycloak.accessrequests.core.service.RequestDetailsService;
@@ -19,6 +20,7 @@ import ch.anass.keycloak.accessrequests.spi.notification.KeycloakAccessRequestNo
 import ch.anass.keycloak.accessrequests.spi.provisioning.EntitlementProvisioningAdapter;
 import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageGroupFactory;
 import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageMembershipProvisioner;
+import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageGrantAuthority;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakAccessRequestTransaction;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakEffectiveAccessChecker;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakRoleMembershipReader;
@@ -96,10 +98,12 @@ final class AccessRequestServiceFactory {
         EntityManager entityManager = entityManager();
         var entitlementRepository = new JpaEntitlementRepository(entityManager);
         var accessPackages = new JpaAccessPackageRepository(entityManager);
+        var grants = new JpaAccessGrantRepository(entityManager);
+        var transaction = transaction();
         return new RequestService(
                 entitlementRepository,
                 new JpaAccessRequestRepository(entityManager),
-                new JpaAccessGrantRepository(entityManager),
+                grants,
                 new KeycloakEffectiveAccessChecker(session, realm, user, accessPackages),
                 new KeycloakUserStatusReader(realm, user),
                 REQUEST_POLICY,
@@ -107,10 +111,12 @@ final class AccessRequestServiceFactory {
                 new EntitlementScopedApprovalAuthorizer(
                         entitlementRepository,
                         new KeycloakRoleMembershipReader(realm, user)),
-                transaction(),
+                transaction,
                 List.of(new EntitlementProvisioningAdapter(session, realm)),
                 new KeycloakAccessRequestNotificationOutboxPublisher(realm, entityManager),
-                java.time.Clock.systemUTC(), accessPackages, new AccessPackageMembershipProvisioner(session, realm));
+                java.time.Clock.systemUTC(), accessPackages, new AccessPackageMembershipProvisioner(session, realm),
+                new AccessGrantAuthorizationService(grants, entitlementRepository,
+                        new AccessPackageGrantAuthority(session, realm, accessPackages), transaction));
     }
 
     ApprovalQueueService approvalQueueService(RealmModel realm, UserModel user) {

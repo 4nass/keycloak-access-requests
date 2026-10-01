@@ -60,6 +60,7 @@ class RequestServiceTest {
     private final InMemoryEntitlementRepository entitlements = new InMemoryEntitlementRepository();
     private final InMemoryAccessRequestRepository requests = new InMemoryAccessRequestRepository();
     private final Map<String, AccessGrant> savedGrants = new HashMap<>();
+    private final AtomicInteger grantAuthorizationAttempts = new AtomicInteger();
     private final AccessGrantRepository grants = new AccessGrantRepository() {
         @Override
         public void create(AccessGrant grant) {
@@ -119,7 +120,7 @@ class RequestServiceTest {
         assertEquals(1, groupJoins.get());
         assertEquals(0, directGrants.get());
         assertEquals("jit-group-1", savedGrants.get(request.id()).deliveryGroupId());
-        assertFalse(savedGrants.get(request.id()).canAutoRevoke());
+        assertEquals(1, grantAuthorizationAttempts.get());
     }
 
     @Test
@@ -144,6 +145,7 @@ class RequestServiceTest {
         assertEquals(2, attempts.get());
         assertEquals(0, directGrants.get());
         assertEquals("jit-group-1", savedGrants.get(request.id()).deliveryGroupId());
+        assertEquals(1, grantAuthorizationAttempts.get());
     }
 
     @Test
@@ -160,6 +162,7 @@ class RequestServiceTest {
         assertEquals("jit-group-1", grant.deliveryGroupId());
         assertEquals(ch.anass.keycloak.accessrequests.core.domain.grant.GrantOrigin.PREEXISTING, grant.origin());
         assertEquals(null, grant.expiresAt());
+        assertEquals(0, grantAuthorizationAttempts.get());
     }
 
     private RequestService packageService(AccessPackageProvisioner packageProvisioner,
@@ -194,7 +197,11 @@ class RequestServiceTest {
         return new RequestService(entitlements, requests, grants, effectiveAccess, users,
                 new RequestPolicy(10, 2000), events, approvalAuthorizer, transaction,
                 List.of(directProvisioner), notifications, java.time.Clock.systemUTC(),
-                packageRepository, packageProvisioner);
+                packageRepository, packageProvisioner, (realmId, requestId) -> {
+                    assertEquals("realm-1", realmId);
+                    assertTrue(savedGrants.containsKey(requestId), "Authorization follows grant creation");
+                    grantAuthorizationAttempts.incrementAndGet();
+                });
     }
 
     @Test

@@ -2,6 +2,7 @@ package ch.anass.keycloak.accessrequests.core.service;
 
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
+import ch.anass.keycloak.accessrequests.core.domain.grant.GrantOrigin;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestPage;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestQuery;
@@ -18,6 +19,7 @@ import ch.anass.keycloak.accessrequests.core.domain.approval.UnauthorizedApprova
 import ch.anass.keycloak.accessrequests.core.domain.request.UnauthorizedRequestActionException;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestEventPublisher;
 import ch.anass.keycloak.accessrequests.core.port.AccessGrantRepository;
+import ch.anass.keycloak.accessrequests.core.port.AccessGrantAuthorizer;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestNotificationPublisher;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
@@ -58,6 +60,9 @@ public final class RequestService {
     private static final AccessPackageProvisioner NO_JIT_PROVISIONER = (realmId, requesterId, accessPackage) ->
             ProvisioningResult.failed(ProvisioningFailureCode.PROVIDER_UNAVAILABLE,
                     "No access package provisioner is configured.");
+    private static final AccessGrantAuthorizer NO_PACKAGE_GRANT_AUTHORIZER = (realmId, requestId) -> {
+        throw new IllegalStateException("Access package grant authorization is not configured");
+    };
 
     private final EntitlementRepository entitlementRepository;
     private final AccessRequestRepository accessRequestRepository;
@@ -73,6 +78,7 @@ public final class RequestService {
     private final List<EntitlementProvisioner> provisioners;
     private final AccessPackageRepository accessPackages;
     private final AccessPackageProvisioner jitProvisioner;
+    private final AccessGrantAuthorizer grantAuthorizer;
     private final Clock clock;
 
     public RequestService(
@@ -140,7 +146,8 @@ public final class RequestService {
             Clock clock) {
         this(entitlementRepository, accessRequestRepository, accessGrantRepository, effectiveAccessChecker,
                 userStatusReader, requestPolicy, eventPublisher, approvalAuthorizer, transaction, provisioners,
-                notificationPublisher, clock, NO_ACCESS_PACKAGES, NO_JIT_PROVISIONER);
+                notificationPublisher, clock, NO_ACCESS_PACKAGES, NO_JIT_PROVISIONER,
+                NO_PACKAGE_GRANT_AUTHORIZER);
     }
 
     public RequestService(
@@ -157,7 +164,8 @@ public final class RequestService {
             AccessRequestNotificationPublisher notificationPublisher,
             Clock clock,
             AccessPackageRepository accessPackages,
-            AccessPackageProvisioner jitProvisioner) {
+            AccessPackageProvisioner jitProvisioner,
+            AccessGrantAuthorizer grantAuthorizer) {
         this.entitlementRepository = Objects.requireNonNull(entitlementRepository);
         this.accessRequestRepository = Objects.requireNonNull(accessRequestRepository);
         this.accessGrantRepository = Objects.requireNonNull(accessGrantRepository);
@@ -172,6 +180,7 @@ public final class RequestService {
         this.provisioners = List.copyOf(Objects.requireNonNull(provisioners));
         this.accessPackages = Objects.requireNonNull(accessPackages);
         this.jitProvisioner = Objects.requireNonNull(jitProvisioner);
+        this.grantAuthorizer = Objects.requireNonNull(grantAuthorizer);
         this.clock = Objects.requireNonNull(clock);
     }
 
@@ -287,8 +296,7 @@ public final class RequestService {
             }
             AccessRequest persisted = updateOrThrow(completed, approved.version());
             if (result.isSuccessful()) {
-                accessGrantRepository.create(AccessGrant.from(persisted, entitlement, result.grantOrigin(), completedAt,
-                        accessPackage));
+                persistProvisionedGrant(persisted, entitlement, result.grantOrigin(), completedAt, accessPackage);
             }
             AccessRequestEvent provisioningEvent = result.isSuccessful()
                     ? AccessRequestEvent.provisioningSucceeded(persisted, approverId, completedAt)
@@ -330,8 +338,7 @@ public final class RequestService {
                     completedAt);
             AccessRequest persisted = updateOrThrow(candidate, request.version());
             if (result.isSuccessful()) {
-                accessGrantRepository.create(AccessGrant.from(persisted, entitlement, result.grantOrigin(), completedAt,
-                        accessPackage));
+                persistProvisionedGrant(persisted, entitlement, result.grantOrigin(), completedAt, accessPackage);
             }
             AccessRequestEvent event = result.isSuccessful()
                     ? AccessRequestEvent.provisioningSucceeded(persisted, actorId, completedAt)
@@ -340,6 +347,16 @@ public final class RequestService {
             publish(event, persisted, entitlement);
             return persisted;
         });
+    }
+
+    private void persistProvisionedGrant(AccessRequest request, Entitlement entitlement, GrantOrigin origin,
+            Instant completedAt, AccessPackage accessPackage) {
+        AccessGrant grant = AccessGrant.from(request, entitlement, origin, completedAt, accessPackage);
+        accessGrantRepository.create(grant);
+        if (accessPackage != null && grant.origin() == GrantOrigin.CREATED_BY_EXTENSION
+                && grant.expiresAt() != null) {
+            grantAuthorizer.authorize(grant.realmId(), grant.requestId());
+        }
     }
 
     public AccessRequest closeFailedProvisioning(String realmId, String requestId, String actorId, String reason) {
