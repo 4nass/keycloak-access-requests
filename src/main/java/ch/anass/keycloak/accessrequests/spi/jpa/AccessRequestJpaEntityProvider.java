@@ -8,6 +8,7 @@ import ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementEntity
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementAuditEventEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessPackageEntity;
 import ch.anass.keycloak.accessrequests.spi.notification.KeycloakAccessRequestNotificationOutboxDispatcher;
+import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageGrantExpirationDispatcher;
 import org.keycloak.Config;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProvider;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProviderFactory;
@@ -32,6 +33,8 @@ public final class AccessRequestJpaEntityProvider implements JpaEntityProvider, 
             AccessPackageEntity.class);
     private static final long OUTBOX_INITIAL_DELAY_MILLIS = 1_000;
     private static final long OUTBOX_INTERVAL_MILLIS = 5_000;
+    private static final long GRANT_EXPIRATION_INITIAL_DELAY_MILLIS = 5_000;
+    private static final long GRANT_EXPIRATION_INTERVAL_MILLIS = 300_000;
 
     @Override
     public JpaEntityProvider create(KeycloakSession session) {
@@ -54,6 +57,11 @@ public final class AccessRequestJpaEntityProvider implements JpaEntityProvider, 
                 OUTBOX_INITIAL_DELAY_MILLIS,
                 OUTBOX_INTERVAL_MILLIS,
                 KeycloakAccessRequestNotificationOutboxDispatcher.TASK_NAME);
+        timer.scheduleTask(
+                new AccessPackageGrantExpirationDispatcher(),
+                GRANT_EXPIRATION_INITIAL_DELAY_MILLIS,
+                GRANT_EXPIRATION_INTERVAL_MILLIS,
+                AccessPackageGrantExpirationDispatcher.TASK_NAME);
     }
 
     @Override
