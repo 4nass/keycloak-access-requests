@@ -40,6 +40,7 @@ await i18n.init({
             translation: {
                 accessRequestsAdminCatalog: "Access requests",
                 accessRequestsAdminFailedProvisioning: "Failed provisioning",
+                accessRequestsAdminRevocationFailures: "Revocation failures",
                 accessRequestsAdminNotificationDelivery: "Notification delivery",
                 configure: "Configure",
                 currentRealm: "Current realm"
@@ -84,6 +85,9 @@ describe("Access Request Admin Console navigation", () => {
         expect(screen.getByRole("link", { name: "Failed provisioning" })).toHaveAttribute(
             "href", "/master/access-requests/provisioning-failures"
         );
+        expect(screen.getByRole("link", { name: "Revocation failures" })).toHaveAttribute(
+            "href", "/master/access-requests/revocation-failures"
+        );
     });
 
     it("fails closed and does not expose the catalog entry when capability lookup is denied", async () => {
@@ -94,5 +98,6 @@ describe("Access Request Admin Console navigation", () => {
         await waitFor(() => expect(mocks.capabilities).toHaveBeenCalledOnce());
         expect(screen.queryByRole("link", { name: "Access requests" })).not.toBeInTheDocument();
         expect(screen.queryByRole("link", { name: "Failed provisioning" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("link", { name: "Revocation failures" })).not.toBeInTheDocument();
     });
 });

@@ -15,6 +15,9 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.NotificationDto.Notificati
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ProvisioningDto.ProvisioningClosureResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ProvisioningDto.ProvisioningClosureSubmission;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RequestDto.RequestResponse;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationRetryResponse;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationResolutionSubmission;
+import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageGrantRevocationRunner;
 import jakarta.ws.rs.core.Response;
 import java.time.Instant;
 
@@ -105,6 +108,52 @@ final class AccessRequestAdminHandler extends AccessRequestHandlerSupport {
                     exception.getMessage(),
                     null);
         }
+    }
+
+    public Response listRevocationFailures(int page, int size, String state) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        if (!"OPEN".equals(state) && !"RESOLVED".equals(state)) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_REVOCATION_FAILURE_QUERY",
+                    "state must be OPEN or RESOLVED", null);
+        }
+        try {
+            return Response.ok(AdminResponseMapper.revocationFailures(grantRevocationFailures()
+                    .findPage(manager.realm().getId(), "OPEN".equals(state), page, size))).build();
+        } catch (IllegalArgumentException exception) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_REVOCATION_FAILURE_QUERY",
+                    exception.getMessage(), null);
+        }
+    }
+
+    public Response retryGrantRevocation(String requestId) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        if (grantRevocationFailures().findOpen(manager.realm().getId(), requestId).isEmpty()) {
+            return error(Response.Status.NOT_FOUND, "REVOCATION_FAILURE_NOT_FOUND", null, requestId);
+        }
+        var result = AccessPackageGrantRevocationRunner.retry(session.getKeycloakSessionFactory(),
+                manager.realm().getId(), requestId, manager.user().getId());
+        if (result.status() == AccessPackageGrantRevocationRunner.Outcome.Status.NOT_ACTIONABLE) {
+            return error(Response.Status.CONFLICT, "REVOCATION_NOT_ACTIONABLE", null, requestId);
+        }
+        return Response.ok(new RevocationRetryResponse(requestId, result.status().name(),
+                result.failureCode())).build();
+    }
+
+    public Response resolveGrantRevocation(String requestId, RevocationResolutionSubmission submission) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        if (submission == null || submission.reason() == null
+                || submission.reason().strip().length() < 10 || submission.reason().strip().length() > 1000) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_REVOCATION_RESOLUTION_REASON",
+                    "reason must contain 10 to 1000 characters", requestId);
+        }
+        if (grantRevocationFailures().findOpen(manager.realm().getId(), requestId).isEmpty()) {
+            return error(Response.Status.NOT_FOUND, "REVOCATION_FAILURE_NOT_FOUND", null, requestId);
+        }
+        boolean resolved = resolveExternallyRemovedGrant(manager.realm(), requestId,
+                manager.user().getId(), submission.reason().strip());
+        return resolved
+                ? Response.ok(new RevocationRetryResponse(requestId, "REVOKED", null)).build()
+                : error(Response.Status.CONFLICT, "REVOCATION_MEMBERSHIP_NOT_VERIFIED_ABSENT", null, requestId);
     }
 
     public NotificationDeliverySummaryResponse notificationDeliverySummary() {

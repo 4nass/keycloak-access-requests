@@ -43,6 +43,8 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
                         .thenComparing(AccessRequestEvent::requestVersion,
                                 Comparator.nullsFirst(Comparator.naturalOrder()))
                         .thenComparingInt(JpaAccessRequestHistoryReader::phaseOrder)
+                        .thenComparing(AccessRequestEvent::revocationAttempt,
+                                Comparator.nullsFirst(Comparator.naturalOrder()))
                         .thenComparing(AccessRequestEvent::id))
                 .toList();
     }
@@ -64,6 +66,8 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
                         order by entity.occurredAt asc,
                                  coalesce(entity.requestVersion, -1) asc,
                                  case
+                                     when entity.type = :revocationSucceeded then 6
+                                     when entity.type = :revocationFailed then 5
                                      when entity.type = :closed then 4
                                      when entity.type = :started and entity.requestVersion is not null then 3
                                      when entity.type in (:success, :failure) and entity.requestVersion is null then 3
@@ -71,6 +75,7 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
                                      when entity.type in (:approved, :rejected, :canceled) then 1
                                      else 0
                                  end asc,
+                                 coalesce(entity.revocationAttempt, -1) asc,
                                  entity.id asc
                         """, AccessRequestEventEntity.class);
         query.setParameter("realmId", realmId);
@@ -126,6 +131,8 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
                         order by entity.occurredAt desc,
                                  coalesce(entity.requestVersion, -1) desc,
                                  case
+                                     when entity.type = :revocationSucceeded then 6
+                                     when entity.type = :revocationFailed then 5
                                      when entity.type = :closed then 4
                                      when entity.type = :started and entity.requestVersion is not null then 3
                                      when entity.type in (:success, :failure) and entity.requestVersion is null then 3
@@ -133,6 +140,7 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
                                      when entity.type in (:approved, :rejected, :canceled) then 1
                                      else 0
                                  end desc,
+                                 coalesce(entity.revocationAttempt, -1) desc,
                                  entity.id desc
                         """, AccessRequestEventEntity.class);
         parameters.forEach(query::setParameter);
@@ -143,6 +151,8 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
     }
 
     private static void setPhaseParameters(TypedQuery<AccessRequestEventEntity> query) {
+        query.setParameter("revocationFailed", AccessRequestEventType.REVOCATION_FAILED);
+        query.setParameter("revocationSucceeded", AccessRequestEventType.REVOCATION_SUCCEEDED);
         query.setParameter("closed", AccessRequestEventType.PROVISIONING_CLOSED);
         query.setParameter("started", AccessRequestEventType.PROVISIONING_STARTED);
         query.setParameter("success", AccessRequestEventType.PROVISIONING_SUCCEEDED);
@@ -194,6 +204,8 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
             case PROVISIONING_SUCCEEDED, PROVISIONING_FAILED -> event.requestVersion() == null ? 3 : 2;
             case PROVISIONING_STARTED -> event.requestVersion() == null ? 2 : 3;
             case PROVISIONING_CLOSED -> 4;
+            case REVOCATION_FAILED -> 5;
+            case REVOCATION_SUCCEEDED -> 6;
         };
     }
 }

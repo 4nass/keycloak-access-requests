@@ -2,6 +2,7 @@ package ch.anass.keycloak.accessrequests.spi.jpa;
 
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessGrantEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.GrantRevocationFailureEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEventEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestNotificationOutboxEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementEntity;
@@ -44,11 +45,12 @@ class AccessRequestJpaEntityProviderTest {
     void exposesTheAccessRequestEntitiesToKeycloak() {
         JpaEntityProvider provider = providerFactory().create(null);
 
-        assertEquals(7, provider.getEntities().size());
+        assertEquals(8, provider.getEntities().size());
         assertEquals(
                 Set.of(
                         AccessRequestEntity.class,
                         AccessGrantEntity.class,
+                        GrantRevocationFailureEntity.class,
                         AccessRequestEventEntity.class,
                         AccessRequestNotificationOutboxEntity.class,
                         EntitlementEntity.class,

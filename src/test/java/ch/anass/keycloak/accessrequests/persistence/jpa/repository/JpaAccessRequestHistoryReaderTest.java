@@ -3,6 +3,7 @@ package ch.anass.keycloak.accessrequests.persistence.jpa.repository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEventEntity;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEventType;
+import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationFailureCode;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.Persistence;
@@ -129,6 +130,30 @@ class JpaAccessRequestHistoryReaderTest {
                 new JpaAccessRequestHistoryReader(entityManager)
                         .findByRequestId("realm-1", "request-1").stream()
                         .map(AccessRequestEvent::type).toList());
+    }
+
+    @Test
+    void ordersRevocationFailuresByPersistedAttemptWhenTimestampsTie() {
+        Instant occurredAt = Instant.parse("2026-09-03T10:05:00Z");
+        transaction(() -> {
+            // The random event IDs deliberately sort opposite to the actual attempt order.
+            entityManager.persist(new AccessRequestEventEntity(AccessRequestEvent.rehydrate(
+                    "event-a", "request-1", "realm-1", AccessRequestEventType.REVOCATION_FAILED,
+                    "worker", occurredAt, null, GrantRevocationFailureCode.REMOVAL_FAILED.name(), null, 2L)));
+            entityManager.persist(new AccessRequestEventEntity(AccessRequestEvent.rehydrate(
+                    "event-z", "request-1", "realm-1", AccessRequestEventType.REVOCATION_FAILED,
+                    "worker", occurredAt, null,
+                    GrantRevocationFailureCode.AUTHORITY_UNVERIFIABLE.name(), null, 1L)));
+        });
+        entityManager.clear();
+
+        JpaAccessRequestHistoryReader reader = new JpaAccessRequestHistoryReader(entityManager);
+        assertEquals(List.of("event-z", "event-a"), reader.findByRequestId("realm-1", "request-1")
+                .stream().map(AccessRequestEvent::id).toList());
+        assertEquals(List.of("event-z", "event-a"), reader.findPageByRequestId("realm-1", "request-1", 0, 20)
+                .items().stream().map(AccessRequestEvent::id).toList());
+        assertEquals(List.of("event-a", "event-z"), reader.findAll("realm-1", null, null, null,
+                null, "request-1", 0, 20).items().stream().map(AccessRequestEvent::id).toList());
     }
 
     private static AccessRequestEvent event(

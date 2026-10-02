@@ -3,6 +3,7 @@ package ch.anass.keycloak.accessrequests.core.domain.request;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
+import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationFailureCode;
 
 public final class AccessRequestEvent {
 
@@ -15,6 +16,7 @@ public final class AccessRequestEvent {
     private final String comment;
     private final String metadata;
     private final Long requestVersion;
+    private final Long revocationAttempt;
 
     private AccessRequestEvent(
             String id,
@@ -26,6 +28,12 @@ public final class AccessRequestEvent {
             String comment,
             String metadata,
             Long requestVersion) {
+        this(id, requestId, realmId, type, actorId, occurredAt, comment, metadata, requestVersion, null);
+    }
+
+    private AccessRequestEvent(
+            String id, String requestId, String realmId, AccessRequestEventType type, String actorId,
+            Instant occurredAt, String comment, String metadata, Long requestVersion, Long revocationAttempt) {
         this.id = requireText(id, "id");
         this.requestId = requireText(requestId, "requestId");
         this.realmId = requireText(realmId, "realmId");
@@ -35,6 +43,11 @@ public final class AccessRequestEvent {
         this.comment = comment;
         this.metadata = metadata;
         this.requestVersion = requestVersion;
+        if (revocationAttempt != null && (type != AccessRequestEventType.REVOCATION_FAILED
+                || revocationAttempt < 1)) {
+            throw new IllegalArgumentException("A revocation attempt belongs to a failure event and must be positive");
+        }
+        this.revocationAttempt = revocationAttempt;
     }
 
     public static AccessRequestEvent created(AccessRequest request, String actorId, Instant occurredAt) {
@@ -107,6 +120,27 @@ public final class AccessRequestEvent {
                 request.provisioningClosureReason());
     }
 
+    public static AccessRequestEvent revocationFailed(String requestId, String realmId, String actorId,
+            Instant occurredAt, GrantRevocationFailureCode code, int attempt) {
+        if (attempt < 1) {
+            throw new IllegalArgumentException("Revocation attempt must be positive");
+        }
+        return new AccessRequestEvent(UUID.randomUUID().toString(), requestId, realmId,
+                AccessRequestEventType.REVOCATION_FAILED, actorId, occurredAt, null,
+                Objects.requireNonNull(code).name(), null, (long) attempt);
+    }
+
+    public static AccessRequestEvent revocationSucceeded(String requestId, String realmId,
+            String actorId, Instant occurredAt) {
+        return revocationSucceeded(requestId, realmId, actorId, occurredAt, null);
+    }
+
+    public static AccessRequestEvent revocationSucceeded(String requestId, String realmId,
+            String actorId, Instant occurredAt, String resolutionReason) {
+        return new AccessRequestEvent(UUID.randomUUID().toString(), requestId, realmId,
+                AccessRequestEventType.REVOCATION_SUCCEEDED, actorId, occurredAt, resolutionReason, null, null);
+    }
+
     public static AccessRequestEvent rehydrate(
             String id,
             String requestId,
@@ -122,8 +156,16 @@ public final class AccessRequestEvent {
     public static AccessRequestEvent rehydrate(
             String id, String requestId, String realmId, AccessRequestEventType type,
             String actorId, Instant occurredAt, String comment, String metadata, Long requestVersion) {
+        return rehydrate(id, requestId, realmId, type, actorId, occurredAt, comment, metadata,
+                requestVersion, null);
+    }
+
+    public static AccessRequestEvent rehydrate(
+            String id, String requestId, String realmId, AccessRequestEventType type,
+            String actorId, Instant occurredAt, String comment, String metadata, Long requestVersion,
+            Long revocationAttempt) {
         return new AccessRequestEvent(id, requestId, realmId, type, actorId, occurredAt, comment, metadata,
-                requestVersion);
+                requestVersion, revocationAttempt);
     }
 
     private static AccessRequestEvent from(
@@ -179,6 +221,10 @@ public final class AccessRequestEvent {
 
     public Long requestVersion() {
         return requestVersion;
+    }
+
+    public Long revocationAttempt() {
+        return revocationAttempt;
     }
 
     private static String requireText(String value, String fieldName) {

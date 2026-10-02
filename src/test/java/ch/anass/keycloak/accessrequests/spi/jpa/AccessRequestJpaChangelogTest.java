@@ -70,6 +70,7 @@ class AccessRequestJpaChangelogTest {
                             "ACTOR_ID",
                             "EVENT_TIMESTAMP",
                             "REQUEST_VERSION",
+                            "REVOCATION_ATTEMPT",
                             "COMMENT",
                             "METADATA"),
                     columnsOf(connection, "AR_ACCESS_REQUEST_HISTORY"));

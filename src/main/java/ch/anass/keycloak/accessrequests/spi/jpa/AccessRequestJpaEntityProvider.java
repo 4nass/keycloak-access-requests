@@ -2,6 +2,7 @@ package ch.anass.keycloak.accessrequests.spi.jpa;
 
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessGrantEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.GrantRevocationFailureEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEventEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestNotificationOutboxEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementEntity;
@@ -26,6 +27,7 @@ public final class AccessRequestJpaEntityProvider implements JpaEntityProvider, 
     private static final List<Class<?>> ENTITIES = List.of(
             AccessRequestEntity.class,
             AccessGrantEntity.class,
+            GrantRevocationFailureEntity.class,
             AccessRequestEventEntity.class,
             AccessRequestNotificationOutboxEntity.class,
             EntitlementEntity.class,

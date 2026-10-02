@@ -137,6 +137,7 @@ export function AccessRequestsAdminPageNav() {
                             {capabilities.canManageCatalog && <AccessRequestsNavItem />}
                             {capabilities.canManageNotifications && <NotificationDeliveriesNavItem />}
                             {capabilities.canManageProvisioningFailures && <FailedProvisioningNavItem />}
+                            {capabilities.canManageProvisioningFailures && <RevocationFailuresNavItem />}
                         </NavGroup>
                     )}
                 </Nav>
@@ -190,6 +191,13 @@ function FailedProvisioningNavItem() {
         realm={realm}
         title={t("accessRequestsAdminFailedProvisioning")}
     />;
+}
+
+function RevocationFailuresNavItem() {
+    const { t } = useTranslation();
+    const { realm } = useRealm();
+    return <NavigationItem path="/access-requests/revocation-failures" realm={realm}
+        title={t("accessRequestsAdminRevocationFailures")} />;
 }
 
 function NavigationItem({ path, realm, title }: { path: string; realm: string; title: string }) {

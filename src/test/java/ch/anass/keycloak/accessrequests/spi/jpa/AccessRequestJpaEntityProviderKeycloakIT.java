@@ -68,7 +68,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
     private record ScheduledPackageGrant(String requestId, String requesterId, String groupId,
             String sourceRoleId, String preexistingRequesterId, String permanentRequesterId,
-            String failedRequestId, String failedRequesterId) {
+            String failedRequestId, String failedRequesterId,
+            String manualResolutionRequestId, String manualResolutionRequesterId) {
     }
 
     @Container
@@ -116,6 +117,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertAccessPackageSurvivesRestart(restartedServer);
             assertScheduledPackageGrantRevoked(restartedServer);
             assertFailedScheduledPackageGrantRetained(restartedServer);
+            assertVerifiedManualRevocationResolution(restartedServer);
             assertEntitlementCatalogAdministration(restartedServer);
             assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(restartedServer);
             assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(restartedServer);
@@ -299,12 +301,17 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
             assertTrue(tableExists(connection, "ar_access_request"));
             assertTrue(tableExists(connection, "ar_access_grant"));
+            assertTrue(tableExists(connection, "ar_grant_revocation_failure"));
             assertTrue(tableExists(connection, "ar_access_package"));
             assertTrue(tableExists(connection, "ar_access_package_role"));
             assertTrue(tableExists(connection, "ar_access_request_history"));
             try (ResultSet columns = connection.getMetaData().getColumns(
                     null, "public", "ar_access_request_history", "request_version")) {
                 assertTrue(columns.next(), "Failure event versions must be available after migration.");
+            }
+            try (ResultSet columns = connection.getMetaData().getColumns(
+                    null, "public", "ar_access_request_history", "revocation_attempt")) {
+                assertTrue(columns.next(), "Revocation attempts must remain ordered after migration.");
             }
             assertTrue(tableExists(connection, "ar_entitlement"));
             assertTrue(tableExists(connection, "ar_entitlement_history"));
@@ -660,8 +667,22 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertPendingRequestAndCreatedAuditEvent(rollbackRequestId, entitlementId, rollbackId,
                 "Temporary access needed.", 3600L);
         assertNoGroupMembership(server, adminToken, rollbackId, groupId);
+        String manualResolutionUsername = "package-manual-resolution-" + UUID.randomUUID();
+        createEnabledUser(server, adminToken, manualResolutionUsername, password);
+        String manualResolutionId = subjectOf(accessToken(server, clientId, manualResolutionUsername, password));
+        String manualResolutionRequestId = submitTemporaryPackageRequest(requestsEndpoint,
+                accessToken(server, clientId, manualResolutionUsername, password), entitlementId);
+        HttpResponse<String> manualResolutionApproval = HttpClient.newHttpClient().send(
+                requestDecision(accessRequestsEndpoint, approverToken, manualResolutionRequestId,
+                        "approve", "Approved."), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, manualResolutionApproval.statusCode(), manualResolutionApproval.body());
+        assertGroupMembership(server, adminToken, manualResolutionId, groupId);
+        assertPackageGrantState(manualResolutionRequestId, manualResolutionId, groupId,
+                "CREATED_BY_EXTENSION", "AUTHORIZED", 1);
+
         scheduledPackageGrant = new ScheduledPackageGrant(requestId, requesterId, groupId,
-                sourceRoleId, preexistingId, permanentId, retryRequestId, retryId);
+                sourceRoleId, preexistingId, permanentId, retryRequestId, retryId,
+                manualResolutionRequestId, manualResolutionId);
     }
 
     private void prepareScheduledPackageRevocations() throws SQLException {
@@ -690,6 +711,15 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              Statement statement = connection.createStatement()) {
             statement.execute("alter table AR_ACCESS_GRANT drop constraint CK_AR_GRANT_SCHEDULED_RETRY_IT");
+            // Advance the disposable test clock for the persisted backoff without waiting five minutes.
+            try (PreparedStatement retry = connection.prepareStatement("""
+                    update AR_GRANT_REVOCATION_FAILURE set NEXT_ATTEMPT_TIMESTAMP = ?
+                     where REQUEST_ID = ? and RESOLVED_TIMESTAMP is null
+                    """)) {
+                retry.setLong(1, Instant.now().minusSeconds(1).toEpochMilli());
+                retry.setString(2, scheduledPackageGrant.failedRequestId());
+                assertEquals(1, retry.executeUpdate());
+            }
         }
     }
 
@@ -722,6 +752,142 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertGrantRevocationState(scheduledPackageGrant.failedRequestId(), "AUTHORIZED", 1);
         assertGroupMembership(server, accessToken(server, "admin-cli"),
                 scheduledPackageGrant.failedRequesterId(), scheduledPackageGrant.groupId());
+        Instant deadline = Instant.now().plusSeconds(10);
+        while (!revocationFailureRecorded(scheduledPackageGrant.failedRequestId())
+                && Instant.now().isBefore(deadline)) {
+            Thread.sleep(100);
+        }
+        assertTrue(revocationFailureRecorded(scheduledPackageGrant.failedRequestId()),
+                "A rolled-back removal must leave a separately committed operational failure");
+        URI endpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/revocation-failures"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpResponse<String> response = HttpClient.newHttpClient().send(HttpRequest.newBuilder(endpoint)
+                .header("Authorization", "Bearer " + accessToken(server, "admin-cli"))
+                .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().contains(scheduledPackageGrant.failedRequestId()));
+        assertTrue(response.body().contains("UNEXPECTED_FAILURE"));
+        URI resolution = URI.create("http://%s:%d/realms/master/access-requests/admin/grants/%s/revocation/resolve"
+                .formatted(server.getHost(), server.getMappedPort(8080), scheduledPackageGrant.failedRequestId()));
+        HttpResponse<String> denied = HttpClient.newHttpClient().send(HttpRequest.newBuilder(resolution)
+                .header("Authorization", "Bearer " + accessToken(server, "admin-cli"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"reason\":\"Removed by administrator\"}"))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, denied.statusCode(), "An active package membership cannot be marked resolved");
+        URI retry = URI.create("http://%s:%d/realms/master/access-requests/admin/grants/%s/revocation/retry"
+                .formatted(server.getHost(), server.getMappedPort(8080), scheduledPackageGrant.failedRequestId()));
+        HttpResponse<String> retried = HttpClient.newHttpClient().send(HttpRequest.newBuilder(retry)
+                .header("Authorization", "Bearer " + accessToken(server, "admin-cli"))
+                .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, retried.statusCode(), retried.body());
+        assertTrue(retried.body().contains("\"status\":\"FAILED\""));
+        assertGrantRevocationState(scheduledPackageGrant.failedRequestId(), "AUTHORIZED", 1);
+    }
+
+    private void assertVerifiedManualRevocationResolution(GenericContainer<?> server) throws Exception {
+        String requestId = scheduledPackageGrant.manualResolutionRequestId();
+        long now = Instant.now().toEpochMilli();
+        // The real timer-failure path is covered above. Seed only this independent incident so
+        // the test can exercise an operator's Keycloak membership removal and HTTP reconciliation.
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement expire = connection.prepareStatement(
+                     "update AR_ACCESS_GRANT set EXPIRES_TIMESTAMP = ? where REQUEST_ID = ?");
+             PreparedStatement incident = connection.prepareStatement("""
+                     insert into AR_GRANT_REVOCATION_FAILURE
+                         (REQUEST_ID, REALM_ID, FAILURE_CODE, ATTEMPT_COUNT,
+                          FIRST_FAILED_TIMESTAMP, LAST_FAILED_TIMESTAMP, NEXT_ATTEMPT_TIMESTAMP)
+                     select REQUEST_ID, REALM_ID, 'AUTHORITY_UNVERIFIABLE', 1, ?, ?, ?
+                       from AR_ACCESS_GRANT where REQUEST_ID = ?
+                     """)) {
+            expire.setLong(1, now - 1000);
+            expire.setString(2, requestId);
+            assertEquals(1, expire.executeUpdate());
+            incident.setLong(1, now);
+            incident.setLong(2, now);
+            incident.setLong(3, now + Duration.ofDays(1).toMillis());
+            incident.setString(4, requestId);
+            assertEquals(1, incident.executeUpdate());
+        }
+
+        String adminToken = accessToken(server, "admin-cli");
+        String username = "revocation-nonmanager-" + UUID.randomUUID();
+        String password = "revocation-nonmanager-password";
+        createEnabledUser(server, adminToken, username, password);
+        String nonManagerToken = accessToken(server, "admin-cli", username, password);
+        String base = "http://%s:%d/realms/master/access-requests/admin"
+                .formatted(server.getHost(), server.getMappedPort(8080));
+        URI list = URI.create(base + "/revocation-failures");
+        URI retry = URI.create(base + "/grants/" + requestId + "/revocation/retry");
+        URI resolve = URI.create(base + "/grants/" + requestId + "/revocation/resolve");
+        HttpClient client = HttpClient.newHttpClient();
+        assertEquals(403, client.send(HttpRequest.newBuilder(list)
+                .header("Authorization", "Bearer " + nonManagerToken).GET().build(),
+                HttpResponse.BodyHandlers.discarding()).statusCode());
+        assertEquals(403, client.send(HttpRequest.newBuilder(retry)
+                .header("Authorization", "Bearer " + nonManagerToken)
+                .POST(HttpRequest.BodyPublishers.noBody()).build(),
+                HttpResponse.BodyHandlers.discarding()).statusCode());
+        HttpRequest unauthorizedResolution = HttpRequest.newBuilder(resolve)
+                .header("Authorization", "Bearer " + nonManagerToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"reason\":\"Removed by administrator\"}"))
+                .build();
+        assertEquals(403, client.send(unauthorizedResolution,
+                HttpResponse.BodyHandlers.discarding()).statusCode());
+        assertGroupMembership(server, adminToken,
+                scheduledPackageGrant.manualResolutionRequesterId(), scheduledPackageGrant.groupId());
+
+        URI membership = URI.create("http://%s:%d/admin/realms/master/users/%s/groups/%s"
+                .formatted(server.getHost(), server.getMappedPort(8080),
+                        scheduledPackageGrant.manualResolutionRequesterId(), scheduledPackageGrant.groupId()));
+        assertEquals(204, client.send(HttpRequest.newBuilder(membership)
+                .header("Authorization", "Bearer " + adminToken)
+                .DELETE().build(), HttpResponse.BodyHandlers.discarding()).statusCode());
+        assertNoGroupMembership(server, adminToken,
+                scheduledPackageGrant.manualResolutionRequesterId(), scheduledPackageGrant.groupId());
+
+        String reason = "Removed by administrator after checking package membership.";
+        HttpResponse<String> result = client.send(HttpRequest.newBuilder(resolve)
+                .header("Authorization", "Bearer " + adminToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        new ObjectMapper().createObjectNode().put("reason", reason).toString()))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, result.statusCode(), result.body());
+        assertTrue(result.body().contains("\"status\":\"REVOKED\""));
+        assertGrantRevocationState(requestId, "REVOKED", 2);
+        HttpResponse<String> archived = client.send(HttpRequest.newBuilder(
+                URI.create(base + "/revocation-failures?state=RESOLVED"))
+                .header("Authorization", "Bearer " + adminToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, archived.statusCode(), archived.body());
+        assertTrue(archived.body().contains(requestId));
+        HttpResponse<String> details = client.send(HttpRequest.newBuilder(
+                URI.create(base + "/requests/" + requestId))
+                .header("Authorization", "Bearer " + adminToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, details.statusCode(), details.body());
+        JsonNode history = new ObjectMapper().readTree(details.body()).path("history");
+        assertTrue(java.util.stream.StreamSupport.stream(history.spliterator(), false)
+                .anyMatch(event -> "REVOCATION_SUCCEEDED".equals(event.path("type").asText())
+                        && subjectOf(adminToken).equals(event.path("actorId").asText())
+                        && reason.equals(event.path("revocationResolutionReason").asText())));
+    }
+
+    private boolean revocationFailureRecorded(String requestId) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement query = connection.prepareStatement("""
+                     select count(*) from AR_GRANT_REVOCATION_FAILURE
+                      where REQUEST_ID = ? and RESOLVED_TIMESTAMP is null and ATTEMPT_COUNT >= 1
+                     """)) {
+            query.setString(1, requestId);
+            try (ResultSet row = query.executeQuery()) {
+                return row.next() && row.getLong(1) == 1;
+            }
+        }
     }
 
     private void assertFailedScheduledPackageGrantRetried(GenericContainer<?> server) throws Exception {
@@ -729,6 +895,17 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertNoGroupMembership(server, accessToken(server, "admin-cli"),
                 scheduledPackageGrant.failedRequesterId(), scheduledPackageGrant.groupId());
         assertGrantRevocationState(scheduledPackageGrant.requestId(), "REVOKED", 2);
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement query = connection.prepareStatement("""
+                     select RESOLVED_TIMESTAMP from AR_GRANT_REVOCATION_FAILURE where REQUEST_ID = ?
+                     """)) {
+            query.setString(1, scheduledPackageGrant.failedRequestId());
+            try (ResultSet row = query.executeQuery()) {
+                assertTrue(row.next());
+                assertTrue(row.getLong(1) > 0, "Successful revocation must archive the resolved failure");
+            }
+        }
     }
 
     private void assertConcurrentScheduledPackageGrantRetry() throws Exception {

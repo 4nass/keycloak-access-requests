@@ -25,7 +25,7 @@ export type EntitlementPage = {
 export type AdminAuditEventType =
     | "REQUEST_CREATED" | "REQUEST_CANCELED" | "REQUEST_APPROVED" | "REQUEST_REJECTED"
     | "PROVISIONING_STARTED" | "PROVISIONING_SUCCEEDED" | "PROVISIONING_FAILED"
-    | "PROVISIONING_CLOSED";
+    | "PROVISIONING_CLOSED" | "REVOCATION_FAILED" | "REVOCATION_SUCCEEDED";
 
 export type AdminAuditEvent = {
     id: string;
@@ -70,6 +70,8 @@ export type AdminAuditRequestDetails = {
         occurredAt: string;
         failureCode: ProvisioningFailureCode | null;
         closureReason: string | null;
+        revocationFailureCode: RevocationFailureCode | null;
+        revocationResolutionReason: string | null;
     }[];
     historyPage: number;
     historySize: number;
@@ -145,6 +147,37 @@ export type FailedProvisioningRequestPage = {
     total: number;
 };
 
+export type RevocationFailureCode = "AUTHORITY_UNVERIFIABLE" | "REMOVAL_FAILED" | "UNEXPECTED_FAILURE";
+
+export type RevocationFailure = {
+    requestId: string;
+    requesterId: string;
+    entitlementId: string;
+    resourceType: Entitlement["resourceType"];
+    resourceId: string;
+    deliveryGroupId: string;
+    expiresAt: string;
+    failureCode: RevocationFailureCode;
+    attemptCount: number;
+    firstFailedAt: string;
+    lastFailedAt: string;
+    nextAttemptAt: string;
+    resolvedAt: string | null;
+};
+
+export type RevocationFailurePage = {
+    items: RevocationFailure[];
+    page: number;
+    size: number;
+    total: number;
+};
+
+export type RevocationRetryResult = {
+    requestId: string;
+    status: "REVOKED" | "FAILED";
+    failureCode: RevocationFailureCode | null;
+};
+
 export type ProvisioningRetryResult = {
     id: string;
     entitlementId: string;
@@ -210,6 +243,9 @@ export type EntitlementsAdminApi = {
     failedProvisioningRequests(query?: { page?: number; size?: number; state?: "OPEN" | "CLOSED" }): Promise<FailedProvisioningRequestPage>;
     retryFailedProvisioning(id: string): Promise<ProvisioningRetryResult>;
     closeFailedProvisioning(id: string, reason: string): Promise<ProvisioningClosureResult>;
+    revocationFailures(query?: { page?: number; size?: number; state?: "OPEN" | "RESOLVED" }): Promise<RevocationFailurePage>;
+    retryGrantRevocation(id: string): Promise<RevocationRetryResult>;
+    resolveGrantRevocation(id: string, reason: string): Promise<RevocationRetryResult>;
     references(type: Entitlement["resourceType"], query?: {
         search?: string;
         selectedId?: string;
@@ -327,6 +363,17 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
         ),
         closeFailedProvisioning: (id, reason) => request(
             `/admin/requests/${encodeURIComponent(id)}/provisioning/close`,
+            json("POST", { reason })
+        ),
+        revocationFailures: (query) => request(
+            `/admin/revocation-failures?${pageQuery(query)}&state=${query?.state ?? "OPEN"}`
+        ),
+        retryGrantRevocation: (id) => request(
+            `/admin/grants/${encodeURIComponent(id)}/revocation/retry`,
+            { method: "POST" }
+        ),
+        resolveGrantRevocation: (id, reason) => request(
+            `/admin/grants/${encodeURIComponent(id)}/revocation/resolve`,
             json("POST", { reason })
         ),
         references: async (type, query) => {

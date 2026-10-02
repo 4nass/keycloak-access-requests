@@ -8,6 +8,7 @@ import ch.anass.keycloak.accessrequests.core.service.RequestService;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestHistoryReader;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestNotificationOutboxRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestRepository;
+import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaGrantRevocationFailureRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlementRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlementAuditEventPublisher;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessPackageRepository;
@@ -84,6 +85,15 @@ abstract class AccessRequestHandlerSupport {
 
     protected JpaAccessRequestRepository requestRepository() {
         return services.requestRepository();
+    }
+
+    protected JpaGrantRevocationFailureRepository grantRevocationFailures() {
+        return services.grantRevocationFailures();
+    }
+
+    protected boolean resolveExternallyRemovedGrant(RealmModel realm,
+            String requestId, String actorId, String reason) {
+        return services.resolveExternallyRemovedGrant(realm, requestId, actorId, reason);
     }
 
     protected JpaAccessRequestHistoryReader historyReader() {

@@ -5,6 +5,9 @@ import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestNoti
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestHistoryReader;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestNotificationOutboxRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestRepository;
+import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaGrantRevocationFailureRepository;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationFailureListResponse;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationFailureResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.AuditDto.AdminRequestDetailResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.AuditDto.AuditEventListResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.NotificationDto.NotificationDeliveryListResponse;
@@ -43,6 +46,19 @@ final class AdminResponseMapper {
                 request.decisionStatus(), request.provisioningStatus(), request.updatedAt().toString(),
                 request.failureCode(), request.closedAt() == null ? null : request.closedAt().toString(),
                 request.closedBy(), request.closureReason());
+    }
+
+    static RevocationFailureListResponse revocationFailures(
+            JpaGrantRevocationFailureRepository.FailurePage page) {
+        return new RevocationFailureListResponse(page.items().stream().map(item -> {
+            var grant = item.grant();
+            var failure = item.failure();
+            return new RevocationFailureResponse(grant.requestId(), grant.requesterId(), grant.entitlementId(),
+                    grant.resourceType(), grant.resourceId(), grant.deliveryGroupId(), grant.expiresAt().toString(),
+                    failure.code(), failure.attemptCount(), failure.firstFailedAt().toString(),
+                    failure.lastFailedAt().toString(), failure.nextAttemptAt().toString(),
+                    failure.resolvedAt() == null ? null : failure.resolvedAt().toString());
+        }).toList(), page.page(), page.size(), page.total());
     }
 
     static NotificationDeliveryListResponse notificationDeliveries(

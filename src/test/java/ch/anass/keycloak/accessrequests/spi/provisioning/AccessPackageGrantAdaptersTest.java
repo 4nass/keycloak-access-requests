@@ -6,6 +6,8 @@ import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantOrigin;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationState;
 import ch.anass.keycloak.accessrequests.core.port.AccessPackageRepository;
+import ch.anass.keycloak.accessrequests.core.port.AccessGrantMembershipInspector.Membership;
+import ch.anass.keycloak.accessrequests.core.service.GrantRevocationAuthorityException;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.GroupProvider;
@@ -189,7 +191,7 @@ class AccessPackageGrantAdaptersTest {
         assertTrue(fixture.authority().isExclusivelyManaged(grant));
 
         fixture.groupName = "renamed-after-authorization";
-        assertThrows(IllegalStateException.class, () -> fixture.revoker().revoke(grant));
+        assertThrows(GrantRevocationAuthorityException.class, () -> fixture.revoker().revoke(grant));
         assertEquals(0, fixture.groupLeaves);
 
         fixture.groupName = "AR_PKG_REPORTING";
@@ -213,6 +215,41 @@ class AccessPackageGrantAdaptersTest {
         assertThrows(IllegalStateException.class, () -> fixture.revoker().revoke(grant));
         assertEquals(0, fixture.groupLeaves);
         assertEquals(0, fixture.directRoleRemovals);
+    }
+
+    @Test
+    void reconciliationChecksTheHistoricalGroupWithoutRemovingAnything() {
+        Fixture fixture = new Fixture();
+        AccessGrant grant = fixture.grant(GrantRevocationState.AUTHORIZED);
+        assertEquals(Membership.PRESENT, fixture.inspector().membership(grant));
+
+        fixture.bindingGroupId = "replacement-package-group";
+        assertEquals(Membership.PRESENT, fixture.inspector().membership(grant),
+                "A changed package binding must not redefine the historical membership");
+        fixture.member = false;
+        assertEquals(Membership.ABSENT, fixture.inspector().membership(grant));
+        fixture.userExists = false;
+        assertEquals(Membership.ABSENT, fixture.inspector().membership(grant));
+        fixture.userExists = true;
+        fixture.groupExists = false;
+        assertEquals(Membership.ABSENT, fixture.inspector().membership(grant));
+        assertEquals(0, fixture.groupLeaves);
+        assertEquals(0, fixture.directRoleRemovals);
+    }
+
+    @Test
+    void reconciliationDoesNotTrustAnotherRealmOrAnUnboundGrant() {
+        Fixture fixture = new Fixture();
+        AccessGrant otherRealm = new AccessGrant("request-1", "other-realm", "user-1", "entitlement-1",
+                ResourceType.REALM_ROLE, "realm-role-1", GrantOrigin.CREATED_BY_EXTENSION,
+                Fixture.GRANTED_AT, Fixture.GRANTED_AT.plus(Duration.ofHours(4)),
+                GrantRevocationState.AUTHORIZED, 0, "jit-group-1");
+        assertEquals(Membership.UNVERIFIABLE, fixture.inspector().membership(otherRealm));
+        AccessGrant unbound = new AccessGrant("request-1", "realm-1", "user-1", "entitlement-1",
+                ResourceType.REALM_ROLE, "realm-role-1", GrantOrigin.CREATED_BY_EXTENSION,
+                Fixture.GRANTED_AT, Fixture.GRANTED_AT.plus(Duration.ofHours(4)),
+                GrantRevocationState.AUTHORIZED, 0);
+        assertEquals(Membership.UNVERIFIABLE, fixture.inspector().membership(unbound));
     }
 
     private static final class Fixture {
@@ -253,6 +290,11 @@ class AccessPackageGrantAdaptersTest {
         AccessPackageMembershipRevoker revoker() {
             Context current = context();
             return new AccessPackageMembershipRevoker(current.session(), current.realm(), current.packages());
+        }
+
+        AccessPackageMembershipInspector inspector() {
+            Context current = context();
+            return new AccessPackageMembershipInspector(current.session(), current.realm());
         }
 
         private Context context() {

@@ -41,6 +41,9 @@ public class AccessRequestEventEntity {
     @Column(name = "REQUEST_VERSION")
     private Long requestVersion;
 
+    @Column(name = "REVOCATION_ATTEMPT")
+    private Long revocationAttempt;
+
     @Basic(fetch = FetchType.LAZY)
     @JdbcTypeCode(Types.LONGVARCHAR)
     @Column(name = "COMMENT", columnDefinition = "TEXT")
@@ -62,6 +65,7 @@ public class AccessRequestEventEntity {
         this.actorId = event.actorId();
         this.occurredAt = event.occurredAt().toEpochMilli();
         this.requestVersion = event.requestVersion();
+        this.revocationAttempt = event.revocationAttempt();
         this.comment = event.comment();
         this.metadata = event.metadata();
     }
@@ -76,6 +80,7 @@ public class AccessRequestEventEntity {
                 java.time.Instant.ofEpochMilli(occurredAt),
                 comment,
                 metadata,
-                requestVersion);
+                requestVersion,
+                revocationAttempt);
     }
 }

@@ -5,6 +5,10 @@ import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantOrigin;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationState;
 import ch.anass.keycloak.accessrequests.core.port.AccessGrantRevocationRepository;
+import ch.anass.keycloak.accessrequests.core.port.AccessGrantRevocationFailureRepository;
+import ch.anass.keycloak.accessrequests.core.port.AccessGrantMembershipInspector;
+import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationFailure;
+import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationFailureCode;
 import ch.anass.keycloak.accessrequests.core.port.AccessGrantRevocationAuthority;
 import ch.anass.keycloak.accessrequests.core.port.AccessGrantRevoker;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
@@ -74,7 +78,8 @@ class AccessGrantRevocationServiceTest {
         Fixture fixture = fixture(grant(GrantOrigin.CREATED_BY_EXTENSION, EXPIRES_AT,
                 GrantRevocationState.AUTHORIZED), false, AT_EXPIRY);
 
-        fixture.service().revokeExpired("realm-1", "request-1");
+        assertThrows(GrantRevocationAuthorityException.class,
+                () -> fixture.service().revokeExpired("realm-1", "request-1"));
 
         assertEquals(0, fixture.removals.get());
         assertEquals(GrantRevocationState.AUTHORIZED, fixture.repository.current().revocationState());
@@ -198,7 +203,8 @@ class AccessGrantRevocationServiceTest {
         Fixture fixture = fixture(packageGrant(GrantOrigin.CREATED_BY_EXTENSION, EXPIRES_AT,
                 GrantRevocationState.AUTHORIZED), false, AT_EXPIRY);
 
-        fixture.service().revokeExpired("realm-1", "request-1");
+        assertThrows(GrantRevocationAuthorityException.class,
+                () -> fixture.service().revokeExpired("realm-1", "request-1"));
 
         assertEquals(0, fixture.removals.get());
         assertEquals(GrantRevocationState.AUTHORIZED, fixture.repository.current().revocationState());
@@ -253,6 +259,41 @@ class AccessGrantRevocationServiceTest {
         assertEquals(GrantRevocationState.REVOKED, fixture.repository.current().revocationState());
     }
 
+    @Test
+    void externallyRemovedMembershipCanBeResolvedOnlyAfterAnIndependentAbsenceCheck() {
+        Fixture fixture = fixture(packageGrant(GrantOrigin.CREATED_BY_EXTENSION, EXPIRES_AT,
+                GrantRevocationState.AUTHORIZED), false, AT_EXPIRY);
+        fixture.failures.open = true;
+
+        assertTrue(!fixture.service().resolveExternallyRemoved("realm-1", "request-1",
+                current -> AccessGrantMembershipInspector.Membership.PRESENT));
+        assertTrue(!fixture.service().resolveExternallyRemoved("realm-1", "request-1",
+                current -> AccessGrantMembershipInspector.Membership.UNVERIFIABLE));
+        assertEquals(GrantRevocationState.AUTHORIZED, fixture.repository.current().revocationState());
+        assertEquals(0, fixture.removals.get());
+
+        assertTrue(fixture.service().resolveExternallyRemoved("realm-1", "request-1",
+                current -> AccessGrantMembershipInspector.Membership.ABSENT));
+        assertEquals(GrantRevocationState.REVOKED, fixture.repository.current().revocationState());
+        assertEquals(0, fixture.removals.get(), "Reconciliation must never mutate a Keycloak mapping");
+        assertTrue(!fixture.failures.open);
+        assertTrue(!fixture.service().resolveExternallyRemoved("realm-1", "request-1",
+                current -> AccessGrantMembershipInspector.Membership.ABSENT));
+    }
+
+    @Test
+    void staleSchedulerCandidateRespectsCommittedBackoffButManualRetryCanRunNow() {
+        Fixture fixture = fixture(packageGrant(GrantOrigin.CREATED_BY_EXTENSION, EXPIRES_AT,
+                GrantRevocationState.AUTHORIZED), true, AT_EXPIRY);
+        fixture.failures.open = true;
+
+        assertTrue(!fixture.service().revokeExpired("realm-1", "request-1"));
+        assertEquals(0, fixture.removals.get());
+        assertTrue(fixture.service().revokeExpired("realm-1", "request-1", false));
+        assertEquals(1, fixture.removals.get());
+        assertEquals(GrantRevocationState.REVOKED, fixture.repository.current().revocationState());
+    }
+
     private static void revokeAfter(CountDownLatch start, Fixture fixture) {
         try {
             start.await();
@@ -286,6 +327,7 @@ class AccessGrantRevocationServiceTest {
         private final AtomicBoolean insideTransaction = new AtomicBoolean();
         private final AtomicBoolean memberPresent = new AtomicBoolean(true);
         private AccessGrantRevoker revoker = current -> removals.incrementAndGet();
+        private final InMemoryFailures failures = new InMemoryFailures();
 
         private Fixture(InMemoryGrantRepository repository, boolean exclusiveJit, Clock clock) {
             this.repository = repository;
@@ -316,7 +358,30 @@ class AccessGrantRevocationServiceTest {
                     }
                 }
             };
-            return new AccessGrantRevocationService(repository, authority, revoker, transaction, clock);
+            return new AccessGrantRevocationService(repository, authority, revoker, transaction, clock, failures);
+        }
+    }
+
+    private static final class InMemoryFailures implements AccessGrantRevocationFailureRepository {
+        private boolean open;
+
+        @Override
+        public Optional<GrantRevocationFailure> record(String realmId, String requestId,
+                GrantRevocationFailureCode code, Instant now) {
+            open = true;
+            return findOpen(realmId, requestId);
+        }
+
+        @Override
+        public void resolve(String realmId, String requestId, Instant now) {
+            open = false;
+        }
+
+        @Override
+        public Optional<GrantRevocationFailure> findOpen(String realmId, String requestId) {
+            return open ? Optional.of(new GrantRevocationFailure(requestId, realmId,
+                    GrantRevocationFailureCode.REMOVAL_FAILED, 1, EXPIRES_AT, EXPIRES_AT,
+                    EXPIRES_AT.plusSeconds(300), null)) : Optional.empty();
         }
     }
 

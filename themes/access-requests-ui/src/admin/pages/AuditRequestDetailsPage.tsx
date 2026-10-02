@@ -92,6 +92,16 @@ export function AuditRequestDetailsPage() {
                             ...(event.failureCode ? [<DataListCell key="failure-code">
                                 {t("accessRequestsAdminFailureCause")}: {t(failureCodeKey(event.failureCode))}
                             </DataListCell>] : []),
+                            ...(event.revocationFailureCode ? [<DataListCell key="revocation-failure-code">
+                                {t("accessRequestsAdminFailureCause")}: {t({
+                                    AUTHORITY_UNVERIFIABLE: "accessRequestsAdminRevocationAuthorityUnverifiable",
+                                    REMOVAL_FAILED: "accessRequestsAdminRevocationRemovalFailed",
+                                    UNEXPECTED_FAILURE: "accessRequestsAdminRevocationUnexpectedFailure"
+                                }[event.revocationFailureCode])}
+                            </DataListCell>] : []),
+                            ...(event.revocationResolutionReason ? [<DataListCell key="revocation-resolution-reason">
+                                {t("accessRequestsAdminRevocationResolutionReason")}: {event.revocationResolutionReason}
+                            </DataListCell>] : []),
                             ...(event.closureReason ? [<DataListCell key="closure-reason">
                                 {t("accessRequestsAdminFailedProvisioningCloseReason")}: {event.closureReason}
                             </DataListCell>] : [])

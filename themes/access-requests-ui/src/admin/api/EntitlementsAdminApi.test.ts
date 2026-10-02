@@ -45,6 +45,36 @@ const entitlement = {
 };
 
 describe("Entitlements administration API client", () => {
+    it("lists revocation incidents and retries a grant without exposing server diagnostics", async () => {
+        const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ items: [], page: 1, size: 10, total: 0 }))
+            .mockResolvedValueOnce(jsonResponse({ requestId: "request/1", status: "FAILED",
+                failureCode: "REMOVAL_FAILED" }));
+        const api = createApi(fetchMock);
+        await expect(api.revocationFailures({ page: 1, size: 10, state: "RESOLVED" }))
+            .resolves.toMatchObject({ total: 0 });
+        expect(request(fetchMock).url).toBe(
+            "https://keycloak.example/realms/finance/access-requests/admin/revocation-failures?page=1&size=10&state=RESOLVED"
+        );
+        await expect(api.retryGrantRevocation("request/1")).resolves.toMatchObject({
+            status: "FAILED", failureCode: "REMOVAL_FAILED"
+        });
+        expect(fetchMock.mock.calls[1][0]).toBe(
+            "https://keycloak.example/realms/finance/access-requests/admin/grants/request%2F1/revocation/retry"
+        );
+        expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({ method: "POST" }));
+    });
+
+    it("sends a reason when confirming an externally removed package membership", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ requestId: "request-1", status: "REVOKED" }));
+        await createApi(fetchMock).resolveGrantRevocation("request-1", "Group was deleted");
+        expect(request(fetchMock).url).toBe(
+            "https://keycloak.example/realms/finance/access-requests/admin/grants/request-1/revocation/resolve"
+        );
+        expect(request(fetchMock).init).toEqual(expect.objectContaining({
+            method: "POST", body: JSON.stringify({ reason: "Group was deleted" })
+        }));
+    });
+
     it("loads a paginated audit event page with date, type, actor, and request filters", async () => {
         const event = {
             id: "event-1",

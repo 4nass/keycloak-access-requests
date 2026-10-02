@@ -3,12 +3,15 @@ package ch.anass.keycloak.accessrequests.spi.realm.resource;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
 import ch.anass.keycloak.accessrequests.core.service.ApprovalQueueService;
 import ch.anass.keycloak.accessrequests.core.service.AccessGrantAuthorizationService;
+import ch.anass.keycloak.accessrequests.core.service.AccessGrantRevocationService;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.service.CatalogService;
 import ch.anass.keycloak.accessrequests.core.service.EntitlementScopedApprovalAuthorizer;
 import ch.anass.keycloak.accessrequests.core.service.RequestDetailsService;
 import ch.anass.keycloak.accessrequests.core.service.RequestPolicy;
 import ch.anass.keycloak.accessrequests.core.service.RequestService;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessGrantRepository;
+import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaGrantRevocationFailureRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestEventPublisher;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestHistoryReader;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestNotificationOutboxRepository;
@@ -21,6 +24,8 @@ import ch.anass.keycloak.accessrequests.spi.provisioning.EntitlementProvisioning
 import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageGroupFactory;
 import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageMembershipProvisioner;
 import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageGrantAuthority;
+import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageMembershipInspector;
+import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageMembershipRevoker;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakAccessRequestTransaction;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakEffectiveAccessChecker;
 import ch.anass.keycloak.accessrequests.spi.realm.KeycloakRoleMembershipReader;
@@ -67,6 +72,29 @@ final class AccessRequestServiceFactory {
 
     JpaAccessRequestRepository requestRepository() {
         return new JpaAccessRequestRepository(entityManager());
+    }
+
+    JpaGrantRevocationFailureRepository grantRevocationFailures() {
+        return new JpaGrantRevocationFailureRepository(entityManager());
+    }
+
+    boolean resolveExternallyRemovedGrant(RealmModel realm, String requestId, String actorId, String reason) {
+        EntityManager entityManager = entityManager();
+        var packages = new JpaAccessPackageRepository(entityManager);
+        var failures = new JpaGrantRevocationFailureRepository(entityManager);
+        return transaction().execute(() -> {
+            boolean resolved = new AccessGrantRevocationService(new JpaAccessGrantRepository(entityManager),
+                    new AccessPackageGrantAuthority(session, realm, packages),
+                    new AccessPackageMembershipRevoker(session, realm, packages),
+                    transaction(), java.time.Clock.systemUTC(), failures)
+                    .resolveExternallyRemoved(realm.getId(), requestId,
+                            new AccessPackageMembershipInspector(session, realm));
+            if (resolved) {
+                new JpaAccessRequestEventPublisher(entityManager).publish(AccessRequestEvent.revocationSucceeded(
+                        requestId, realm.getId(), actorId, java.time.Instant.now(), reason));
+            }
+            return resolved;
+        });
     }
 
     JpaAccessRequestHistoryReader historyReader() {

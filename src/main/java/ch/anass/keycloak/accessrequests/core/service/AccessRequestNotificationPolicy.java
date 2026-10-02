@@ -60,7 +60,8 @@ public final class AccessRequestNotificationPolicy {
                             AccessRequestNotificationType.PROVISIONING_CLOSED,
                             AccessRequestNotificationRecipientType.REALM_ROLE,
                             entitlement.approverRoleId(), request, entitlement, event));
-            case REQUEST_CANCELED, PROVISIONING_STARTED, PROVISIONING_SUCCEEDED -> List.of();
+            case REQUEST_CANCELED, PROVISIONING_STARTED, PROVISIONING_SUCCEEDED,
+                    REVOCATION_FAILED, REVOCATION_SUCCEEDED -> List.of();
         };
     }
 

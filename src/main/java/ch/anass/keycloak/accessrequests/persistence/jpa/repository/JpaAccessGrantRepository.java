@@ -58,6 +58,11 @@ public final class JpaAccessGrantRepository implements AccessGrantRevocationRepo
                           and entity.deliveryGroupId is not null
                           and entity.expiresTimestamp is not null
                           and entity.expiresTimestamp <= :dueAt
+                          and not exists (
+                              select failure.requestId from GrantRevocationFailureEntity failure
+                               where failure.requestId = entity.requestId
+                                 and failure.resolvedTimestamp is null
+                                 and failure.nextAttemptTimestamp > :dueAt)
                 """ + cursorCondition + """
                         order by entity.expiresTimestamp, entity.requestId
                 """, AccessGrantEntity.class)

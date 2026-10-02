@@ -1,16 +1,12 @@
 package ch.anass.keycloak.accessrequests.spi.provisioning;
 
 import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
-import ch.anass.keycloak.accessrequests.core.service.AccessGrantRevocationService;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessGrantRepository;
-import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessPackageRepository;
-import ch.anass.keycloak.accessrequests.spi.realm.KeycloakAccessRequestTransaction;
 import jakarta.persistence.EntityManager;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
-import org.keycloak.models.RealmModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.timer.ScheduledTask;
 
@@ -35,7 +31,8 @@ public final class AccessPackageGrantExpirationDispatcher implements ScheduledTa
 
     public AccessPackageGrantExpirationDispatcher() {
         this(Clock.systemUTC(), AccessPackageGrantExpirationDispatcher::readPage,
-                AccessPackageGrantExpirationDispatcher::revoke);
+                (factory, realmId, requestId) ->
+                        AccessPackageGrantRevocationRunner.scheduled(factory, realmId, requestId));
     }
 
     AccessPackageGrantExpirationDispatcher(Clock clock, DueGrantPageReader pages, RevocationAttempt revocation) {
@@ -93,24 +90,6 @@ public final class AccessPackageGrantExpirationDispatcher implements ScheduledTa
         return KeycloakModelUtils.runJobInTransactionWithResult(factory, session ->
                 new JpaAccessGrantRepository(entityManager(session))
                         .findDuePackageGrants(dueAt, afterExpiry, afterRequestId, limit));
-    }
-
-    private static void revoke(KeycloakSessionFactory factory, String realmId, String requestId) {
-        KeycloakModelUtils.runJobInTransaction(factory, session -> {
-            RealmModel realm = session.realms().getRealm(realmId);
-            if (realm == null) {
-                throw new IllegalStateException("Expired package grant realm is unavailable");
-            }
-            session.getContext().setRealm(realm);
-            EntityManager entityManager = entityManager(session);
-            JpaAccessGrantRepository grants = new JpaAccessGrantRepository(entityManager);
-            JpaAccessPackageRepository packages = new JpaAccessPackageRepository(entityManager);
-            new AccessGrantRevocationService(grants,
-                    new AccessPackageGrantAuthority(session, realm, packages),
-                    new AccessPackageMembershipRevoker(session, realm, packages),
-                    new KeycloakAccessRequestTransaction(session), Clock.systemUTC())
-                    .revokeExpired(realmId, requestId);
-        });
     }
 
     private static EntityManager entityManager(KeycloakSession session) {

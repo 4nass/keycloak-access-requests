@@ -7,6 +7,7 @@ import ch.anass.keycloak.accessrequests.core.domain.request.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureCode;
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationFailureCode;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RequestDto.DecisionResponse;
 
 import java.util.List;
@@ -39,14 +40,20 @@ public final class AuditDto {
 
     public record AdminRequestHistoryEntryResponse(
             String type, String actorId, String occurredAt,
-            ProvisioningFailureCode failureCode, String closureReason) {
+            ProvisioningFailureCode failureCode, String closureReason,
+            GrantRevocationFailureCode revocationFailureCode, String revocationResolutionReason) {
         public static AdminRequestHistoryEntryResponse from(AccessRequestEvent event) {
             ProvisioningFailureCode failureCode = event.type() == AccessRequestEventType.PROVISIONING_FAILED
                     ? ProvisioningFailureCode.fromStoredValue(event.metadata()) : null;
             String closureReason = event.type() == AccessRequestEventType.PROVISIONING_CLOSED
                     ? event.comment() : null;
+            GrantRevocationFailureCode revocationFailureCode = event.type() == AccessRequestEventType.REVOCATION_FAILED
+                    ? GrantRevocationFailureCode.fromStoredValue(event.metadata()) : null;
+            String revocationResolutionReason = event.type() == AccessRequestEventType.REVOCATION_SUCCEEDED
+                    ? event.comment() : null;
             return new AdminRequestHistoryEntryResponse(event.type().name(), event.actorId(),
-                    event.occurredAt().toString(), failureCode, closureReason);
+                    event.occurredAt().toString(), failureCode, closureReason,
+                    revocationFailureCode, revocationResolutionReason);
         }
     }
 

@@ -4,6 +4,7 @@ import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationState;
 import ch.anass.keycloak.accessrequests.core.port.AccessGrantRevoker;
 import ch.anass.keycloak.accessrequests.core.port.AccessPackageRepository;
+import ch.anass.keycloak.accessrequests.core.service.GrantRevocationAuthorityException;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.utils.RoleUtils;
@@ -27,7 +28,7 @@ public final class AccessPackageMembershipRevoker implements AccessGrantRevoker 
             throw new IllegalStateException("Package grant is not authorized for revocation");
         }
         AccessPackageGrantVerifier.Membership membership = verifier.resolve(grant)
-                .orElseThrow(() -> new IllegalStateException("Package grant ownership is no longer verifiable"));
+                .orElseThrow(GrantRevocationAuthorityException::new);
         if (RoleUtils.isDirectMember(membership.user().getGroupsStream(), membership.group())) {
             membership.user().leaveGroup(membership.group());
         }

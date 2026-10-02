@@ -6,6 +6,7 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.RequestDto;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEventType;
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureCode;
+import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationFailureCode;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -96,7 +97,8 @@ class AccessRequestAuditEventsEndpointTest {
                 "decisionStatus", "provisioningStatus", "createdAt", "provisioningClosedAt", "justification",
                 "decision", "history", "historyPage", "historySize", "historyTotal"),
                 fields(AuditDto.AdminRequestDetailResponse.class));
-        assertEquals(java.util.List.of("type", "actorId", "occurredAt", "failureCode", "closureReason"),
+        assertEquals(java.util.List.of("type", "actorId", "occurredAt", "failureCode", "closureReason",
+                        "revocationFailureCode", "revocationResolutionReason"),
                 fields(AuditDto.AdminRequestHistoryEntryResponse.class));
         assertTrue(!fields(RequestDto.RequestDetailResponse.class).contains("requesterId"));
         assertTrue(!fields(RequestDto.RequestHistoryEntryResponse.class).contains("actorId"));
@@ -131,6 +133,15 @@ class AccessRequestAuditEventsEndpointTest {
                         "Decision comment", "RESOURCE_MISSING", 1L));
         assertNull(approval.failureCode());
         assertNull(approval.closureReason());
+        var revocation = AuditDto.AdminRequestHistoryEntryResponse.from(
+                AccessRequestEvent.revocationFailed("request", "realm", "manager", occurredAt,
+                        GrantRevocationFailureCode.AUTHORITY_UNVERIFIABLE, 1));
+        assertEquals(GrantRevocationFailureCode.AUTHORITY_UNVERIFIABLE, revocation.revocationFailureCode());
+        assertNull(revocation.failureCode());
+        var resolved = AuditDto.AdminRequestHistoryEntryResponse.from(
+                AccessRequestEvent.revocationSucceeded("request", "realm", "manager", occurredAt,
+                        "The package group was deleted."));
+        assertEquals("The package group was deleted.", resolved.revocationResolutionReason());
         assertTrue(!fields(AuditDto.AdminRequestHistoryEntryResponse.class).contains("comment"));
         assertTrue(!fields(AuditDto.AdminRequestHistoryEntryResponse.class).contains("metadata"));
     }

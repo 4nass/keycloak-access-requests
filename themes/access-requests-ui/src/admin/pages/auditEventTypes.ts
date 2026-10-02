@@ -8,5 +8,7 @@ export const auditEventTypes: Record<AdminAuditEventType, string> = {
     PROVISIONING_STARTED: "accessRequestsAdminEventProvisioningStarted",
     PROVISIONING_SUCCEEDED: "accessRequestsAdminEventProvisioningSucceeded",
     PROVISIONING_FAILED: "accessRequestsAdminEventProvisioningFailed",
-    PROVISIONING_CLOSED: "accessRequestsAdminEventProvisioningClosed"
+    PROVISIONING_CLOSED: "accessRequestsAdminEventProvisioningClosed",
+    REVOCATION_FAILED: "accessRequestsAdminEventRevocationFailed",
+    REVOCATION_SUCCEEDED: "accessRequestsAdminEventRevocationSucceeded"
 };

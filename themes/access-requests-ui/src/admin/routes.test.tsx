@@ -12,6 +12,9 @@ describe("Administration Console routes", () => {
         const failedProvisioningIndex = children.findIndex(
             (route) => route.path === "/:realm/access-requests/provisioning-failures"
         );
+        const revocationFailuresIndex = children.findIndex(
+            (route) => route.path === "/:realm/access-requests/revocation-failures"
+        );
         const auditEventsIndex = children.findIndex(
             (route) => route.path === "/:realm/access-requests/events"
         );
@@ -26,6 +29,8 @@ describe("Administration Console routes", () => {
         expect(notificationDeliveryIndex).toBeLessThan(notFoundIndex);
         expect(failedProvisioningIndex).toBeGreaterThanOrEqual(0);
         expect(failedProvisioningIndex).toBeLessThan(notFoundIndex);
+        expect(revocationFailuresIndex).toBeGreaterThanOrEqual(0);
+        expect(revocationFailuresIndex).toBeLessThan(notFoundIndex);
         expect(auditEventsIndex).toBeGreaterThanOrEqual(0);
         expect(auditEventsIndex).toBeLessThan(notFoundIndex);
         expect(requestDetailIndex).toBeGreaterThanOrEqual(0);
