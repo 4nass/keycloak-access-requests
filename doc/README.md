@@ -8,6 +8,7 @@ This documentation describes the behavior that is implemented in the current pro
 2. [Configure client access, delegated catalog managers, and localization](configuration.md).
 3. [Create and operate entitlements](workflow.md).
 4. [Use the Account and Admin Console themes](consoles.md).
+5. [Browse screenshots of the deployed consoles and request workflow](screenshots/README.md).
 
 ## For API consumers
 
