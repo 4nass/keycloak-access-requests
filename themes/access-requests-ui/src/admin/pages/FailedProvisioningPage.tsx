@@ -17,15 +17,13 @@ import {
     EmptyStateHeader,
     Form,
     FormGroup,
-    Label,
+    FormSelect,
+    FormSelectOption,
     Modal,
     ModalVariant,
     PageSection,
     Pagination,
     Spinner,
-    Tab,
-    Tabs,
-    TabTitleText,
     Text,
     TextArea,
     TextContent,
@@ -43,6 +41,7 @@ import {
     type FailedProvisioningRequestPage
 } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
+import { AccessRequestsAdminTabs } from "./AccessRequestsAdminTabs";
 import { failureCodeKey } from "./failureCodePresentation";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50].map((value) => ({ title: String(value), value }));
@@ -198,20 +197,7 @@ export function FailedProvisioningPage() {
                 </TextContent>
             </PageSection>
             <PageSection>
-                <Tabs
-                    activeKey={state}
-                    aria-label={t("accessRequestsAdminFailedProvisioning")}
-                    onSelect={(_event, nextState) => {
-                        setRequests(undefined);
-                        setRefreshError(undefined);
-                        setActionNotice(undefined);
-                        setPage(0);
-                        setState(nextState === "CLOSED" ? "CLOSED" : "OPEN");
-                    }}
-                >
-                    <Tab eventKey="OPEN" title={<TabTitleText>{t("accessRequestsAdminFailedProvisioningOpen")}</TabTitleText>} />
-                    <Tab eventKey="CLOSED" title={<TabTitleText>{t("accessRequestsAdminFailedProvisioningClosed")}</TabTitleText>} />
-                </Tabs>
+                <AccessRequestsAdminTabs active="provisioning" />
                 {actionNotice && (
                     <Alert
                         className="pf-v5-u-mb-lg"
@@ -234,28 +220,39 @@ export function FailedProvisioningPage() {
                         variant="danger"
                     />
                 )}
-                {requests && requests.total > 0 && (
-                    <Toolbar aria-label={t(state === "OPEN"
-                        ? "accessRequestsAdminFailedProvisioningOpen"
-                        : "accessRequestsAdminFailedProvisioningClosed")}>
-                        <ToolbarContent>
-                            <ToolbarItem align={{ default: "alignRight" }} variant="pagination">
-                                <Pagination
-                                    itemCount={requests.total}
-                                    onPerPageSelect={(_event, nextSize) => {
+                <Toolbar aria-label={t("accessRequestsAdminFailedProvisioning")}>
+                    <ToolbarContent>
+                        <ToolbarItem>
+                            <FormGroup fieldId="provisioning-failure-status" label={t("accessRequestsAdminFailureStatus")}>
+                                <FormSelect id="provisioning-failure-status" value={state}
+                                    onChange={(_event, nextState) => {
+                                        setRequests(undefined);
+                                        setRefreshError(undefined);
+                                        setActionNotice(undefined);
                                         setPage(0);
-                                        setSize(nextSize);
-                                    }}
-                                    onSetPage={(_event, nextPage) => setPage(nextPage - 1)}
-                                    page={page + 1}
-                                    perPage={size}
-                                    perPageOptions={PAGE_SIZE_OPTIONS}
-                                    widgetId="access-request-provisioning-failures"
-                                />
-                            </ToolbarItem>
-                        </ToolbarContent>
-                    </Toolbar>
-                )}
+                                        setState(nextState === "CLOSED" ? "CLOSED" : "OPEN");
+                                    }}>
+                                    <FormSelectOption value="OPEN" label={t("accessRequestsAdminFailedProvisioningOpen")} />
+                                    <FormSelectOption value="CLOSED" label={t("accessRequestsAdminFailedProvisioningClosed")} />
+                                </FormSelect>
+                            </FormGroup>
+                        </ToolbarItem>
+                        {requests && requests.total > 0 && <ToolbarItem align={{ default: "alignRight" }} variant="pagination">
+                            <Pagination
+                                itemCount={requests.total}
+                                onPerPageSelect={(_event, nextSize) => {
+                                    setPage(0);
+                                    setSize(nextSize);
+                                }}
+                                onSetPage={(_event, nextPage) => setPage(nextPage - 1)}
+                                page={page + 1}
+                                perPage={size}
+                                perPageOptions={PAGE_SIZE_OPTIONS}
+                                widgetId="access-request-provisioning-failures"
+                            />
+                        </ToolbarItem>}
+                    </ToolbarContent>
+                </Toolbar>
                 {!requests && !refreshError ? (
                     <EmptyState><Spinner aria-label={t("loading")} /></EmptyState>
                 ) : requests?.items.length ? (
@@ -397,15 +394,20 @@ function FailedProvisioningItem({
                         <Title headingLevel="h3" id={titleId} size="md">{request.resourceName}</Title>
                         <Text component="small">{request.id}</Text>
                     </DataListCell>,
-                    <DataListCell key="metadata" width={2}>
+                    <DataListCell key="metadata" width={3}>
                         <DescriptionList isCompact isHorizontal>
                             <DescriptionListGroup>
                                 <DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningRequester")}</DescriptionListTerm>
-                                <DescriptionListDescription>{request.requesterId}</DescriptionListDescription>
+                                <DescriptionListDescription>{request.requesterName ?? t("accessRequestsAdminUserUnavailable")}</DescriptionListDescription>
                             </DescriptionListGroup>
                             <DescriptionListGroup>
                                 <DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningEntitlement")}</DescriptionListTerm>
-                                <DescriptionListDescription>{request.entitlementId}</DescriptionListDescription>
+                                <DescriptionListDescription>{request.entitlementName ?? request.resourceName}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{t("accessRequestsAdminFailureStatus")}</DescriptionListTerm>
+                                <DescriptionListDescription>{t(isClosed
+                                    ? "accessRequestsAdminFailureClosed" : "accessRequestsAdminFailureOpen")}</DescriptionListDescription>
                             </DescriptionListGroup>
                             <DescriptionListGroup>
                                 <DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningResource")}</DescriptionListTerm>
@@ -429,7 +431,9 @@ function FailedProvisioningItem({
                                     </DescriptionListGroup>
                                     <DescriptionListGroup>
                                         <DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningClosedBy")}</DescriptionListTerm>
-                                        <DescriptionListDescription>{request.closedBy ?? t("accessRequestsAdminNotAvailable")}</DescriptionListDescription>
+                                        <DescriptionListDescription>{request.closedBy
+                                            ? request.closedByName ?? t("accessRequestsAdminUserUnavailable")
+                                            : t("accessRequestsAdminNotAvailable")}</DescriptionListDescription>
                                     </DescriptionListGroup>
                                     <DescriptionListGroup>
                                         <DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningCloseReason")}</DescriptionListTerm>
@@ -438,13 +442,6 @@ function FailedProvisioningItem({
                                 </>
                             )}
                         </DescriptionList>
-                    </DataListCell>,
-                    <DataListCell key="status" width={1}>
-                        <Label color={isClosed ? "grey" : "red"}>
-                            {t(isClosed
-                                ? "accessRequestsAdminFailedProvisioningClosed"
-                                : "accessRequestsAdminProvisioningFailed")}
-                        </Label>
                     </DataListCell>
                 ]} />
                 {!isClosed && <DataListAction

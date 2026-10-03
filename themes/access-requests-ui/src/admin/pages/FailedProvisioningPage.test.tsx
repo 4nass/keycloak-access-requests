@@ -33,7 +33,7 @@ await i18n.init({
                 accessRequestsAdminErrorUnauthorized: "Your session is no longer authorized.",
                 accessRequestsAdminErrorUnavailable: "The service is unavailable.",
                 accessRequestsAdminErrorUnexpected: "The action could not be completed.",
-                accessRequestsAdminFailedProvisioning: "Failed provisioning",
+                accessRequestsAdminFailedProvisioning: "Provisioning failures",
                 accessRequestsAdminFailedProvisioningOpen: "Open failures",
                 accessRequestsAdminFailedProvisioningClosed: "Closed failures",
                 accessRequestsAdminFailedProvisioningClosedEmpty: "No closed provisioning failures.",
@@ -53,6 +53,9 @@ await i18n.init({
                 accessRequestsAdminFailedProvisioningCloseReason: "Closure reason",
                 accessRequestsAdminFailedProvisioningCloseSuccess: "Failure closed.",
                 accessRequestsAdminFailedProvisioningStatus: "Provisioning status",
+                accessRequestsAdminFailureStatus: "Status",
+                accessRequestsAdminFailureOpen: "Open",
+                accessRequestsAdminFailureClosed: "Closed",
                 accessRequestsAdminFailureCause: "Failure cause",
                 accessRequestsAdminFailureRequesterMissing: "The requester no longer exists.",
                 accessRequestsAdminFailureResourceMissing: "The original resource is missing.",
@@ -74,10 +77,12 @@ await i18n.init({
 const failedRequest = {
     decisionStatus: "APPROVED" as const,
     entitlementId: "finance-reader",
+    entitlementName: "Finance Reader access",
     id: "request-1",
     provisioningStatus: "FAILED" as const,
     failureCode: "RESOURCE_MISSING" as const,
     requesterId: "user-1",
+    requesterName: "Alex Reader",
     resourceName: "Finance Reader",
     resourceType: "CLIENT_ROLE" as const,
     updatedAt: "2026-09-22T10:00:00Z"
@@ -115,9 +120,12 @@ describe("FailedProvisioningPage", () => {
         renderPage();
 
         expect(await screen.findByText("Finance Reader")).toBeInTheDocument();
-        expect(screen.getByText("user-1")).toBeInTheDocument();
+        expect(screen.getByText("Alex Reader")).toBeInTheDocument();
+        expect(screen.getByText("Finance Reader access")).toBeInTheDocument();
         expect(screen.getByText("request-1")).toBeInTheDocument();
-        expect(screen.getByText("Provisioning failed")).toBeInTheDocument();
+        expect(screen.getByLabelText("Status")).toHaveValue("OPEN");
+        expect(screen.getByText("Open")).toBeInTheDocument();
+        expect(screen.queryByRole("tab", { name: "Closed failures" })).not.toBeInTheDocument();
         expect(screen.getByText("Failure cause")).toBeInTheDocument();
         expect(screen.getByText("The original resource is missing.")).toBeInTheDocument();
         expect(screen.queryByText(/failureReason|justification|stack trace/i)).not.toBeInTheDocument();
@@ -180,6 +188,7 @@ describe("FailedProvisioningPage", () => {
             ...failedRequest,
             closedAt: "2026-09-23T10:00:00Z",
             closedBy: "manager-1",
+            closedByName: "Morgan Manager",
             closureReason: "The original role was deleted permanently."
         };
         mocks.api.failedProvisioningRequests.mockImplementation(({ state }) => Promise.resolve(state === "CLOSED"
@@ -188,10 +197,10 @@ describe("FailedProvisioningPage", () => {
 
         renderPage();
         await screen.findByText("Finance Reader");
-        fireEvent.click(screen.getByRole("tab", { name: "Closed failures" }));
+        fireEvent.change(screen.getByLabelText("Status"), { target: { value: "CLOSED" } });
 
         expect(await screen.findByText("The original role was deleted permanently.")).toBeInTheDocument();
-        expect(screen.getByText("manager-1")).toBeInTheDocument();
+        expect(screen.getByText("Morgan Manager")).toBeInTheDocument();
         expect(screen.getByText("Closed at")).toBeInTheDocument();
         expect(screen.getByText("Closed by")).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Retry provisioning" })).not.toBeInTheDocument();
@@ -204,15 +213,15 @@ describe("FailedProvisioningPage", () => {
             ? { items: page === 0 ? [failedRequest] : [], page, size: 20, total: 21 }
             : { items: [], page: 0, size: 20, total: 0 }));
         renderPage();
-        fireEvent.click(screen.getByRole("tab", { name: "Closed failures" }));
+        fireEvent.change(screen.getByLabelText("Status"), { target: { value: "CLOSED" } });
         await screen.findByText("request-1");
         fireEvent.click(screen.getByLabelText("Go to next page"));
         await waitFor(() => expect(mocks.api.failedProvisioningRequests)
             .toHaveBeenLastCalledWith({ page: 1, size: 20, state: "CLOSED" }));
 
         mocks.api.failedProvisioningRequests.mockResolvedValue({ items: [], page: 0, size: 20, total: 0 });
-        fireEvent.click(screen.getByRole("tab", { name: "Open failures" }));
-        fireEvent.click(screen.getByRole("tab", { name: "Closed failures" }));
+        fireEvent.change(screen.getByLabelText("Status"), { target: { value: "OPEN" } });
+        fireEvent.change(screen.getByLabelText("Status"), { target: { value: "CLOSED" } });
         expect(await screen.findByText("No closed provisioning failures.")).toBeInTheDocument();
     });
 
@@ -433,7 +442,7 @@ describe("FailedProvisioningPage", () => {
         expect(screen.queryByRole("button", { name: "Retry provisioning" })).not.toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Close failure" })).not.toBeInTheDocument();
 
-        fireEvent.click(screen.getByRole("tab", { name: "Closed failures" }));
+        fireEvent.change(screen.getByLabelText("Status"), { target: { value: "CLOSED" } });
         expect(await screen.findByText("The original role was deleted permanently.")).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Retry provisioning" })).not.toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Close failure" })).not.toBeInTheDocument();
