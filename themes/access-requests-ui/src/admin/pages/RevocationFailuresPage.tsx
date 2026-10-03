@@ -1,9 +1,10 @@
 import {
     Alert, Button, DataList, DataListAction, DataListCell, DataListItem, DataListItemCells,
     DataListItemRow, DescriptionList, DescriptionListDescription, DescriptionListGroup,
-    DescriptionListTerm, EmptyState, EmptyStateBody, EmptyStateHeader, Label, Modal,
-    ModalVariant, PageSection, Pagination, Spinner, Tab, Tabs, TabTitleText, Text,
-    TextContent, Title, Toolbar, ToolbarContent, ToolbarItem, Form, FormGroup, TextArea
+    DescriptionListTerm, EmptyState, EmptyStateBody, EmptyStateHeader, Modal,
+    ModalVariant, PageSection, Pagination, Spinner, Text,
+    TextContent, Title, Toolbar, ToolbarContent, ToolbarItem, Form, FormGroup, FormSelect,
+    FormSelectOption, TextArea
 } from "@patternfly/react-core";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -13,6 +14,7 @@ import {
     type RevocationFailurePage
 } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
+import { AccessRequestsAdminTabs } from "./AccessRequestsAdminTabs";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50].map((value) => ({ title: String(value), value }));
 
@@ -136,14 +138,7 @@ export function RevocationFailuresPage() {
             <TextContent><Text component="p">{t("accessRequestsAdminRevocationFailuresDescription")}</Text></TextContent>
         </PageSection>
         <PageSection>
-            <Tabs activeKey={state} aria-label={t("accessRequestsAdminRevocationFailures")}
-                onSelect={(_event, next) => {
-                    setState(next === "RESOLVED" ? "RESOLVED" : "OPEN");
-                    setPage(0); setResults(undefined); setLoadError(undefined); setNotice(undefined);
-                }}>
-                <Tab eventKey="OPEN" title={<TabTitleText>{t("accessRequestsAdminRevocationOpen")}</TabTitleText>} />
-                <Tab eventKey="RESOLVED" title={<TabTitleText>{t("accessRequestsAdminRevocationResolved")}</TabTitleText>} />
-            </Tabs>
+            <AccessRequestsAdminTabs active="revocations" />
             {notice && <Alert isInline className="pf-v5-u-mb-lg"
                 variant={notice === "FAILED" ? "warning" : "success"}
                 title={t(notice === "REVOKED" ? "accessRequestsAdminRevocationRetrySuccess"
@@ -151,8 +146,18 @@ export function RevocationFailuresPage() {
                         : "accessRequestsAdminRevocationRetryFailed")} />}
             {loadMessage && <Alert isInline className="pf-v5-u-mb-lg" variant="danger" title={loadMessage}
                 actionLinks={<Button variant="link" onClick={() => setRevision((value) => value + 1)}>{t("reload")}</Button>} />}
-            {results && results.total > 0 && <Toolbar aria-label={t("accessRequestsAdminRevocationFailures")}>
-                <ToolbarContent><ToolbarItem align={{ default: "alignRight" }} variant="pagination">
+            <Toolbar aria-label={t("accessRequestsAdminRevocationFailures")}>
+                <ToolbarContent><ToolbarItem>
+                    <FormGroup fieldId="revocation-failure-status" label={t("accessRequestsAdminFailureStatus")}>
+                        <FormSelect id="revocation-failure-status" value={state} onChange={(_event, next) => {
+                            setState(next === "RESOLVED" ? "RESOLVED" : "OPEN");
+                            setPage(0); setResults(undefined); setLoadError(undefined); setNotice(undefined);
+                        }}>
+                            <FormSelectOption value="OPEN" label={t("accessRequestsAdminRevocationOpen")} />
+                            <FormSelectOption value="RESOLVED" label={t("accessRequestsAdminRevocationResolved")} />
+                        </FormSelect>
+                    </FormGroup>
+                </ToolbarItem>{results && results.total > 0 && <ToolbarItem align={{ default: "alignRight" }} variant="pagination">
                     <Pagination itemCount={results.total} page={page + 1} perPage={size}
                         perPageOptions={PAGE_SIZE_OPTIONS} widgetId="access-request-revocation-failures"
                         onSetPage={(_event, value) => {
@@ -161,8 +166,8 @@ export function RevocationFailuresPage() {
                         onPerPageSelect={(_event, value) => {
                             setResults(undefined); setLoadError(undefined); setPage(0); setSize(value);
                         }} />
-                </ToolbarItem></ToolbarContent>
-            </Toolbar>}
+                </ToolbarItem>}</ToolbarContent>
+            </Toolbar>
             {!results && !loadError ? <EmptyState><Spinner aria-label={t("loading")} /></EmptyState>
                 : results?.items.length ? <DataList aria-label={t("accessRequestsAdminRevocationFailures")}>
                     {results.items.map((item) => {
@@ -171,16 +176,22 @@ export function RevocationFailuresPage() {
                         return <DataListItem aria-labelledby={titleId} key={item.requestId}>
                             <DataListItemRow><DataListItemCells dataListCells={[
                                 <DataListCell key="request" width={3}>
-                                    <Title headingLevel="h3" id={titleId} size="md">{item.resourceId}</Title>
+                                    <Title headingLevel="h3" id={titleId} size="md">{item.entitlementName
+                                        ?? item.resourceName ?? t("accessRequestsAdminNotAvailable")}</Title>
                                     <Link to={`${requestDetailsBase}/${encodeURIComponent(item.requestId)}`}>
                                         {t("accessRequestsAdminEventsViewRequest")}: {item.requestId}
                                     </Link>
                                 </DataListCell>,
-                                <DataListCell key="details" width={2}><DescriptionList isCompact isHorizontal>
+                                <DataListCell key="details" width={3}><DescriptionList isCompact isHorizontal>
                                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningRequester")}</DescriptionListTerm>
-                                        <DescriptionListDescription>{item.requesterId}</DescriptionListDescription></DescriptionListGroup>
+                                        <DescriptionListDescription>{item.requesterName
+                                            ?? t("accessRequestsAdminUserUnavailable")}</DescriptionListDescription></DescriptionListGroup>
                                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningEntitlement")}</DescriptionListTerm>
-                                        <DescriptionListDescription>{item.entitlementId}</DescriptionListDescription></DescriptionListGroup>
+                                        <DescriptionListDescription>{item.entitlementName
+                                            ?? t("accessRequestsAdminNotAvailable")}</DescriptionListDescription></DescriptionListGroup>
+                                    <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminFailureStatus")}</DescriptionListTerm>
+                                        <DescriptionListDescription>{t(state === "OPEN"
+                                            ? "accessRequestsAdminFailureOpen" : "accessRequestsAdminFailureResolved")}</DescriptionListDescription></DescriptionListGroup>
                                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminRevocationExpiredAt")}</DescriptionListTerm>
                                         <DescriptionListDescription>{formatDate(item.expiresAt)}</DescriptionListDescription></DescriptionListGroup>
                                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminFailureCause")}</DescriptionListTerm>
@@ -188,16 +199,17 @@ export function RevocationFailuresPage() {
                                             : t(codeKey(item.failureCode))}</DescriptionListDescription></DescriptionListGroup>
                                     {!stale && <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminRevocationAttempts")}</DescriptionListTerm>
                                         <DescriptionListDescription>{item.attemptCount}</DescriptionListDescription></DescriptionListGroup>}
+                                    <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminRevocationFirstFailedAt")}</DescriptionListTerm>
+                                        <DescriptionListDescription>{formatDate(item.firstFailedAt)}</DescriptionListDescription></DescriptionListGroup>
+                                    <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminRevocationLastFailedAt")}</DescriptionListTerm>
+                                        <DescriptionListDescription>{formatDate(item.lastFailedAt)}</DescriptionListDescription></DescriptionListGroup>
                                     {state === "OPEN" && !stale && <DescriptionListGroup>
                                         <DescriptionListTerm>{t("accessRequestsAdminRevocationNextAttempt")}</DescriptionListTerm>
                                         <DescriptionListDescription>{formatDate(item.nextAttemptAt)}</DescriptionListDescription>
                                     </DescriptionListGroup>}
                                     {item.resolvedAt && <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminRevocationResolvedAt")}</DescriptionListTerm>
                                         <DescriptionListDescription>{formatDate(item.resolvedAt)}</DescriptionListDescription></DescriptionListGroup>}
-                                </DescriptionList></DataListCell>,
-                                <DataListCell key="status" width={1}><Label color={state === "OPEN" ? "red" : "green"}>
-                                    {t(state === "OPEN" ? "accessRequestsAdminRevocationOpen" : "accessRequestsAdminRevocationResolved")}
-                                </Label></DataListCell>
+                                </DescriptionList></DataListCell>
                             ]} />
                                 {state === "OPEN" && <DataListAction aria-label={t("accessRequestsAdminRevocationRetry")}
                                     aria-labelledby={titleId} id={`revocation-action-${item.requestId}`}>

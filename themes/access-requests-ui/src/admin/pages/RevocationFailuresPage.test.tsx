@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-    api: { revocationFailures: vi.fn(), retryGrantRevocation: vi.fn(), resolveGrantRevocation: vi.fn() }
+    api: { capabilities: vi.fn(), revocationFailures: vi.fn(), retryGrantRevocation: vi.fn(), resolveGrantRevocation: vi.fn() }
 }));
 
 vi.mock("../api/useEntitlementsAdminApi", () => ({ useEntitlementsAdminApi: () => mocks.api }));
@@ -30,10 +30,15 @@ await i18n.init({ initImmediate: false, lng: "en", resources: { en: { translatio
     accessRequestsAdminRevocationRemovalFailed: "Removal failed.",
     accessRequestsAdminRevocationAuthorityUnverifiable: "Ownership cannot be verified.",
     accessRequestsAdminFailureCause: "Cause",
+    accessRequestsAdminFailureStatus: "Status",
+    accessRequestsAdminFailureOpen: "Open",
+    accessRequestsAdminFailureResolved: "Resolved",
     accessRequestsAdminFailedProvisioningRequester: "Requester",
     accessRequestsAdminFailedProvisioningEntitlement: "Entitlement",
     accessRequestsAdminRevocationExpiredAt: "Expired at",
     accessRequestsAdminRevocationAttempts: "Attempts",
+    accessRequestsAdminRevocationFirstFailedAt: "First failure",
+    accessRequestsAdminRevocationLastFailedAt: "Last failure",
     accessRequestsAdminRevocationNextAttempt: "Next attempt",
     accessRequestsAdminRevocationResolvedAt: "Resolved at",
     accessRequestsAdminEventsViewRequest: "View request",
@@ -46,7 +51,8 @@ await i18n.init({ initImmediate: false, lng: "en", resources: { en: { translatio
 } } } });
 
 const item = {
-    requestId: "request-1", requesterId: "user-1", entitlementId: "entitlement-1",
+    requestId: "request-1", requesterId: "user-1", requesterName: "Alex Reader",
+    entitlementId: "entitlement-1", entitlementName: "Finance access",
     resourceType: "REALM_ROLE" as const, resourceId: "source-role", deliveryGroupId: "package-group",
     expiresAt: "2026-10-01T10:00:00Z", failureCode: "REMOVAL_FAILED" as const,
     attemptCount: 1, firstFailedAt: "2026-10-01T10:01:00Z",
@@ -64,6 +70,9 @@ function renderPage() {
 
 describe("RevocationFailuresPage", () => {
     beforeEach(() => {
+        mocks.api.capabilities.mockReset().mockResolvedValue({
+            canManageCatalog: true, canManageNotifications: true, canManageProvisioningFailures: true
+        });
         mocks.api.revocationFailures.mockReset().mockResolvedValue({ items: [item], page: 0, size: 20, total: 1 });
         mocks.api.retryGrantRevocation.mockReset();
         mocks.api.resolveGrantRevocation.mockReset();
@@ -71,9 +80,13 @@ describe("RevocationFailuresPage", () => {
 
     it("shows open incidents and keeps the resolved archive read-only", async () => {
         renderPage();
-        expect(await screen.findByText("source-role")).toBeVisible();
+        expect((await screen.findAllByText("Finance access")).length).toBeGreaterThanOrEqual(2);
         expect(screen.getByText("Removal failed.")).toBeVisible();
-        fireEvent.click(screen.getByRole("tab", { name: "Resolved failures" }));
+        expect(screen.getByLabelText("Status")).toHaveValue("OPEN");
+        expect(screen.getByText("First failure")).toBeVisible();
+        expect(screen.getByText("Last failure")).toBeVisible();
+        expect(screen.queryByRole("tab", { name: "Resolved failures" })).not.toBeInTheDocument();
+        fireEvent.change(screen.getByLabelText("Status"), { target: { value: "RESOLVED" } });
         await waitFor(() => expect(mocks.api.revocationFailures).toHaveBeenCalledWith({
             page: 0, size: 20, state: "RESOLVED"
         }));
@@ -87,13 +100,13 @@ describe("RevocationFailuresPage", () => {
         mocks.api.revocationFailures.mockResolvedValueOnce({ items: [item], page: 0, size: 20, total: 21 })
             .mockRejectedValueOnce(new TypeError("network"));
         renderPage();
-        await screen.findByText("source-role");
+        await screen.findAllByText("Finance access");
         fireEvent.click(screen.getByLabelText("Go to next page"));
         await waitFor(() => expect(mocks.api.revocationFailures).toHaveBeenLastCalledWith({
             page: 1, size: 20, state: "OPEN"
         }));
         expect(await screen.findByText("Service unavailable.")).toBeVisible();
-        expect(screen.queryByText("source-role")).not.toBeInTheDocument();
+        expect(screen.queryAllByText("Finance access")).toHaveLength(0);
         expect(screen.queryByRole("button", { name: "Retry revocation" })).not.toBeInTheDocument();
     });
 
@@ -102,11 +115,11 @@ describe("RevocationFailuresPage", () => {
         mocks.api.revocationFailures.mockResolvedValueOnce({ items: [item], page: 0, size: 20, total: 1 })
             .mockRejectedValueOnce(new TypeError("network"));
         renderPage();
-        await screen.findByText("source-role");
+        await screen.findAllByText("Finance access");
         fireEvent.click(screen.getByRole("button", { name: "Retry revocation" }));
         fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Retry revocation" }));
         await screen.findByText("Revocation succeeded.");
-        expect(screen.queryByText("source-role")).not.toBeInTheDocument();
+        expect(screen.queryAllByText("Finance access")).toHaveLength(0);
         expect(await screen.findByText("Service unavailable.")).toBeVisible();
     });
 
@@ -129,7 +142,7 @@ describe("RevocationFailuresPage", () => {
         mocks.api.revocationFailures.mockResolvedValueOnce({ items: [item], page: 0, size: 20, total: 1 })
             .mockRejectedValueOnce(new TypeError("network"));
         renderPage();
-        await screen.findByText("source-role");
+        await screen.findAllByText("Finance access");
         fireEvent.click(screen.getByRole("button", { name: "Confirm removal" }));
         const dialog = screen.getByRole("dialog");
         const confirm = within(dialog).getByRole("button", { name: "Confirm removal" });
@@ -141,6 +154,6 @@ describe("RevocationFailuresPage", () => {
         await waitFor(() => expect(mocks.api.resolveGrantRevocation)
             .toHaveBeenCalledWith("request-1", "Removed by administrator"));
         await screen.findByText("Membership absence confirmed.");
-        expect(screen.queryByText("source-role")).not.toBeInTheDocument();
+        expect(screen.queryAllByText("Finance access")).toHaveLength(0);
     });
 });
