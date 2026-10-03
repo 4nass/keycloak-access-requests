@@ -5,6 +5,7 @@ import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEventTy
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidProvisioningRetryException;
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidProvisioningClosureException;
 import ch.anass.keycloak.accessrequests.core.service.EntitlementNotFoundException;
+import ch.anass.keycloak.accessrequests.core.service.AccessPackageRequiredException;
 import ch.anass.keycloak.accessrequests.core.service.ConcurrentRequestModificationException;
 import ch.anass.keycloak.accessrequests.core.service.RequestNotFoundException;
 import ch.anass.keycloak.accessrequests.core.service.InvalidRequestedDurationException;
@@ -189,6 +190,8 @@ final class AccessRequestAdminHandler extends AccessRequestHandlerSupport {
             return error(Response.Status.NOT_FOUND, "ENTITLEMENT_NOT_FOUND", exception.getMessage(), requestId);
         } catch (InvalidProvisioningRetryException exception) {
             return error(Response.Status.CONFLICT, "INVALID_PROVISIONING_RETRY", exception.getMessage(), requestId);
+        } catch (AccessPackageRequiredException exception) {
+            return error(Response.Status.CONFLICT, "ACCESS_PACKAGE_REQUIRED", exception.getMessage(), requestId);
         } catch (InvalidRequestedDurationException exception) {
             return error(Response.Status.CONFLICT, "INVALID_REQUESTED_DURATION", exception.getMessage(), requestId);
         } catch (ConcurrentRequestModificationException exception) {

@@ -6,6 +6,7 @@ import ch.anass.keycloak.accessrequests.core.domain.request.InvalidRequestStateE
 import ch.anass.keycloak.accessrequests.core.domain.approval.SelfApprovalException;
 import ch.anass.keycloak.accessrequests.core.domain.approval.UnauthorizedApprovalException;
 import ch.anass.keycloak.accessrequests.core.service.EntitlementNotFoundException;
+import ch.anass.keycloak.accessrequests.core.service.AccessPackageRequiredException;
 import ch.anass.keycloak.accessrequests.core.service.EntitlementNotRequestableException;
 import ch.anass.keycloak.accessrequests.core.service.ConcurrentRequestModificationException;
 import ch.anass.keycloak.accessrequests.core.service.RequestNotFoundException;
@@ -92,6 +93,8 @@ final class AccessRequestApprovalHandler extends AccessRequestHandlerSupport {
             return error(Response.Status.NOT_FOUND, "ENTITLEMENT_NOT_FOUND", exception.getMessage(), requestId);
         } catch (EntitlementNotRequestableException exception) {
             return error(Response.Status.CONFLICT, "ENTITLEMENT_NOT_REQUESTABLE", exception.getMessage(), requestId);
+        } catch (AccessPackageRequiredException exception) {
+            return error(Response.Status.CONFLICT, "ACCESS_PACKAGE_REQUIRED", exception.getMessage(), requestId);
         } catch (InvalidRequestedDurationException exception) {
             return error(Response.Status.CONFLICT, "INVALID_REQUESTED_DURATION", exception.getMessage(), requestId);
         } catch (InvalidRequestStateException exception) {

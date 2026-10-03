@@ -7,6 +7,7 @@ import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestQuery;
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidRequestStateException;
 import ch.anass.keycloak.accessrequests.core.domain.request.UnauthorizedRequestActionException;
 import ch.anass.keycloak.accessrequests.core.service.AccessAlreadyGrantedException;
+import ch.anass.keycloak.accessrequests.core.service.AccessPackageRequiredException;
 import ch.anass.keycloak.accessrequests.core.service.EntitlementNotFoundException;
 import ch.anass.keycloak.accessrequests.core.service.EntitlementNotRequestableException;
 import ch.anass.keycloak.accessrequests.core.service.InvalidJustificationException;
@@ -54,6 +55,8 @@ final class AccessRequestRequesterHandler extends AccessRequestHandlerSupport {
             throw new BadRequestException(exception.getMessage(), exception);
         } catch (EntitlementNotFoundException exception) {
             throw new NotFoundException(exception.getMessage(), exception);
+        } catch (AccessPackageRequiredException exception) {
+            return error(Response.Status.CONFLICT, "ACCESS_PACKAGE_REQUIRED", exception.getMessage(), null);
         } catch (EntitlementNotRequestableException | AccessAlreadyGrantedException
                  | RequestAlreadyPendingException exception) {
             throw new ClientErrorException(Response.Status.CONFLICT, exception);

@@ -185,7 +185,12 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
         Entitlement current = findEntitlement(manager.realm(), entitlementId);
         if (validatedSubmission.requestable()) {
             var binding = accessPackageRepository().findByEntitlementId(manager.realm().getId(), entitlementId);
-            if (binding.isPresent() && !isPackageConfigured(
+            if (binding.isEmpty() || current.resourceType() != ResourceType.GROUP
+                    || !current.resourceId().equals(binding.get().groupId())) {
+                return error(Response.Status.CONFLICT, "ACCESS_PACKAGE_REQUIRED",
+                        "Only a bound access package can be made requestable", null);
+            }
+            if (!isPackageConfigured(
                     session.groups().getGroupById(manager.realm(), binding.get().groupId()), binding.get())) {
                 return error(Response.Status.CONFLICT, "INVALID_ACCESS_PACKAGE_CONFIGURATION",
                         "The access package group or its role mappings have changed", null);
