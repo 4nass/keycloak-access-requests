@@ -39,7 +39,7 @@ await i18n.init({
         en: {
             translation: {
                 accessRequestsAdminCatalog: "Access requests",
-                accessRequestsAdminFailedProvisioning: "Failed provisioning",
+                accessRequestsAdminFailedProvisioning: "Provisioning failures",
                 accessRequestsAdminRevocationFailures: "Revocation failures",
                 accessRequestsAdminNotificationDelivery: "Notification delivery",
                 configure: "Configure",
@@ -64,7 +64,7 @@ describe("Access Request Admin Console navigation", () => {
         mocks.capabilities.mockReset();
     });
 
-    it("shows each administrative entry only after the server grants its capability", async () => {
+    it("shows one Access requests entry after the server grants an administrative capability", async () => {
         mocks.capabilities.mockResolvedValue({
             canManageCatalog: true,
             canManageNotifications: true,
@@ -79,15 +79,20 @@ describe("Access Request Admin Console navigation", () => {
         expect(screen.getByRole("region", { name: "Configure" })).toContainElement(
             screen.getByRole("link", { name: "Access requests" })
         );
-        expect(screen.getByRole("link", { name: "Notification delivery" })).toHaveAttribute(
-            "href", "/master/access-requests/notification-deliveries"
-        );
-        expect(screen.getByRole("link", { name: "Failed provisioning" })).toHaveAttribute(
-            "href", "/master/access-requests/provisioning-failures"
-        );
-        expect(screen.getByRole("link", { name: "Revocation failures" })).toHaveAttribute(
-            "href", "/master/access-requests/revocation-failures"
-        );
+        expect(screen.queryByRole("link", { name: "Notification delivery" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("link", { name: "Provisioning failures" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("link", { name: "Revocation failures" })).not.toBeInTheDocument();
+    });
+
+    it.each([
+        [{ canManageCatalog: false, canManageNotifications: true, canManageProvisioningFailures: false },
+            "/master/access-requests/notification-deliveries"],
+        [{ canManageCatalog: false, canManageNotifications: false, canManageProvisioningFailures: true },
+            "/master/access-requests/provisioning-failures"]
+    ])("opens the first authorized operational tab without catalog access", async (capabilities, href) => {
+        mocks.capabilities.mockResolvedValue(capabilities);
+        renderNavigation();
+        expect(await screen.findByRole("link", { name: "Access requests" })).toHaveAttribute("href", href);
     });
 
     it("fails closed and does not expose the catalog entry when capability lookup is denied", async () => {
@@ -97,7 +102,5 @@ describe("Access Request Admin Console navigation", () => {
 
         await waitFor(() => expect(mocks.capabilities).toHaveBeenCalledOnce());
         expect(screen.queryByRole("link", { name: "Access requests" })).not.toBeInTheDocument();
-        expect(screen.queryByRole("link", { name: "Failed provisioning" })).not.toBeInTheDocument();
-        expect(screen.queryByRole("link", { name: "Revocation failures" })).not.toBeInTheDocument();
     });
 });

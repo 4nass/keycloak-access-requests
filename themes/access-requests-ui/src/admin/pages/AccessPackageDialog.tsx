@@ -123,7 +123,7 @@ export function AccessPackageDialog({ api, onClose, onCreated }: {
         ]}
     >
         <Text component="p">{t("accessRequestsAdminPackageCreateDescription")}</Text>
-        <Alert isInline variant="warning" title={t("accessRequestsAdminGroupAccessWarning")} className="pf-v5-u-my-md" />
+        <Alert isInline variant="warning" title={t("accessRequestsAdminPackageAccessWarning")} className="pf-v5-u-my-md" />
         {validationError && <Alert isInline variant="danger" title={validationError} className="pf-v5-u-mb-md" />}
         {errorMessage && <Alert isInline variant="danger" title={errorMessage} className="pf-v5-u-mb-md" />}
         <Form id="access-package-form" onSubmit={(event) => void save(event)}>

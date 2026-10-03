@@ -14,7 +14,7 @@ import {
     PageSidebarBody
 } from "@patternfly/react-core";
 import { useEffect, useState, type FormEvent } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import { useEntitlementsAdminApi } from "./api/useEntitlementsAdminApi";
@@ -134,10 +134,14 @@ export function AccessRequestsAdminPageNav() {
                                     {showWorkflows && <KeycloakNavItem path="/workflows" title={t("workflows")} />}
                                 </>
                             )}
-                            {capabilities.canManageCatalog && <AccessRequestsNavItem />}
-                            {capabilities.canManageNotifications && <NotificationDeliveriesNavItem />}
-                            {capabilities.canManageProvisioningFailures && <FailedProvisioningNavItem />}
-                            {capabilities.canManageProvisioningFailures && <RevocationFailuresNavItem />}
+                            {(capabilities.canManageCatalog || capabilities.canManageNotifications
+                                || capabilities.canManageProvisioningFailures) && (
+                                <AccessRequestsNavItem path={capabilities.canManageCatalog
+                                    ? "/access-requests"
+                                    : capabilities.canManageNotifications
+                                        ? "/access-requests/notification-deliveries"
+                                        : "/access-requests/provisioning-failures"} />
+                            )}
                         </NavGroup>
                     )}
                 </Nav>
@@ -164,50 +168,25 @@ function hasKeycloakRouteAccess(path: string, hasAccess: (...access: AccessType[
     return access !== undefined && (Array.isArray(access) ? hasAccess(...access) : hasAccess(access));
 }
 
-function AccessRequestsNavItem() {
+function AccessRequestsNavItem({ path }: { path: string }) {
     const { t } = useTranslation();
     const { realm } = useRealm();
 
-    return <NavigationItem path="/access-requests" realm={realm} title={t("accessRequestsAdminCatalog")} />;
-}
-
-function NotificationDeliveriesNavItem() {
-    const { t } = useTranslation();
-    const { realm } = useRealm();
-
-    return <NavigationItem
-        path="/access-requests/notification-deliveries"
-        realm={realm}
-        title={t("accessRequestsAdminNotificationDelivery")}
-    />;
-}
-
-function FailedProvisioningNavItem() {
-    const { t } = useTranslation();
-    const { realm } = useRealm();
-
-    return <NavigationItem
-        path="/access-requests/provisioning-failures"
-        realm={realm}
-        title={t("accessRequestsAdminFailedProvisioning")}
-    />;
-}
-
-function RevocationFailuresNavItem() {
-    const { t } = useTranslation();
-    const { realm } = useRealm();
-    return <NavigationItem path="/access-requests/revocation-failures" realm={realm}
-        title={t("accessRequestsAdminRevocationFailures")} />;
+    return <NavigationItem path={path} realm={realm} title={t("accessRequestsAdminCatalog")} />;
 }
 
 function NavigationItem({ path, realm, title }: { path: string; realm: string; title: string }) {
     const target = `/${encodeURIComponent(realm)}${path}`;
     const id = `nav-item${path.replace("/", "-")}`;
+    const { pathname } = useLocation();
+    const accessRequestsBase = `/${encodeURIComponent(realm)}/access-requests`;
+    const inAccessRequests = path.startsWith("/access-requests")
+        && (pathname === accessRequestsBase || pathname.startsWith(`${accessRequestsBase}/`));
 
     return (
         <li>
             <NavLink
-                className={({ isActive }) => `pf-v5-c-nav__link${isActive ? " pf-m-current" : ""}`}
+                className={({ isActive }) => `pf-v5-c-nav__link${isActive || inAccessRequests ? " pf-m-current" : ""}`}
                 data-testid={id}
                 id={id}
                 to={target}

@@ -75,7 +75,7 @@ describe("Entitlements administration API client", () => {
         }));
     });
 
-    it("loads a paginated audit event page with date, type, actor, and request filters", async () => {
+    it("loads a paginated audit event page with independent requester and actor filters", async () => {
         const event = {
             id: "event-1",
             requestId: "request/1",
@@ -92,16 +92,32 @@ describe("Entitlements administration API client", () => {
 
         await expect(api.auditEvents({
             page: 1, size: 10, from: "2026-09-24T00:00:00Z", to: "2026-09-25T00:00:00Z",
-            type: "REQUEST_APPROVED", actorId: "approver-1", requestId: "request/1"
+            type: "REQUEST_APPROVED", requesterId: "requester-1", actorId: "approver-1", requestId: "request/1"
         })).resolves.toEqual({ items: [event], page: 1, size: 10, total: 11 });
         const { url, init } = request(fetchMock);
         const parsed = new URL(url);
         expect(parsed.pathname).toBe("/realms/finance/access-requests/admin/events");
         expect(Object.fromEntries(parsed.searchParams)).toEqual({
             page: "1", size: "10", from: "2026-09-24T00:00:00Z", to: "2026-09-25T00:00:00Z",
-            type: "REQUEST_APPROVED", actorId: "approver-1", requestId: "request/1"
+            type: "REQUEST_APPROVED", requesterId: "requester-1", actorId: "approver-1", requestId: "request/1"
         });
         expect(init.headers).toEqual(expect.objectContaining({ authorization: "Bearer admin-console-token" }));
+    });
+
+    it("looks up bounded audit users using the authorized realm endpoint", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ items: [{
+            id: "user-1", name: "Alex Reader", username: "alex"
+        }] }));
+        const api = createApi(fetchMock);
+        const controller = new AbortController();
+        await expect(api.auditUsers("Alex Reader", controller.signal)).resolves.toMatchObject({
+            items: [{ id: "user-1", name: "Alex Reader" }]
+        });
+        expect(request(fetchMock).url).toBe(
+            "https://keycloak.example/realms/finance/access-requests/admin/audit-users?search=Alex%20Reader"
+        );
+        expect(request(fetchMock).init.signal).toBe(controller.signal);
+        expect(request(fetchMock).init.headers).toEqual(expect.objectContaining({ authorization: "Bearer admin-console-token" }));
     });
 
     it("preserves empty audit pages and presents authorization failures without server error details", async () => {

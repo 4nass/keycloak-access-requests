@@ -309,6 +309,7 @@ export function EntitlementCatalogPage() {
                 <EntitlementDialog
                     api={api}
                     entitlementId={dialog.entitlement?.id}
+                    resourceName={dialog.entitlement?.resourceName}
                     error={formMessage}
                     durationError={durationError}
                     form={form}
@@ -343,7 +344,9 @@ function EntitlementListItem({ entitlement, onEdit }: { entitlement: Entitlement
                 <DataListItemCells dataListCells={[
                     <DataListCell key="name" width={3}>
                         <Title headingLevel="h2" id={titleId} size="md">{entitlement.displayName}</Title>
-                        <Text component="small">{t(resourceTypeKey(entitlement.resourceType))}: {entitlement.resourceId}</Text>
+                        {entitlement.resourceType !== "GROUP" && <Text component="small">
+                            {t(resourceTypeKey(entitlement.resourceType))}: {entitlement.resourceName ?? t("accessRequestsAdminNotAvailable")}
+                        </Text>}
                         <Text component="p">{entitlement.description}</Text>
                     </DataListCell>,
                     <DataListCell key="configuration" width={3}>
@@ -354,7 +357,7 @@ function EntitlementListItem({ entitlement, onEdit }: { entitlement: Entitlement
                             </DescriptionListGroup>
                             <DescriptionListGroup>
                                 <DescriptionListTerm>{t("accessRequestsAdminApproverRole")}</DescriptionListTerm>
-                                <DescriptionListDescription>{entitlement.approverRoleId}</DescriptionListDescription>
+                                <DescriptionListDescription>{entitlement.approverRoleName ?? t("accessRequestsAdminNotAvailable")}</DescriptionListDescription>
                             </DescriptionListGroup>
                             <DescriptionListGroup>
                                 <DescriptionListTerm>{t("accessRequestsAdminDefaultDuration")}</DescriptionListTerm>
@@ -389,6 +392,7 @@ function EntitlementListItem({ entitlement, onEdit }: { entitlement: Entitlement
 function EntitlementDialog({
     api,
     entitlementId,
+    resourceName,
     error,
     durationError,
     form,
@@ -401,6 +405,7 @@ function EntitlementDialog({
 }: {
     api: EntitlementsAdminApi;
     entitlementId?: string;
+    resourceName?: string | null;
     error?: string;
     durationError: boolean;
     form: FormValues;
@@ -435,7 +440,7 @@ function EntitlementDialog({
             {error && <Alert isInline title={error} variant="danger" className="pf-v5-u-mb-lg" />}
             {durationError && <Alert isInline title={t("accessRequestsAdminInvalidDuration")} variant="danger" className="pf-v5-u-mb-lg" />}
             <Form id="entitlement-form" onSubmit={(event) => void onSave(event)}>
-                <FormGroup fieldId="entitlement-resource-type" isRequired label={t("accessRequestsAdminResourceType")}>
+                {(isCreate || form.resourceType !== "GROUP") && <FormGroup fieldId="entitlement-resource-type" isRequired label={t("accessRequestsAdminResourceType")}>
                     <FormSelect
                         id="entitlement-resource-type"
                         isDisabled={!isCreate || isSaving}
@@ -449,13 +454,13 @@ function EntitlementDialog({
                         <FormSelectOption label={t("accessRequestsAdminResourceTypeClientRole")} value="CLIENT_ROLE" />
                         <FormSelectOption label={t("accessRequestsAdminResourceTypeGroup")} value="GROUP" />
                     </FormSelect>
-                </FormGroup>
+                </FormGroup>}
                 {isCreate && form.resourceType === "GROUP" && <Alert
                     isInline
                     variant="warning"
                     title={t("accessRequestsAdminGroupAccessWarning")}
                 />}
-                <FormGroup fieldId="entitlement-resource-id" isRequired label={t("accessRequestsAdminResourceId")}>
+                {(isCreate || form.resourceType !== "GROUP") && <FormGroup fieldId="entitlement-resource-id" isRequired label={t("accessRequestsAdminResourceId")}>
                     {isCreate ? (
                         <KeycloakReferenceSelector
                             api={api}
@@ -470,9 +475,9 @@ function EntitlementDialog({
                             value={form.resourceId}
                         />
                     ) : (
-                        <TextInput id="entitlement-resource-id" readOnly value={form.resourceId} />
+                        <TextInput id="entitlement-resource-id" readOnly value={resourceName ?? t("accessRequestsAdminNotAvailable")} />
                     )}
-                </FormGroup>
+                </FormGroup>}
                 <FormGroup fieldId="entitlement-display-name" isRequired label={t("accessRequestsAdminDisplayName")}>
                     <TextInput
                         id="entitlement-display-name"
@@ -548,13 +553,18 @@ function EntitlementDialog({
                     <AccessPackageDetails api={api} entitlementId={entitlementId}
                         onValidityChange={setPackageConfigurationValid} />
                 )}
+                {form.resourceType !== "GROUP" && <Alert
+                    isInline
+                    variant="info"
+                    title={t("accessRequestsAdminDirectEntitlementDraftOnly")}
+                />}
                 {!isCreate && (
                     <FormGroup fieldId="entitlement-requestable">
                         <Checkbox
                             id="entitlement-requestable"
                             isChecked={form.requestable}
-                            isDisabled={isSaving || (!form.requestable && form.resourceType === "GROUP"
-                                && packageConfigurationValid !== true)}
+                            isDisabled={isSaving || (!form.requestable
+                                && (form.resourceType !== "GROUP" || packageConfigurationValid !== true))}
                             label={t("accessRequestsAdminRequestable")}
                             onChange={(_event, checked) => onUpdate("requestable", checked)}
                         />

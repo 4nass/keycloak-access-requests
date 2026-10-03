@@ -1,6 +1,5 @@
 import {
     Alert, DataList, DataListCell, DataListItem, DataListItemCells, DataListItemRow,
-    DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm,
     Label, Spinner, Text, Title
 } from "@patternfly/react-core";
 import { useEffect, useState } from "react";
@@ -29,7 +28,7 @@ export function AccessPackageDetails({ api, entitlementId, onValidityChange }: {
         void api.getAccessPackage(entitlementId).then((result) => {
             if (active) {
                 setDetails(result);
-                onValidityChange(result === null || result.configurationValid);
+                onValidityChange(result !== null && result.configurationValid);
             }
         }).catch((failure: unknown) => {
             if (active) {
@@ -50,19 +49,11 @@ export function AccessPackageDetails({ api, entitlementId, onValidityChange }: {
         return <Spinner aria-label={t("loading")} />;
     }
     if (details === null) {
-        return null;
+        return <Alert isInline variant="info" title={t("accessRequestsAdminDirectEntitlementDraftOnly")} />;
     }
 
     return <section aria-label={t("accessRequestsAdminPackageDetails")}>
         <Title headingLevel="h3" size="md">{t("accessRequestsAdminPackageDetails")}</Title>
-        <DescriptionList isCompact isHorizontal>
-            <DescriptionListGroup>
-                <DescriptionListTerm>{t("accessRequestsAdminPackageGroup")}</DescriptionListTerm>
-                <DescriptionListDescription>
-                    {details.groupName} <Text component="small">({details.groupId})</Text>
-                </DescriptionListDescription>
-            </DescriptionListGroup>
-        </DescriptionList>
         {!details.groupExists && <Alert isInline variant="danger"
             title={t("accessRequestsAdminPackageMissingGroup")} className="pf-v5-u-mt-sm" />}
         {details.groupExists && !details.configurationValid && <Alert isInline variant="danger"

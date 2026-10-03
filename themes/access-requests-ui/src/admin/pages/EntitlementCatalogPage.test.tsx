@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
+    capabilities: vi.fn(),
     create: vi.fn(),
     createAccessPackage: vi.fn(),
     getAccessPackage: vi.fn(),
@@ -20,6 +21,7 @@ import { EntitlementCatalogPage } from "./EntitlementCatalogPage";
 
 const entitlement = {
     approverRoleId: "finance-approvers",
+    approverRoleName: "Finance Approvers",
     allowPermanent: false,
     createdAt: "2026-09-04T10:00:00Z",
     defaultDurationSeconds: 2_592_000,
@@ -29,6 +31,7 @@ const entitlement = {
     maxDurationSeconds: 7_776_000,
     requestable: true,
     resourceId: "finance-reader-role",
+    resourceName: "Finance Reader role",
     resourceType: "CLIENT_ROLE" as const,
     riskLevel: "LOW" as const,
     updatedAt: "2026-09-04T10:00:00Z",
@@ -47,6 +50,9 @@ function deferred<T>() {
 
 describe("EntitlementCatalogPage", () => {
     beforeEach(() => {
+        api.capabilities.mockReset().mockResolvedValue({
+            canManageCatalog: true, canManageNotifications: true, canManageProvisioningFailures: true
+        });
         api.create.mockReset();
         api.createAccessPackage.mockReset();
         api.getAccessPackage.mockReset().mockResolvedValue(null);
@@ -69,20 +75,23 @@ describe("EntitlementCatalogPage", () => {
             <EntitlementCatalogPage />
         </MemoryRouter>);
 
-        expect(await screen.findByRole("tab", { name: "accessRequestsAdminCatalog" })).toHaveAttribute(
+        expect(await screen.findByRole("tab", { name: "accessRequestsAdminCatalogTab" })).toHaveAttribute(
             "aria-selected", "true"
         );
         expect(screen.getByRole("tab", { name: "accessRequestsAdminEvents" })).toHaveAttribute(
             "href", "/master/access-requests/events"
         );
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminNotificationDelivery" })).toBeVisible();
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminFailedProvisioning" })).toBeVisible();
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminRevocationFailures" })).toBeVisible();
     });
 
     it("renders the complete administrative metadata using native list affordances", async () => {
         render(<EntitlementCatalogPage />);
 
         expect(await screen.findByRole("heading", { name: "Finance Reader" })).toBeVisible();
-        expect(screen.getByText("accessRequestsAdminResourceTypeClientRole: finance-reader-role")).toBeVisible();
-        expect(screen.getByText("finance-approvers")).toBeVisible();
+        expect(screen.getByText("accessRequestsAdminResourceTypeClientRole: Finance Reader role")).toBeVisible();
+        expect(screen.getByText("Finance Approvers")).toBeVisible();
         expect(screen.getByText("accessRequestsAdminRiskLevelLow")).toBeVisible();
         expect(screen.getByText("accessRequestsAdminOpenToRequests")).toBeVisible();
         expect(api.list).toHaveBeenCalledWith({ page: 0, size: 20 });
@@ -98,12 +107,41 @@ describe("EntitlementCatalogPage", () => {
         expect(screen.queryByText("accessRequestsAdminOpenToRequests")).not.toBeInTheDocument();
     });
 
+    it("does not offer publication of a direct role draft", async () => {
+        const user = userEvent.setup();
+        api.list.mockResolvedValue({
+            items: [{ ...entitlement, requestable: false }], page: 0, size: 20, total: 1
+        });
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminEditEntitlement" }));
+        expect(screen.getByRole("checkbox", { name: "accessRequestsAdminRequestable" })).toBeDisabled();
+        expect(screen.getByText("accessRequestsAdminDirectEntitlementDraftOnly")).toBeVisible();
+    });
+
+    it("does not offer publication of a direct group draft without a package binding", async () => {
+        const user = userEvent.setup();
+        api.list.mockResolvedValue({
+            items: [{ ...entitlement, requestable: false, resourceType: "GROUP", resourceId: "direct-group" }],
+            page: 0, size: 20, total: 1
+        });
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminEditEntitlement" }));
+        expect(await screen.findByText("accessRequestsAdminDirectEntitlementDraftOnly")).toBeVisible();
+        expect(screen.getByRole("checkbox", { name: "accessRequestsAdminRequestable" })).toBeDisabled();
+    });
+
     it("edits requestability with the current optimistic lock version", async () => {
         const user = userEvent.setup();
         render(<EntitlementCatalogPage />);
 
         await screen.findByRole("heading", { name: "Finance Reader" });
         await user.click(screen.getByRole("button", { name: "accessRequestsAdminEditEntitlement" }));
+        expect(screen.getByDisplayValue("Finance Reader role")).toBeVisible();
+        expect(screen.queryByDisplayValue("finance-reader-role")).not.toBeInTheDocument();
         const requestable = screen.getByRole("checkbox", { name: "accessRequestsAdminRequestable" });
         await user.click(requestable);
         await user.click(screen.getByRole("button", { name: "accessRequestsAdminSave" }));
@@ -163,7 +201,7 @@ describe("EntitlementCatalogPage", () => {
         expect(screen.queryByRole("textbox", { name: "accessRequestsAdminApproverRole" })).not.toBeInTheDocument();
     });
 
-    it("creates a closed access package from selected Keycloak roles and shows its group before publishing", async () => {
+    it("creates a closed access package and shows its roles without exposing the delivery group", async () => {
         const user = userEvent.setup();
         const created = {
             ...entitlement, id: "access-package-id", displayName: "Temporary access",
@@ -212,9 +250,24 @@ describe("EntitlementCatalogPage", () => {
                 { type: "CLIENT_ROLE", roleId: "client-role-id" }
             ]
         })));
-        await waitFor(() => expect(screen.getByText("AR_PKG_TEMPORARY_ACCESS")).toBeVisible());
+        await waitFor(() => expect(screen.getByRole("heading", { name: "accessRequestsAdminPackageDetails" })).toBeVisible());
+        expect(screen.getByRole("dialog"))
+            .toHaveTextContent("Finance Reader");
+        expect(screen.queryByText("AR_PKG_TEMPORARY_ACCESS")).not.toBeInTheDocument();
+        expect(screen.queryByDisplayValue("jit-group-id")).not.toBeInTheDocument();
         expect(screen.getByRole("checkbox", { name: "accessRequestsAdminRequestable" })).not.toBeChecked();
         expect(screen.getByText("accessRequestsAdminPackageCreated")).toBeVisible();
+    });
+
+    it("does not show the technical group identifier in the catalog list", async () => {
+        api.list.mockResolvedValue({
+            items: [{ ...entitlement, resourceType: "GROUP", resourceId: "AR_PKG_INTERNAL" }],
+            page: 0, size: 20, total: 1
+        });
+        render(<EntitlementCatalogPage />);
+
+        expect(await screen.findByRole("heading", { name: "Finance Reader" })).toBeVisible();
+        expect(screen.queryByText(/AR_PKG_INTERNAL/)).not.toBeInTheDocument();
     });
 
     it("blocks publication when the JIT group configuration has changed", async () => {

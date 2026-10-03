@@ -2,10 +2,12 @@ export type Entitlement = {
     id: string;
     resourceType: "REALM_ROLE" | "CLIENT_ROLE" | "GROUP";
     resourceId: string;
+    resourceName?: string | null;
     displayName: string;
     description: string;
     riskLevel: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
     approverRoleId: string;
+    approverRoleName?: string | null;
     requestable: boolean;
     defaultDurationSeconds: number;
     maxDurationSeconds: number;
@@ -32,6 +34,8 @@ export type AdminAuditEvent = {
     requestId: string;
     type: AdminAuditEventType;
     actorId: string;
+    actorName?: string | null;
+    requestName?: string | null;
     occurredAt: string;
 };
 
@@ -46,16 +50,22 @@ export type AdminAuditEventQuery = {
     from?: string;
     to?: string;
     type?: AdminAuditEventType;
+    requesterId?: string;
     actorId?: string;
     requestId?: string;
     page?: number;
     size?: number;
 };
 
+export type AuditUser = { id: string; name: string; username: string };
+
 export type AdminAuditRequestDetails = {
     id: string;
     requesterId: string;
+    requesterName?: string | null;
     entitlementId: string;
+    entitlementName?: string | null;
+    approverName?: string | null;
     resourceType: Entitlement["resourceType"];
     resourceName: string;
     decisionStatus: "PENDING" | "APPROVED" | "REJECTED" | "CANCELED";
@@ -67,6 +77,7 @@ export type AdminAuditRequestDetails = {
     history: {
         type: AdminAuditEventType;
         actorId: string;
+        actorName?: string | null;
         occurredAt: string;
         failureCode: ProvisioningFailureCode | null;
         closureReason: string | null;
@@ -119,7 +130,9 @@ export type AdminCapabilities = {
 export type FailedProvisioningRequest = {
     id: string;
     requesterId: string;
+    requesterName?: string | null;
     entitlementId: string;
+    entitlementName?: string | null;
     resourceType: Entitlement["resourceType"];
     resourceName: string;
     decisionStatus: "APPROVED";
@@ -128,6 +141,7 @@ export type FailedProvisioningRequest = {
     updatedAt: string;
     closedAt: string | null;
     closedBy: string | null;
+    closedByName?: string | null;
     closureReason: string | null;
 };
 
@@ -152,9 +166,12 @@ export type RevocationFailureCode = "AUTHORITY_UNVERIFIABLE" | "REMOVAL_FAILED" 
 export type RevocationFailure = {
     requestId: string;
     requesterId: string;
+    requesterName?: string | null;
     entitlementId: string;
+    entitlementName?: string | null;
     resourceType: Entitlement["resourceType"];
     resourceId: string;
+    resourceName?: string | null;
     deliveryGroupId: string;
     expiresAt: string;
     failureCode: RevocationFailureCode;
@@ -197,8 +214,11 @@ export type ProvisioningClosureResult = {
 export type NotificationDelivery = {
     id: string;
     requestId: string;
+    requestName?: string | null;
     entitlementId: string;
+    entitlementName?: string | null;
     recipientId: string;
+    recipientName?: string | null;
     recipientType: "USER" | "REALM_ROLE";
     notificationType: "REQUEST_SUBMITTED" | "REQUEST_APPROVED" | "REQUEST_REJECTED" | "PROVISIONING_FAILED" | "PROVISIONING_CLOSED";
     attemptCount: number;
@@ -237,6 +257,7 @@ export type EntitlementsAdminApi = {
     capabilities(): Promise<AdminCapabilities>;
     list(query?: { page?: number; size?: number }): Promise<EntitlementPage>;
     auditEvents(query?: AdminAuditEventQuery): Promise<AdminAuditEventPage>;
+    auditUsers(search: string, signal?: AbortSignal): Promise<{ items: AuditUser[] }>;
     auditRequest(id: string, query?: { page?: number; size?: number }): Promise<AdminAuditRequestDetails>;
     notificationDeliveries(query?: { page?: number; size?: number }): Promise<NotificationDeliveryPage>;
     notificationDeliverySummary(): Promise<NotificationDeliverySummary>;
@@ -323,7 +344,7 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
     });
     const auditQuery = (query: AdminAuditEventQuery = {}) => {
         const parameters = pageQuery(query);
-        for (const key of ["from", "to", "type", "actorId", "requestId"] as const) {
+        for (const key of ["from", "to", "type", "requesterId", "actorId", "requestId"] as const) {
             if (query[key]) {
                 parameters.set(key, query[key]);
             }
@@ -350,6 +371,7 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
         capabilities: () => request("/admin/capabilities"),
         list: (query) => request(`/admin/entitlements?${pageQuery(query)}`),
         auditEvents: (query) => request(`/admin/events?${auditQuery(query)}`),
+        auditUsers: (search, signal) => request(`/admin/audit-users?search=${encodeURIComponent(search)}`, { signal }),
         auditRequest: (id, query) => request(`/admin/requests/${encodeURIComponent(id)}`
             + `?historyPage=${query?.page ?? 0}&historySize=${query?.size ?? 20}`),
         notificationDeliveries: (query) => request(`/admin/notification-deliveries?${pageQuery(query)}`),
