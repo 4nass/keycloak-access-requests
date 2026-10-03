@@ -47,7 +47,7 @@ await i18n.init({
                 accessRequestsAdminNotificationDeliveryProcessing: "Processing",
                 accessRequestsAdminNotificationDeliveryRecipient: "Recipient",
                 accessRequestsAdminNotificationDeliveryRecipientType: "Recipient type",
-                accessRequestsAdminNotificationDeliveryRequestId: "Request ID",
+                accessRequestsAdminNotificationDeliveryRequestId: "Request",
                 accessRequestsAdminNotificationDeliveryRetry: "Retry delivery",
                 accessRequestsAdminNotificationDeliveryRetryDescription: "The delivery will return to the queue.",
                 accessRequestsAdminNotificationDeliveryRetryQueued: "Notification delivery queued for retry.",
@@ -68,12 +68,15 @@ await i18n.init({
 const failedDelivery = {
     attemptCount: 10,
     entitlementId: "entitlement-1",
+    entitlementName: "Finance access",
     id: "delivery-1",
     lastAttemptAt: "2026-09-22T10:00:00Z",
     notificationType: "REQUEST_SUBMITTED" as const,
     recipientId: "user-1",
+    recipientName: "Alex Reader",
     recipientType: "USER" as const,
-    requestId: "request-1"
+    requestId: "request-1",
+    requestName: "Finance access"
 };
 
 function deferred<T>() {
@@ -116,6 +119,12 @@ describe("NotificationDeliveryPage", () => {
         expect(await screen.findByText("Request submitted")).toBeInTheDocument();
         expect(screen.getByText("3")).toBeInTheDocument();
         expect(screen.getByText("10")).toBeInTheDocument();
+        const summary = screen.getByRole("group", { name: "Delivery status" });
+        expect(summary).toHaveClass("access-requests-delivery-summary");
+        expect(summary.querySelectorAll(".access-requests-delivery-summary__item")).toHaveLength(5);
+        for (const label of ["Pending", "Processing", "Failed deliveries", "Delivered", "Discarded"]) {
+            expect(within(summary).getByText(label)).toBeVisible();
+        }
 
         fireEvent.click(screen.getByRole("button", { name: "Retry delivery" }));
         const dialog = await screen.findByRole("dialog", { name: "Retry delivery" });
@@ -132,27 +141,28 @@ describe("NotificationDeliveryPage", () => {
         mocks.api.notificationDeliveries.mockReset()
             .mockResolvedValueOnce({ items: [failedDelivery], total: 40 })
             .mockReturnValueOnce(olderDeliveries.promise)
-            .mockResolvedValueOnce({ items: [{ ...failedDelivery, id: "delivery-current", requestId: "request-current" }], total: 40 });
+            .mockResolvedValueOnce({ items: [{ ...failedDelivery, id: "delivery-current", requestId: "request-current",
+                requestName: "Current access" }], total: 40 });
         mocks.api.notificationDeliverySummary.mockReset()
             .mockResolvedValueOnce({ pending: 3, processing: 1, failed: 1, delivered: 8, discarded: 2 })
             .mockReturnValueOnce(olderSummary.promise)
             .mockResolvedValueOnce({ pending: 17, processing: 1, failed: 1, delivered: 8, discarded: 2 });
         renderPage();
 
-        await screen.findByText("Request ID: request-1");
+        await screen.findByText("Request: Finance access");
         fireEvent.click(screen.getAllByRole("button", { name: "Go to next page" })[0]);
         await waitFor(() => expect(mocks.api.notificationDeliveries).toHaveBeenCalledWith({ page: 1, size: 20 }));
         fireEvent.click(screen.getAllByRole("button", { name: "Go to previous page" })[0]);
-        expect(await screen.findByText("Request ID: request-current")).toBeVisible();
+        expect(await screen.findByText("Request: Current access")).toBeVisible();
         expect(screen.getByText("17")).toBeVisible();
 
         await act(async () => {
             olderSummary.resolve({ pending: 99, processing: 1, failed: 1, delivered: 8, discarded: 2 });
             olderDeliveries.resolve({ items: [{ ...failedDelivery, id: "delivery-stale", requestId: "request-stale" }], total: 40 });
         });
-        expect(screen.getByText("Request ID: request-current")).toBeVisible();
+        expect(screen.getByText("Request: Current access")).toBeVisible();
         expect(screen.getByText("17")).toBeVisible();
-        expect(screen.queryByText("Request ID: request-stale")).not.toBeInTheDocument();
+        expect(screen.queryByText("Request: Stale access")).not.toBeInTheDocument();
         expect(screen.queryByText("99")).not.toBeInTheDocument();
     });
 
@@ -163,17 +173,18 @@ describe("NotificationDeliveryPage", () => {
             .mockReturnValueOnce(nextPage.promise);
         renderPage();
 
-        await screen.findByText("Request ID: request-1");
+        await screen.findByText("Request: Finance access");
         fireEvent.click(screen.getAllByRole("button", { name: "Go to next page" })[0]);
         await waitFor(() => expect(mocks.api.notificationDeliveries).toHaveBeenCalledWith({ page: 1, size: 20 }));
-        expect(screen.queryByText("Request ID: request-1")).not.toBeInTheDocument();
+        expect(screen.queryByText("Request: Finance access")).not.toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "Retry delivery" })).not.toBeInTheDocument();
         expect(screen.getByLabelText("Loading")).toBeVisible();
 
         await act(async () => nextPage.resolve({
-            items: [{ ...failedDelivery, id: "delivery-2", requestId: "request-2" }], total: 40
+            items: [{ ...failedDelivery, id: "delivery-2", requestId: "request-2",
+                requestName: "Next access" }], total: 40
         }));
-        expect(screen.getByText("Request ID: request-2")).toBeVisible();
+        expect(screen.getByText("Request: Next access")).toBeVisible();
     });
 
     it("keeps the confirmation dialog open and presents a safe API error when the retry is rejected", async () => {

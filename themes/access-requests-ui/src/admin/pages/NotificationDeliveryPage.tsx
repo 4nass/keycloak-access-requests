@@ -37,6 +37,8 @@ import {
     type NotificationDeliverySummary
 } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
+import { AccessRequestsAdminTabs } from "./AccessRequestsAdminTabs";
+import "./NotificationDeliveryPage.css";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50].map((value) => ({ title: String(value), value }));
 
@@ -130,6 +132,7 @@ export function NotificationDeliveryPage() {
                 </TextContent>
             </PageSection>
             <PageSection>
+                <AccessRequestsAdminTabs active="notifications" />
                 {actionNotice && (
                     <Alert isInline title={actionNotice} variant="success" className="pf-v5-u-mb-lg" />
                 )}
@@ -208,29 +211,24 @@ export function NotificationDeliveryPage() {
 
 function DeliverySummary({ summary }: { summary: NotificationDeliverySummary }) {
     const { t } = useTranslation();
+    const statuses = [
+        { key: "pending", label: t("accessRequestsAdminNotificationDeliveryPending"), count: summary.pending, color: "blue" },
+        { key: "processing", label: t("accessRequestsAdminNotificationDeliveryProcessing"), count: summary.processing, color: "orange" },
+        { key: "failed", label: t("accessRequestsAdminNotificationDeliveryFailed"), count: summary.failed, color: "red" },
+        { key: "delivered", label: t("accessRequestsAdminNotificationDeliveryDelivered"), count: summary.delivered, color: "green" },
+        { key: "discarded", label: t("accessRequestsAdminNotificationDeliveryDiscarded"), count: summary.discarded, color: "grey" }
+    ] as const;
+
     return (
-        <DescriptionList aria-label={t("accessRequestsAdminNotificationDeliverySummary")} isHorizontal isCompact>
-            <DescriptionListGroup>
-                <DescriptionListTerm>{t("accessRequestsAdminNotificationDeliveryPending")}</DescriptionListTerm>
-                <DescriptionListDescription><Label color="blue">{summary.pending}</Label></DescriptionListDescription>
-            </DescriptionListGroup>
-            <DescriptionListGroup>
-                <DescriptionListTerm>{t("accessRequestsAdminNotificationDeliveryProcessing")}</DescriptionListTerm>
-                <DescriptionListDescription><Label color="orange">{summary.processing}</Label></DescriptionListDescription>
-            </DescriptionListGroup>
-            <DescriptionListGroup>
-                <DescriptionListTerm>{t("accessRequestsAdminNotificationDeliveryFailed")}</DescriptionListTerm>
-                <DescriptionListDescription><Label color="red">{summary.failed}</Label></DescriptionListDescription>
-            </DescriptionListGroup>
-            <DescriptionListGroup>
-                <DescriptionListTerm>{t("accessRequestsAdminNotificationDeliveryDelivered")}</DescriptionListTerm>
-                <DescriptionListDescription><Label color="green">{summary.delivered}</Label></DescriptionListDescription>
-            </DescriptionListGroup>
-            <DescriptionListGroup>
-                <DescriptionListTerm>{t("accessRequestsAdminNotificationDeliveryDiscarded")}</DescriptionListTerm>
-                <DescriptionListDescription><Label color="grey">{summary.discarded}</Label></DescriptionListDescription>
-            </DescriptionListGroup>
-        </DescriptionList>
+        <div aria-label={t("accessRequestsAdminNotificationDeliverySummary")}
+            className="access-requests-delivery-summary" role="group">
+            {statuses.map((status) => (
+                <div className="access-requests-delivery-summary__item" key={status.key}>
+                    <span>{status.label}</span>
+                    <Label color={status.color}>{status.count}</Label>
+                </div>
+            ))}
+        </div>
     );
 }
 
@@ -249,14 +247,18 @@ function NotificationDeliveryListItem({
                 <DataListItemCells dataListCells={[
                     <DataListCell key="delivery" width={3}>
                         <Title headingLevel="h3" id={titleId} size="md">{notificationTypeLabel(delivery.notificationType, t)}</Title>
-                        <Text component="small">{t("accessRequestsAdminNotificationDeliveryRequestId")}: {delivery.requestId}</Text>
-                        <Text component="small">{t("accessRequestsAdminNotificationDeliveryEntitlementId")}: {delivery.entitlementId}</Text>
+                        <div><Text component="small">{t("accessRequestsAdminNotificationDeliveryRequestId")}: {delivery.requestName
+                            ?? t("accessRequestsAdminNotAvailable")}</Text></div>
+                        <div><Text component="small">{t("accessRequestsAdminNotificationDeliveryEntitlementId")}: {delivery.entitlementName
+                            ?? t("accessRequestsAdminNotAvailable")}</Text></div>
                     </DataListCell>,
                     <DataListCell key="recipient" width={2}>
                         <DescriptionList isCompact isHorizontal>
                             <DescriptionListGroup>
                                 <DescriptionListTerm>{t("accessRequestsAdminNotificationDeliveryRecipient")}</DescriptionListTerm>
-                                <DescriptionListDescription>{delivery.recipientId}</DescriptionListDescription>
+                                <DescriptionListDescription>{delivery.recipientName
+                                    ?? t(delivery.recipientType === "USER"
+                                        ? "accessRequestsAdminUserUnavailable" : "accessRequestsAdminNotAvailable")}</DescriptionListDescription>
                             </DescriptionListGroup>
                             <DescriptionListGroup>
                                 <DescriptionListTerm>{t("accessRequestsAdminNotificationDeliveryRecipientType")}</DescriptionListTerm>
