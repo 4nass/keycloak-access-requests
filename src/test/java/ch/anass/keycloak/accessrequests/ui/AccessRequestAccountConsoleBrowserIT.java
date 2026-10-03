@@ -70,7 +70,12 @@ class AccessRequestAccountConsoleBrowserIT {
         try (KeycloakContainer keycloak = keycloak()) {
             keycloak.start();
             configureAdminCliTokenBehavior(keycloak);
-            configureAccountConsole(keycloak);
+            EntitlementRoles entitlementRoles = configureAccountConsole(keycloak);
+            if (AccessRequestBrowserScreenshots.enabled()) {
+                captureEmptyCatalog(keycloak);
+            }
+            createRequestableEntitlement(keycloak, accessToken(keycloak, "admin-cli"),
+                    entitlementRoles.targetRoleId(), entitlementRoles.approverRoleId());
 
             verifyAccountConsole(keycloak, false);
             verifyAccountConsole(keycloak, true);
@@ -105,7 +110,7 @@ class AccessRequestAccountConsoleBrowserIT {
         }
     }
 
-    private void configureAccountConsole(KeycloakContainer keycloak) throws Exception {
+    private EntitlementRoles configureAccountConsole(KeycloakContainer keycloak) throws Exception {
         String adminToken = accessToken(keycloak, "admin-cli");
         String administratorId = findId(keycloak, "/admin/realms/master/users?username=admin&exact=true", adminToken);
         String managerRoleName = "manage-access-requests";
@@ -118,7 +123,27 @@ class AccessRequestAccountConsoleBrowserIT {
         assignRealmRole(keycloak, adminToken, administratorId, approverRoleId, approverRoleName);
         addAccessRequestsAudience(keycloak, adminToken, ACCOUNT_CONSOLE_CLIENT_ID);
         selectAccountTheme(keycloak, adminToken);
-        createRequestableEntitlement(keycloak, accessToken(keycloak, "admin-cli"), targetRoleId, approverRoleId);
+        return new EntitlementRoles(targetRoleId, approverRoleId);
+    }
+
+    private void captureEmptyCatalog(KeycloakContainer keycloak) throws Exception {
+        try (GenericContainer<?> chrome = chrome()) {
+            chrome.start();
+            RemoteWebDriver driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
+            try {
+                driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(30));
+                driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(30));
+                logInToAccountConsole(keycloak, driver);
+                driver.navigate().to(accountConsoleUri() + "request-access");
+                assertPageHeading(driver, "Catalog");
+                waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                        "//h2[normalize-space()='No access available']")));
+                AccessRequestBrowserScreenshots.capture(driver, "account-catalog-empty-light");
+                assertNoJavaScriptErrors(driver);
+            } finally {
+                driver.quit();
+            }
+        }
     }
 
     private void verifyAccountConsole(KeycloakContainer keycloak, boolean darkMode) throws Exception {
@@ -132,7 +157,8 @@ class AccessRequestAccountConsoleBrowserIT {
 
                 logInToAccountConsole(keycloak, driver);
                 assertThemeMode(driver, darkMode);
-                assertRoutesAndNavigation(driver);
+                assertRoutesAndNavigation(driver, darkMode);
+                assertNativeHeaderLayout(driver);
                 assertPackagedAssetsLoaded(driver);
                 assertNoJavaScriptErrors(driver);
             } finally {
@@ -199,15 +225,39 @@ class AccessRequestAccountConsoleBrowserIT {
         assertEquals(darkMode, darkModeClassApplied, "Keycloak must apply its dark-mode class to the custom theme.");
     }
 
-    private void assertRoutesAndNavigation(WebDriver driver) {
-        driver.navigate().to(accountConsoleUri() + "request-access");
-        assertPageHeading(driver, "Request access");
+    private void assertNativeHeaderLayout(WebDriver driver) {
+        WebElement header = waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("header[data-testid='page-header']")));
+        WebElement logo = header.findElement(By.tagName("img"));
 
-        navigateWithAccountSidebar(driver, "My Requests");
-        assertPageHeading(driver, "My Requests");
+        assertTrue(logo.getRect().getHeight() >= 20 && logo.getRect().getHeight() <= 60,
+                "The Account Console logo must use Keycloak's masthead sizing, not its intrinsic image size.");
+        assertTrue(header.getRect().getHeight() <= 120,
+                "The Account Console masthead must not push the page content below an oversized logo.");
+        String bodyFont = driver.findElement(By.tagName("body")).getCssValue("font-family").toLowerCase();
+        assertFalse(bodyFont.contains("times new roman"),
+                "PatternFly's base typography must remain loaded alongside the Account Console styles.");
+    }
+
+    private void assertRoutesAndNavigation(WebDriver driver, boolean darkMode) throws Exception {
+        String suffix = darkMode ? "dark" : "light";
+        driver.navigate().to(accountConsoleUri() + "request-access");
+        assertPageHeading(driver, "Catalog");
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                By.xpath("//*[normalize-space()='Browser test access']")));
+        AccessRequestBrowserScreenshots.capture(driver, "account-catalog-" + suffix);
+
+        navigateWithAccountSidebar(driver, "My requests");
+        assertPageHeading(driver, "My requests");
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                "//h2[normalize-space()='No requests yet']")));
+        AccessRequestBrowserScreenshots.capture(driver, "account-my-requests-" + suffix);
 
         navigateWithAccountSidebar(driver, "Approvals");
         assertPageHeading(driver, "Approvals");
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                "//h2[normalize-space()='No approvals pending']")));
+        AccessRequestBrowserScreenshots.capture(driver, "account-approvals-" + suffix);
     }
 
     private void navigateWithAccountSidebar(WebDriver driver, String label) {
@@ -304,18 +354,17 @@ class AccessRequestAccountConsoleBrowserIT {
         String displayName = "Browser test access";
         String description = "Access used to exercise the packaged Account Console.";
         HttpResponse<String> created = HTTP_CLIENT.send(
-                adminRequest(keycloak, "/realms/master/access-requests/admin/entitlements", managerToken)
+                adminRequest(keycloak, "/realms/master/access-requests/admin/access-packages", managerToken)
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString("""
                                 {
-                                  "resourceType":"REALM_ROLE",
-                                  "resourceId":"%s",
                                   "displayName":"%s",
                                   "description":"%s",
                                   "riskLevel":"LOW",
-                                  "approverRoleId":"%s"
+                                  "approverRoleId":"%s",
+                                  "roleMappings":[{"type":"REALM_ROLE","roleId":"%s"}]
                                 }
-                                """.formatted(targetRoleId, displayName, description, approverRoleId)))
+                                """.formatted(displayName, description, approverRoleId, targetRoleId)))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(201, created.statusCode());
@@ -455,6 +504,9 @@ class AccessRequestAccountConsoleBrowserIT {
 
     private String accountConsoleUri() {
         return "https://keycloak:8443/realms/master/account/";
+    }
+
+    private record EntitlementRoles(String targetRoleId, String approverRoleId) {
     }
 
     private static HttpClient insecureHttpClient() {

@@ -81,7 +81,14 @@ class AccessRequestAdminConsoleBrowserIT {
         try (KeycloakContainer keycloak = keycloak()) {
             keycloak.start();
             configureAdminCliTokenBehavior(keycloak);
-            AdminConsoleFixture fixture = configureAdminConsole(keycloak);
+            AdminConsoleFixture fixture = configureAdminConsole(keycloak,
+                    !AccessRequestBrowserScreenshots.enabled());
+            if (AccessRequestBrowserScreenshots.enabled()) {
+                captureEmptyAdminCatalog(keycloak, fixture);
+                createSeedEntitlement(keycloak, fixture.globalAdminToken(),
+                        createRealmRole(keycloak, fixture.globalAdminToken(), "reporting-readers-late"),
+                        fixture.approverRoleId());
+            }
 
             verifyCatalogManagement(keycloak, fixture, false, true);
             verifyCatalogManagement(keycloak, fixture, true, false);
@@ -110,16 +117,18 @@ class AccessRequestAdminConsoleBrowserIT {
 
             String suffix = UUID.randomUUID().toString();
             String roleName = "browser-target-" + suffix;
-            String entitlementName = "Browser workflow entitlement " + suffix.substring(0, 8);
+            String entitlementName = "Project reporting access";
             String approverRoleName = "browser-approver-" + suffix;
             String roleId = createRealmRole(keycloak, adminToken, roleName);
             String approverRoleId = createRealmRole(keycloak, adminToken, approverRoleName);
-            String requesterUsername = "browser-requester-" + suffix;
-            String approverUsername = "browser-approver-user-" + suffix;
+            String requesterUsername = "workflow-requester";
+            String approverUsername = "workflow-approver";
             String requesterPassword = "browser-requester-password";
             String approverPassword = "browser-approver-password";
-            String requesterId = createEnabledUser(keycloak, adminToken, requesterUsername, requesterPassword);
-            String approverId = createEnabledUser(keycloak, adminToken, approverUsername, approverPassword);
+            String requesterId = createEnabledUser(keycloak, adminToken, requesterUsername, requesterPassword,
+                    "Jane", "Requester");
+            String approverId = createEnabledUser(keycloak, adminToken, approverUsername, approverPassword,
+                    "Alex", "Approver");
             assignRealmRole(keycloak, adminToken, approverId, approverRoleId, approverRoleName);
             assertRoleNotGranted(keycloak, adminToken, requesterId, roleId);
 
@@ -132,8 +141,7 @@ class AccessRequestAdminConsoleBrowserIT {
                 configureDriver(driver);
                 logInToAdminConsole(keycloak, driver, manager.managerUsername(), manager.managerPassword());
                 openAccessRequests(driver);
-                createEntitlement(driver, workflowCatalog, entitlementName);
-                updateEntitlement(driver, entitlementName);
+                createAndPublishAccessPackage(driver, workflowCatalog, entitlementName);
                 assertNoJavaScriptErrors(driver);
             } finally {
                 driver.quit();
@@ -146,12 +154,19 @@ class AccessRequestAdminConsoleBrowserIT {
                 logInToAccountConsole(keycloak, driver, requesterUsername, requesterPassword, "request-access");
                 By entitlement = By.id("requestable-entitlement-" + entitlementId);
                 WebElement row = waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(entitlement));
+                AccessRequestBrowserScreenshots.capture(driver, "workflow-request-access");
+                AccessRequestBrowserScreenshots.capture(driver, "account-catalog-filled-light");
                 row.findElement(By.xpath(".//button[normalize-space()='Request access']")).click();
                 driver.findElement(By.id("access-request-justification")).sendKeys(justification);
                 driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Submit request']")).click();
                 waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
                         By.xpath("//*[@id='requestable-entitlement-" + entitlementId
                                 + "']//*[normalize-space()='Request pending']")));
+                driver.navigate().to(accountConsoleUri() + "my-requests");
+                waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                        By.xpath("//strong[normalize-space()=" + xpathLiteral(entitlementName) + "]")));
+                AccessRequestBrowserScreenshots.capture(driver, "workflow-my-requests-pending");
+                AccessRequestBrowserScreenshots.capture(driver, "account-my-requests-filled-light");
                 assertNoJavaScriptErrors(driver);
             } finally {
                 driver.quit();
@@ -167,6 +182,10 @@ class AccessRequestAdminConsoleBrowserIT {
                 WebElement row = waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
                         By.id("pending-request-" + requestId)));
                 assertTrue(row.getText().contains(justification));
+                assertTrue(row.getText().contains("Jane Requester"));
+                assertFalse(row.getText().contains(requesterId));
+                AccessRequestBrowserScreenshots.capture(driver, "workflow-approvals-pending");
+                AccessRequestBrowserScreenshots.capture(driver, "account-approvals-filled-light");
                 row.findElement(By.xpath(".//button[normalize-space()='Approve']")).click();
                 driver.findElement(By.id("access-request-decision-comment"))
                         .sendKeys("Approved for the project.");
@@ -198,6 +217,12 @@ class AccessRequestAdminConsoleBrowserIT {
                         By.id("access-request-" + requestId)));
                 assertTrue(row.getText().contains(entitlementName));
                 assertTrue(row.getText().contains("Approved"));
+                row.findElement(By.xpath(".//button[normalize-space()='View details']")).click();
+                WebElement details = waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                        By.cssSelector("[role='dialog']")));
+                waitFor(driver).until(d -> details.getText().contains("Alex Approver"));
+                assertFalse(details.getText().contains(approverId));
+                AccessRequestBrowserScreenshots.capture(driver, "workflow-my-requests-approved");
                 assertNoJavaScriptErrors(driver);
             } finally {
                 driver.quit();
@@ -207,16 +232,41 @@ class AccessRequestAdminConsoleBrowserIT {
             try {
                 configureDriver(driver);
                 logInToAdminConsole(keycloak, driver, manager.managerUsername(), manager.managerPassword());
-                driver.navigate().to(adminConsoleUri() + "#/master/access-requests/requests/" + requestId);
+                driver.navigate().to(adminConsoleUri() + "#/master/access-requests/events");
+                waitFor(driver).until(ExpectedConditions.elementToBeClickable(By.xpath(
+                        "//a[contains(@href, '/access-requests/requests/" + requestId + "')]"))).click();
+                waitFor(driver).until(ExpectedConditions.urlContains(
+                        "/master/access-requests/requests/" + requestId));
                 waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
-                        By.xpath("//h2[normalize-space()='History']")));
-                assertAuditDetailValue(driver, "Requester", requesterId);
+                        By.xpath("//h3[normalize-space()='History']")));
+                waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[role='dialog']")));
+                assertPageHeading(driver, "Events");
+                assertTrue(driver.findElement(By.xpath("//*[@role='tab' and normalize-space()='Events']"))
+                        .getAttribute("aria-selected").equals("true"));
+                assertAuditDetailValue(driver, "Requester", "Jane Requester");
                 assertAuditDetailValue(driver, "Decision status", "Approved");
                 assertAuditDetailValue(driver, "Provisioning status", "Succeeded");
-                assertAuditHistoryActor(driver, "Requested", requesterId);
-                assertAuditHistoryActor(driver, "Approved", approverId);
-                assertAuditHistoryActor(driver, "Provisioning started", approverId);
-                assertAuditHistoryActor(driver, "Provisioning succeeded", approverId);
+                assertAuditHistoryActor(driver, "Requested", "Jane Requester");
+                assertAuditHistoryActor(driver, "Approved", "Alex Approver");
+                assertAuditHistoryActor(driver, "Provisioning started", "Alex Approver");
+                assertAuditHistoryActor(driver, "Provisioning succeeded", "Alex Approver");
+                AccessRequestBrowserScreenshots.capture(driver, "workflow-admin-request-history");
+                driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Close']")).click();
+                waitFor(driver).until(ExpectedConditions.invisibilityOfElementLocated(By.cssSelector("[role='dialog']")));
+                waitFor(driver).until(ExpectedConditions.urlContains("/master/access-requests/events"));
+                waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                        "//a[contains(@href, '/access-requests/requests/" + requestId + "')]")));
+                if (AccessRequestBrowserScreenshots.enabled()) {
+                    String openRequesterId = createEnabledUser(keycloak, adminToken,
+                            "gallery-open-requester", "gallery-password", "Robin", "Requester");
+                    String closedRequesterId = createEnabledUser(keycloak, adminToken,
+                            "gallery-closed-requester", "gallery-password", "Sam", "Requester");
+                    AccessRequestBrowserGalleryFixture.Incidents incidents =
+                            AccessRequestBrowserGalleryFixture.seed(postgres, requestId,
+                                    openRequesterId, closedRequesterId, approverId, manager.approverRoleId());
+                    capturePopulatedAdminPages(keycloak, driver, adminToken, incidents,
+                            requestId, requesterId);
+                }
                 assertNoJavaScriptErrors(driver);
             } finally {
                 driver.quit();
@@ -253,7 +303,7 @@ class AccessRequestAdminConsoleBrowserIT {
 
     private void logInToAccountConsole(
             KeycloakContainer keycloak, WebDriver driver, String username, String password, String route) {
-        driver.navigate().to("https://keycloak:8443/realms/master/account/" + route);
+        driver.navigate().to(accountConsoleUri() + route);
         try {
             waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.id("username"))).sendKeys(username);
         } catch (TimeoutException exception) {
@@ -383,8 +433,10 @@ class AccessRequestAdminConsoleBrowserIT {
                     waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(requestLink));
                     assertTrue(driver.getCurrentUrl().contains("/master/access-requests/events"));
 
+                    driver.findElement(By.xpath("//button[contains(normalize-space(.), 'Filters')]")).click();
                     WebElement requestFilter = driver.findElement(By.id("audit-request-id"));
                     requestFilter.sendKeys(pending.request().requestId());
+                    driver.findElement(By.xpath("//form[@id='audit-event-search']//button[@type='submit']")).click();
                     waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(requestLink));
                     assertTrue(driver.findElement(By.tagName("body")).getText().contains("Approved"));
                     assertTrue(driver.findElements(requestLink).size() >= 1,
@@ -393,15 +445,20 @@ class AccessRequestAdminConsoleBrowserIT {
                     waitFor(driver).until(ExpectedConditions.urlContains(
                             "/master/access-requests/requests/" + pending.request().requestId()));
                     waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
-                            By.xpath("//h2[normalize-space()='History']")));
-                    assertAuditDetailValue(driver, "Requester", pending.request().requesterId());
+                            By.xpath("//h3[normalize-space()='History']")));
+                    waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[role='dialog']")));
+                    assertAuditDetailValue(driver, "Requester", pending.request().requesterUsername());
+                    assertAuditDetailValue(driver, "Entitlement", pending.request().displayName());
                     assertAuditDetailValue(driver, "Decision status", "Approved");
                     assertAuditDetailValue(driver, "Provisioning status", "Failed");
-                    assertAuditHistoryActor(driver, "Requested", pending.request().requesterId());
-                    assertAuditHistoryActor(driver, "Approved", pending.approverId());
-                    assertAuditHistoryActor(driver, "Provisioning failed", pending.approverId());
+                    assertAuditHistoryActor(driver, "Requested", pending.request().requesterUsername());
+                    assertAuditHistoryActor(driver, "Approved", pending.approverUsername());
+                    assertAuditHistoryActor(driver, "Provisioning failed", pending.approverUsername());
                     assertApiRequestStatus(driver,
                             "/access-requests/admin/requests/" + pending.request().requestId(), 200);
+                    driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Close']")).click();
+                    waitFor(driver).until(ExpectedConditions.urlContains("/master/access-requests/events"));
+                    waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(requestLink));
                     assertNoJavaScriptErrors(driver);
                 } finally {
                     driver.quit();
@@ -416,11 +473,11 @@ class AccessRequestAdminConsoleBrowserIT {
         assertEquals(expectedValue, driver.findElement(value).getText().trim(), label);
     }
 
-    private void assertAuditHistoryActor(WebDriver driver, String eventType, String actorId) {
+    private void assertAuditHistoryActor(WebDriver driver, String eventType, String actorName) {
         By entries = By.cssSelector("[aria-label='History'] li.pf-v5-c-data-list__item");
         waitFor(driver).until(page -> page.findElements(entries).stream()
                 .map(WebElement::getText)
-                .anyMatch(text -> text.contains(eventType) && text.contains("Actor ID: " + actorId)));
+                .anyMatch(text -> text.contains(eventType) && text.contains("Actor: " + actorName)));
     }
 
     @Test
@@ -460,7 +517,7 @@ class AccessRequestAdminConsoleBrowserIT {
                         logInToAdminConsole(keycloak, driver, fixture.managerUsername(), fixture.managerPassword());
                         openAccessRequests(driver);
                         openFailedProvisioning(driver);
-                        assertPageHeading(driver, "Failed provisioning");
+                        assertPageHeading(driver, "Provisioning failures");
                         retryFailedProvisioningInBrowser(
                                 driver, failure, "The original resource is missing.");
                         assertApiRequestStatus(
@@ -497,7 +554,7 @@ class AccessRequestAdminConsoleBrowserIT {
                     logInToAdminConsole(keycloak, driver, admin.managerUsername(), admin.managerPassword());
                     openAccessRequests(driver);
                     openFailedProvisioning(driver);
-                    assertPageHeading(driver, "Failed provisioning");
+                    assertPageHeading(driver, "Provisioning failures");
                     closeFailedProvisioningInBrowser(driver, old);
                     assertApiRequestStatus(driver,
                             "/admin/requests/" + old.requestId() + "/provisioning/close", 200);
@@ -571,26 +628,32 @@ class AccessRequestAdminConsoleBrowserIT {
     }
 
     private AdminConsoleFixture configureAdminConsole(KeycloakContainer keycloak) throws Exception {
+        return configureAdminConsole(keycloak, true);
+    }
+
+    private AdminConsoleFixture configureAdminConsole(KeycloakContainer keycloak, boolean seedCatalog) throws Exception {
         String globalAdminToken = accessToken(keycloak, "admin-cli", "admin", "admin");
         selectAdminTheme(keycloak, globalAdminToken);
 
-        String managerUsername = "catalog-manager-" + UUID.randomUUID();
+        String managerUsername = "catalog-manager";
         String managerPassword = "catalog-manager-password";
-        String observerUsername = "catalog-observer-" + UUID.randomUUID();
+        String observerUsername = "catalog-observer";
         String observerPassword = "catalog-observer-password";
         String managerUserId = createEnabledUser(keycloak, globalAdminToken, managerUsername, managerPassword);
         String observerUserId = createEnabledUser(keycloak, globalAdminToken, observerUsername, observerPassword);
 
         String managerRoleName = "manage-access-requests";
         String managerRoleId = createRealmRole(keycloak, globalAdminToken, managerRoleName);
-        String approverRoleId = createRealmRole(keycloak, globalAdminToken, "catalog-approver-" + UUID.randomUUID());
-        String seedTargetRoleId = createRealmRole(keycloak, globalAdminToken, "catalog-seed-target-" + UUID.randomUUID());
-        String managedTargetRoleId = createRealmRole(keycloak, globalAdminToken, "catalog-managed-target-" + UUID.randomUUID());
+        String approverRoleId = createRealmRole(keycloak, globalAdminToken, "reporting-approvers");
+        String managedTargetRoleId = createRealmRole(keycloak, globalAdminToken, "managed-reporting-readers");
 
         assignRealmRole(keycloak, globalAdminToken, managerUserId, managerRoleId, managerRoleName);
         assignMasterRealmManagementRole(keycloak, globalAdminToken, managerUserId, "view-realm");
         assignMasterRealmManagementRole(keycloak, globalAdminToken, observerUserId, "view-realm");
-        createSeedEntitlement(keycloak, globalAdminToken, seedTargetRoleId, approverRoleId);
+        if (seedCatalog) {
+            String seedTargetRoleId = createRealmRole(keycloak, globalAdminToken, "reporting-readers");
+            createSeedEntitlement(keycloak, globalAdminToken, seedTargetRoleId, approverRoleId);
+        }
 
         return new AdminConsoleFixture(
                 globalAdminToken,
@@ -600,6 +663,25 @@ class AccessRequestAdminConsoleBrowserIT {
                 observerPassword,
                 managedTargetRoleId,
                 approverRoleId);
+    }
+
+    private void captureEmptyAdminCatalog(KeycloakContainer keycloak, AdminConsoleFixture fixture) throws Exception {
+        try (GenericContainer<?> chrome = chrome()) {
+            chrome.start();
+            RemoteWebDriver driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
+            try {
+                configureDriver(driver);
+                logInToAdminConsole(keycloak, driver, fixture.managerUsername(), fixture.managerPassword());
+                openAccessRequests(driver);
+                assertPageHeading(driver, "Access requests");
+                waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                        "//*[normalize-space()='No access entitlements have been configured yet.']")));
+                AccessRequestBrowserScreenshots.capture(driver, "admin-catalog-empty-light");
+                assertNoJavaScriptErrors(driver);
+            } finally {
+                driver.quit();
+            }
+        }
     }
 
     private void verifyCatalogManagement(
@@ -617,20 +699,71 @@ class AccessRequestAdminConsoleBrowserIT {
                 assertCatalogLoaded(driver, "Browser seed entitlement");
 
                 if (exerciseCatalogWorkflow) {
-                    String displayName = "Browser managed entitlement " + UUID.randomUUID();
+                    String displayName = "Managed reporting access";
                     createEntitlement(driver, fixture, displayName);
                     updateEntitlement(driver, displayName);
                     assertEntitlementWasPersisted(keycloak, fixture.globalAdminToken(), displayName);
-                    String packageName = "Browser access package " + UUID.randomUUID();
+                    String packageName = "Temporary reporting access";
                     createAndPublishAccessPackage(driver, fixture, packageName);
                     assertAccessPackageWasPersisted(keycloak, fixture, packageName);
                 }
 
+                AccessRequestBrowserScreenshots.capture(driver,
+                        darkMode ? "admin-catalog-dark" : "admin-catalog-light");
+                if (!darkMode) {
+                    driver.navigate().to(adminConsoleUri() + "#/master/access-requests/events");
+                    assertPageHeading(driver, "Events");
+                    WebElement searchEvents = waitFor(driver).until(ExpectedConditions.elementToBeClickable(
+                            By.xpath("//button[contains(normalize-space(.), 'Filters')]")));
+                    searchEvents.click();
+                    waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.id("audit-event-search")));
+                    assertEquals("true", searchEvents.getAttribute("aria-expanded"));
+                    AccessRequestBrowserScreenshots.capture(driver, "admin-events-light");
+                    driver.findElement(By.id("audit-requester-search")).sendKeys(fixture.managerUsername());
+                    WebElement requester = waitFor(driver).until(ExpectedConditions.elementToBeClickable(
+                            By.id("audit-requester")));
+                    waitFor(driver).until(ignored -> new Select(requester).getOptions().stream()
+                            .anyMatch(option -> option.getText().contains(fixture.managerUsername())));
+                    new Select(requester).selectByVisibleText(fixture.managerUsername());
+                    driver.findElement(By.xpath("//form[@id='audit-event-search']//button[@type='submit']")).click();
+                    waitFor(driver).until(ignored -> apiRequests(driver).stream().anyMatch(request -> {
+                        String url = (String) request.get("url");
+                        return url.contains("/access-requests/admin/events?") && url.contains("requesterId=");
+                    }));
+                    assertApiRequestStatus(driver, "/access-requests/admin/audit-users", 200);
+                    assertApiRequestStatus(driver, "requesterId=", 200);
+                }
+
                 openFailedProvisioning(driver);
-                assertPageHeading(driver, "Failed provisioning");
+                assertPageHeading(driver, "Provisioning failures");
                 waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
                         "//h2[normalize-space()='There are no failed provisioning requests.']")));
                 assertApiRequestStatus(driver, "/access-requests/admin/provisioning-failures", 200);
+                if (!darkMode) {
+                    AccessRequestBrowserScreenshots.capture(driver, "admin-failed-provisioning-light");
+                }
+                if (!darkMode) {
+                    new Select(driver.findElement(By.id("provisioning-failure-status"))).selectByValue("CLOSED");
+                    waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                            "//h2[normalize-space()='There are no closed provisioning failures.']")));
+                    AccessRequestBrowserScreenshots.capture(driver, "admin-provisioning-failures-closed-empty-light");
+                }
+
+                driver.navigate().to(adminConsoleUri() + "#/master/access-requests/notification-deliveries");
+                assertPageHeading(driver, "Email notifications");
+                waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                        "//h2[normalize-space()='There are no failed notification emails.']")));
+                assertApiRequestStatus(driver, "/access-requests/admin/notification-deliveries/summary", 200);
+                AccessRequestBrowserScreenshots.capture(driver,
+                        darkMode ? "admin-email-notifications-dark" : "admin-email-notifications-light");
+
+                driver.navigate().to(adminConsoleUri() + "#/master/access-requests/revocation-failures");
+                assertPageHeading(driver, "Revocation failures");
+                waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                        "//h2[normalize-space()='No open revocation failures.']")));
+                assertApiRequestStatus(driver, "/access-requests/admin/revocation-failures", 200);
+                AccessRequestBrowserScreenshots.capture(driver,
+                        darkMode ? "admin-revocation-failures-dark" : "admin-revocation-failures-light");
 
                 assertPackagedAssetsLoaded(driver);
                 assertNoJavaScriptErrors(driver);
@@ -638,6 +771,82 @@ class AccessRequestAdminConsoleBrowserIT {
                 driver.quit();
             }
         }
+    }
+
+    private void capturePopulatedAdminPages(KeycloakContainer keycloak, WebDriver driver,
+            String adminToken, AccessRequestBrowserGalleryFixture.Incidents incidents,
+            String grantedRequestId, String requesterId)
+            throws Exception {
+        String base = "/realms/master/access-requests/admin/";
+        HttpResponse<String> notificationResponse = HTTP_CLIENT.send(
+                adminRequest(keycloak, base + "notification-deliveries", adminToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, notificationResponse.statusCode(), notificationResponse.body());
+        assertTrue(notificationResponse.body().contains(incidents.openProvisioningRequestId()));
+        driver.manage().window().setSize(new org.openqa.selenium.Dimension(1920, 1400));
+
+        driver.navigate().to(adminConsoleUri() + "#/master/access-requests/notification-deliveries");
+        assertPageHeading(driver, "Email notifications");
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                "//button[normalize-space()='Retry sending']")));
+        AccessRequestBrowserScreenshots.capture(driver, "admin-email-notifications-filled-light");
+
+        driver.navigate().to(adminConsoleUri() + "#/master/access-requests/provisioning-failures");
+        assertPageHeading(driver, "Provisioning failures");
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                By.id("failed-provisioning-" + incidents.openProvisioningRequestId())));
+        AccessRequestBrowserScreenshots.capture(driver, "admin-provisioning-failures-filled-light");
+        new Select(driver.findElement(By.id("provisioning-failure-status"))).selectByValue("CLOSED");
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                By.id("failed-provisioning-" + incidents.closedProvisioningRequestId())));
+        AccessRequestBrowserScreenshots.capture(driver, "admin-provisioning-failures-closed-light");
+
+        driver.navigate().to(adminConsoleUri() + "#/master/access-requests/revocation-failures");
+        assertPageHeading(driver, "Revocation failures");
+        HttpResponse<String> revocationResponse = HTTP_CLIENT.send(
+                adminRequest(keycloak, base + "revocation-failures?state=OPEN", adminToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, revocationResponse.statusCode(), revocationResponse.body());
+        assertTrue(revocationResponse.body().contains(grantedRequestId), revocationResponse.body());
+        try {
+            waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                    By.id("revocation-failure-" + grantedRequestId)));
+        } catch (TimeoutException exception) {
+            throw new AssertionError("The revocation API returned the incident, but the page did not show it. "
+                    + "Page: " + driver.findElement(By.tagName("body")).getText()
+                    + ". API: " + revocationResponse.body(), exception);
+        }
+        AccessRequestBrowserScreenshots.capture(driver, "admin-revocation-failures-filled-light");
+        new Select(driver.findElement(By.id("revocation-failure-status"))).selectByValue("RESOLVED");
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                "//h2[normalize-space()='No resolved revocation failures.']")));
+        AccessRequestBrowserScreenshots.capture(driver, "admin-revocation-failures-resolved-empty-light");
+
+        // Resolve the incident only after Keycloak confirms that the package membership was removed.
+        HttpResponse<Void> membershipRemoved = HTTP_CLIENT.send(
+                adminRequest(keycloak, "/admin/realms/master/users/" + requesterId
+                        + "/groups/" + incidents.deliveryGroupId(), adminToken)
+                        .DELETE().build(), HttpResponse.BodyHandlers.discarding());
+        assertEquals(204, membershipRemoved.statusCode());
+        HttpResponse<String> resolved = HTTP_CLIENT.send(
+                adminRequest(keycloak, base + "grants/" + grantedRequestId + "/revocation/resolve", adminToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"reason\":\"Package membership removed by an administrator.\"}"))
+                        .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, resolved.statusCode(), resolved.body());
+        driver.navigate().refresh();
+        assertPageHeading(driver, "Revocation failures");
+        new Select(driver.findElement(By.id("revocation-failure-status"))).selectByValue("RESOLVED");
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                By.id("revocation-failure-" + grantedRequestId)));
+        AccessRequestBrowserScreenshots.capture(driver, "admin-revocation-failures-resolved-filled-light");
+
+        driver.navigate().to(adminConsoleUri() + "#/master/access-requests/events");
+        assertPageHeading(driver, "Events");
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                "//table[@aria-label='Events']//td[normalize-space()='Provisioning failed']")));
+        AccessRequestBrowserScreenshots.capture(driver, "admin-events-filled-light");
     }
 
     private void verifyCatalogAccessDenied(KeycloakContainer keycloak, AdminConsoleFixture fixture) throws Exception {
@@ -745,7 +954,7 @@ class AccessRequestAdminConsoleBrowserIT {
     }
 
     private void openFailedProvisioning(WebDriver driver) {
-        By failedProvisioning = By.xpath("//a[normalize-space()='Failed provisioning']");
+        By failedProvisioning = By.xpath("//*[@role='tab' and normalize-space()='Provisioning failures']");
         WebElement link = waitFor(driver).until(ExpectedConditions.elementToBeClickable(failedProvisioning));
         ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", link);
         link.click();
@@ -758,7 +967,7 @@ class AccessRequestAdminConsoleBrowserIT {
                 + xpathLiteral(failure.displayName()) + "]]";
         WebElement item = wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath(itemXPath)));
         assertTrue(item.getText().contains(failure.requestId()));
-        assertTrue(item.getText().contains(failure.requesterId()));
+        assertTrue(item.getText().contains(failure.requesterUsername()));
         assertTrue(item.getText().contains(expectedCause));
         assertFalse(item.getText().contains("The configured Keycloak role no longer exists."));
         item.findElement(By.xpath(".//button[normalize-space()='Retry provisioning']")).click();
@@ -798,8 +1007,8 @@ class AccessRequestAdminConsoleBrowserIT {
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
                 "//*[contains(@class, 'pf-v5-c-alert__title') and "
                         + "contains(normalize-space(.), 'The failure was closed without granting access.')]")));
-        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
-                "//button[normalize-space()='Closed failures']"))).click();
+        new Select(wait.until(ExpectedConditions.elementToBeClickable(
+                By.id("provisioning-failure-status")))).selectByValue("CLOSED");
         WebElement archived = wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath(itemXPath)));
         assertTrue(archived.getText().contains(failure.requestId()));
         assertTrue(archived.getText().contains("The original role was deleted"));
@@ -883,7 +1092,7 @@ class AccessRequestAdminConsoleBrowserIT {
                 new FailedProvisioningFixture(requestId, entitlementId, requesterId,
                         requestClientId, requesterUsername, requesterPassword,
                         targetRoleId, targetRoleName, displayName),
-                approverId, approverRoleId, approverToken);
+                approverId, approverUsername, approverRoleId, approverToken);
     }
 
     private void restoreOriginalRoleIdForTest(
@@ -1122,7 +1331,7 @@ class AccessRequestAdminConsoleBrowserIT {
     private String userRealmRoles(KeycloakContainer keycloak, String globalAdminToken, String requesterId)
             throws Exception {
         HttpResponse<String> mappings = HTTP_CLIENT.send(
-                adminRequest(keycloak, "/admin/realms/master/users/" + requesterId + "/role-mappings/realm",
+                adminRequest(keycloak, "/admin/realms/master/users/" + requesterId + "/role-mappings/realm/composite",
                         globalAdminToken).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, mappings.statusCode(), mappings.body());
@@ -1180,14 +1389,15 @@ class AccessRequestAdminConsoleBrowserIT {
         wait.until(ExpectedConditions.elementToBeClickable(
                 By.xpath(itemXPath + "//button[normalize-space()='Edit entitlement']"))).click();
 
-        WebElement requestable = wait.until(ExpectedConditions.elementToBeClickable(By.id("entitlement-requestable")));
-        if (!requestable.isSelected()) {
-            requestable.click();
-        }
+        WebElement requestable = driver.findElement(By.id("entitlement-requestable"));
+        assertFalse(requestable.isEnabled(), "A direct entitlement must remain a closed draft.");
+        WebElement description = driver.findElement(By.id("entitlement-description"));
+        description.clear();
+        description.sendKeys("Updated through the deployed Administration Console.");
         driver.findElement(By.xpath("//button[normalize-space()='Save']")).click();
 
         wait.until(ExpectedConditions.visibilityOfElementLocated(
-                By.xpath(itemXPath + "//*[normalize-space()='Open for requests']")));
+                By.xpath(itemXPath + "//*[normalize-space()='Updated through the deployed Administration Console.']")));
     }
 
     private void createAndPublishAccessPackage(WebDriver driver, AdminConsoleFixture fixture, String displayName) {
@@ -1213,9 +1423,9 @@ class AccessRequestAdminConsoleBrowserIT {
         driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Create access package']")).click();
 
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
-                "//*[@role='dialog']//*[contains(text(),'AR_PKG_')]")));
-        wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
                 "//*[@role='dialog']//*[normalize-space()='Package roles']")));
+        assertTrue(driver.findElements(By.xpath("//*[@role='dialog']//*[contains(text(),'AR_PKG_')]")).isEmpty(),
+                "The internal group name must not appear in Access Requests screens.");
         WebElement requestable = wait.until(ExpectedConditions.elementToBeClickable(By.id("entitlement-requestable")));
         assertFalse(requestable.isSelected(), "A new access package must be closed until reviewed.");
         requestable.click();
@@ -1264,8 +1474,17 @@ class AccessRequestAdminConsoleBrowserIT {
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, response.statusCode());
-        assertTrue(response.body().contains("\"displayName\":\"" + displayName + "\""));
-        assertTrue(response.body().contains("\"requestable\":true"));
+        JsonNode items = JSON.readTree(response.body()).path("items");
+        JsonNode draft = null;
+        for (JsonNode item : items) {
+            if (displayName.equals(item.path("displayName").asText())) {
+                draft = item;
+                break;
+            }
+        }
+        assertTrue(draft != null, "The direct draft must remain in the catalog.");
+        assertFalse(draft.path("requestable").asBoolean());
+        assertEquals("Updated through the deployed Administration Console.", draft.path("description").asText());
     }
 
     private String xpathLiteral(String value) {
@@ -1365,16 +1584,23 @@ class AccessRequestAdminConsoleBrowserIT {
 
     private String createEnabledUser(
             KeycloakContainer keycloak, String globalAdminToken, String username, String password) throws Exception {
+        return createEnabledUser(keycloak, globalAdminToken, username, password, "", "");
+    }
+
+    private String createEnabledUser(KeycloakContainer keycloak, String globalAdminToken,
+            String username, String password, String firstName, String lastName) throws Exception {
         HttpResponse<Void> created = HTTP_CLIENT.send(
                 adminRequest(keycloak, "/admin/realms/master/users", globalAdminToken)
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString("""
                                 {
                                   "username":"%s",
+                                  "firstName":"%s",
+                                  "lastName":"%s",
                                   "enabled":true,
                                   "credentials":[{"type":"password","value":"%s","temporary":false}]
                                 }
-                                """.formatted(username, password)))
+                                """.formatted(username, firstName, lastName, password)))
                         .build(),
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(201, created.statusCode());
@@ -1473,6 +1699,10 @@ class AccessRequestAdminConsoleBrowserIT {
         return "https://keycloak:8443/admin/master/console/";
     }
 
+    private String accountConsoleUri() {
+        return "https://keycloak:8443/realms/master/account/";
+    }
+
     private static HttpClient insecureHttpClient() {
         try {
             X509TrustManager trustAllCertificates = new X509TrustManager() {
@@ -1526,6 +1756,7 @@ class AccessRequestAdminConsoleBrowserIT {
     private record PendingProvisioningFixture(
             FailedProvisioningFixture request,
             String approverId,
+            String approverUsername,
             String approverRoleId,
             String approverToken) {
     }
