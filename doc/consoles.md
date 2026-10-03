@@ -14,8 +14,8 @@ Teams that keep their own theme can integrate the realm API and reproduce the re
 
 The Account Console is the end-user experience. It adds an **Access requests** navigation group with:
 
-- **Request access**: browse the requestable catalog, search it, and submit a justification and requested duration (or permanent access when allowed);
-- **My Requests**: view request status, decision details, and immutable history; cancel pending requests;
+- **Catalog**: browse requestable access, search it, and submit a justification and requested duration (or permanent access when allowed);
+- **My requests**: view request status, decision details, and immutable history; cancel pending requests;
 - **Approvals**: view the requested duration and decide requests only when the signed-in user can approve at least one entitlement.
 
 The theme extends `keycloak.v3`, uses Keycloak Account Console components and PatternFly patterns, and obtains data from the realm API. Dates, request states, history, risk levels, and feedback messages are localized.
@@ -24,7 +24,13 @@ The navigation is not an authorization mechanism. The API remains responsible fo
 
 ## Admin Console
 
-The Admin Console owns entitlement configuration. **Configure → Access requests** provides:
+The Admin Console owns entitlement configuration. **Configure → Access requests** is a single
+navigation entry with **Catalog**, **Events**, **Email notifications**, **Provisioning failures**,
+and **Revocation failures** tabs. Tabs appear only when the manager has the corresponding server-side capability.
+The Events tab keeps requester and event actor separate. Managers search people by name or username,
+while the API filters by their stable IDs before pagination; an automatic expiration can also be
+selected as an actor.
+The Catalog tab provides:
 
 - a paged catalog including drafts and published entitlements;
 - search-backed Keycloak resource and approver-role selectors;
@@ -33,13 +39,21 @@ The Admin Console owns entitlement configuration. **Configure → Access request
 - metadata, risk, approver-role, duration-policy, and requestable-state updates;
 - optimistic-lock feedback when another administrator changed the same entitlement.
 
-After creating an access package, the editor shows its delivery group and bound roles before the
-administrator makes it requestable. If the group or its role mappings have changed, the console
-disables publication and the server rejects a direct publication request. The source roles remain
-managed by Keycloak or external identity systems; the extension provisions membership in its
-dedicated package group, not direct role assignments.
+After creating an access package, the editor shows its roles and configuration status before the
+administrator makes it requestable. If the underlying delivery group or its role mappings have
+changed, the console disables publication and the server rejects it. The technical group name and
+ID are not shown in Access Requests screens; they remain available in Keycloak Groups and the
+administration API for troubleshooting. The source roles remain managed by Keycloak or external
+identity systems; the extension provisions membership in its dedicated package group, not direct
+role assignments.
+Direct role and group drafts remain closed to requests; only bound access packages can be published.
 
-**Configure → Failed provisioning** lists approved requests whose Keycloak grant failed. It shows a
+For an operational recovery of a failed package revocation, use the administration API to look up
+the package binding and identify its dedicated Keycloak group. Remove only the affected user's
+membership in that group through Keycloak, verify it is absent, and then use **Confirm removal** in
+Access Requests. The confirmation checks the absence again; it does not remove access itself.
+
+**Access requests → Provisioning failures** lists approved requests whose Keycloak grant failed. It shows a
 localized, safe cause and guidance without exposing technical failure details. A manager
 can review the request, requester, entitlement, resource, and failure time, then confirm a manual
 retry. The page reports whether that retry succeeded or failed again.
@@ -58,7 +72,7 @@ Keycloak receives a new ID, even if it has the same name. The entitlement and ap
 retain the old ID; retrying that approval must not grant the replacement resource.
 
 1. In Keycloak, recreate the role or group and note its new ID.
-2. In **Failed provisioning**, close the old failure with a reason explaining the replacement.
+2. In **Provisioning failures**, close the old failure with a reason explaining the replacement.
    Confirm that it appears under **Closed failures**; the original request and history remain
    available, and closure does not grant access.
 3. In **Access requests**, set the old entitlement to not requestable. Its resource ID cannot be
@@ -76,8 +90,11 @@ console to correlate the Keycloak server log entry. The service logs the request
 exception; the Keycloak grant adapter logs the requester ID and full exception. Exception details
 remain in server logs, not in the realm API or console.
 
-**Configure → Email
-notifications** handles failed lifecycle e-mail deliveries separately.
+**Access requests → Email notifications** handles failed lifecycle e-mail deliveries.
+
+**Access requests → Events** lists request activity. Selecting a request opens its audit detail
+in a PatternFly dialog over the list; close it with **Close**, the close icon, or Escape to return
+to the same filtered results. A direct link to a request opens the same dialog.
 
 The theme extends `keycloak.v2` and integrates a React application built from Keycloak's public Admin UI package. It follows the native Keycloak layout, navigation behavior, localization, PatternFly components, light/dark mode, and keyboard patterns.
 

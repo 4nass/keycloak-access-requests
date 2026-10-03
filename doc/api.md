@@ -74,7 +74,7 @@ Each item contains its entitlement ID, resource type, display name, description,
 }
 ```
 
-`justification` must contain 10 to 2,000 characters. `durationSeconds` must be a positive integer no greater than the entitlement's maximum; omit it to use the current default. To request permanent access, send `"permanent": true` and omit `durationSeconds`; this is accepted only if `allowPermanent=true`. Invalid combinations return `400 Bad Request`. A successful submission returns `201 Created` and the request ID, decision and provisioning status, and selected duration/permanent flag. Requester and approver reads include that selection. Expiration is not enforced yet.
+`justification` must contain 10 to 2,000 characters. `durationSeconds` must be a positive integer no greater than the entitlement's maximum; omit it to use the current default. To request permanent access, send `"permanent": true` and omit `durationSeconds`; this is accepted only if `allowPermanent=true`. Invalid combinations return `400 Bad Request`. A successful submission returns `201 Created` and the request ID, decision and provisioning status, and selected duration/permanent flag. Requester and approver reads include that selection. For a temporary package grant owned by the extension, the expiry starts after successful provisioning and a background job revokes the package-group membership when due.
 
 The server returns `409 Conflict` when the entitlement is not requestable, the user already has the resource, or a request for the same entitlement is already pending.
 
@@ -152,6 +152,8 @@ An empty or one-character `search` does not enumerate the realm; without `select
 
 The selected resource must exist and match `resourceType`. The approver role must exist in the same realm. The duration values are configurable per entitlement; omitting them on creation applies the risk-level defaults and `allowPermanent=false`. Creation always produces a draft with `requestable=false` and returns `201 Created`. A duplicate resource in the same realm returns `409 Conflict`.
 
+Direct role and group drafts cannot be made requestable. Temporary access is delivered only through a bound access package, so that expiry can remove the extension-owned group membership without touching rights managed elsewhere. Create a package with `POST /admin/access-packages` for new requestable access. A direct draft sent to `PUT` with `requestable=true` returns `409 ACCESS_PACKAGE_REQUIRED`.
+
 ### Access packages
 
 `POST /admin/access-packages` accepts the same metadata and duration-policy fields as
@@ -166,7 +168,7 @@ publish its entitlement separately.
 
 `GET /admin/access-packages/{packageId}` returns the group ID/name, `groupExists`,
 `configurationValid`, and each bound role's type, ID, name, and `missing` flag. It returns 404 for
-an entitlement without an access-package binding. Publishing an invalid package through the
+an entitlement without an access-package binding. Publishing an unbound entitlement or an invalid package through the
 entitlement `PUT` returns 409;
 unpublishing remains possible.
 
@@ -203,10 +205,15 @@ They read the existing request history; they do not duplicate it into Keycloak u
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/admin/events` | Search access request lifecycle events |
+| `GET` | `/admin/audit-users` | Search people for the audit filters |
 | `GET` | `/admin/requests/{requestId}` | Read a request and its history |
 
 `GET /admin/events` accepts `from` and `to` as inclusive ISO-8601 instants, `type` as a
-request event type, exact `actorId` and `requestId` filters, and `page`/`size` pagination.
+request event type, exact `requesterId`, `actorId` and `requestId` filters, and `page`/`size` pagination.
+`requesterId` selects every event on requests created by that person; `actorId` selects only events
+they performed. Filtering happens before counting and pagination. The Admin Console resolves names to
+IDs with `GET /admin/audit-users?search=...`. This lookup requires at least two characters, returns at
+most 20 realm users per query, and exposes only ID, display name, and username to authorized managers.
 Results are newest first and contain only event ID, request ID, type, actor ID, and timestamp.
 Comments and other history metadata are not exposed in the list. Invalid filters return `400`.
 The admin detail response includes the requester ID, current decision and provisioning statuses,
