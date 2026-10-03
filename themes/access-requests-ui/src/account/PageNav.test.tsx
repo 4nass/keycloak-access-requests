@@ -23,7 +23,8 @@ await i18n.init({
         en: {
             translation: {
                 accessRequestsApprovals: "Approvals",
-                accessRequestsMyRequests: "My Requests",
+                accessRequestsCatalog: "Catalog",
+                accessRequestsMyRequests: "My requests",
                 accessRequestsNav: "Access requests",
                 accessRequestsRequestAccess: "Request access",
                 accountManagement: "Account management",
@@ -82,10 +83,10 @@ describe("Access Request Account Console navigation", () => {
         const navigation = screen.getByRole("navigation", { name: "Account management" });
         expect(screen.getAllByRole("navigation")).toHaveLength(1);
         expect(navigation).toContainElement(group);
-        const requestAccess = screen.getByRole("link", { name: "Request access" });
-        expect(navigation).toContainElement(requestAccess);
-        expect(requestAccess).toHaveAttribute("aria-current", "page");
-        expect(navigation).toContainElement(screen.getByRole("link", { name: "My Requests" }));
+        const catalog = screen.getByRole("link", { name: "Catalog" });
+        expect(navigation).toContainElement(catalog);
+        expect(catalog).toHaveAttribute("aria-current", "page");
+        expect(navigation).toContainElement(screen.getByRole("link", { name: "My requests" }));
     });
 
     it("collapses Access requests when another account page is active", async () => {

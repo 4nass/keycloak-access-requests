@@ -17,7 +17,7 @@ export function AccessRequestNavigation({ canApprove }: AccessRequestNavigationP
         <NavExpandable isActive={isActive} isExpanded={isActive} title={t("accessRequestsNav")}>
             <AccessRequestNavigationItem
                 isActive={requestAccessMatch !== null}
-                label={t("accessRequestsRequestAccess")}
+                label={t("accessRequestsCatalog")}
                 path="request-access"
             />
             <AccessRequestNavigationItem

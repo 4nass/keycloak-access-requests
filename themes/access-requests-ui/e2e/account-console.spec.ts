@@ -18,6 +18,6 @@ test("renders the Access requests navigation in the local Account Console", asyn
     await expect(accessRequestsNavigation).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(accessRequestsNavigation).toHaveAttribute("aria-expanded", "true");
-    await expect(page.getByRole("link", { name: "Request access" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "My Requests" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Catalog" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "My requests" })).toBeVisible();
 });

@@ -31,6 +31,7 @@ class AccessRequestAccountConsoleThemeTest {
         messages.load(new StringReader(readResource("theme/access-requests/account/messages/messages_en.properties")));
         assertTrue(messages.stringPropertyNames().containsAll(Set.of(
                 "accessRequestsApprovals",
+                "accessRequestsCatalog",
                 "accessRequestsLoadError",
                 "accessRequestsMyRequests",
                 "accessRequestsNav",

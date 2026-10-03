@@ -121,7 +121,7 @@ export function RequestAccessPage({ entries, onRequest, onRefresh, pagination, s
     return (
         <Page
             description={t("accessRequestsRequestAccessDescription")}
-            title={t("accessRequestsRequestAccess")}
+            title={t("accessRequestsCatalog")}
         >
             <>
                 <AccessRequestPagination pagination={pagination}>
@@ -145,7 +145,7 @@ export function RequestAccessPage({ entries, onRequest, onRefresh, pagination, s
                         title={t("accessRequestsNoRequestableAccess")}
                     />
                 ) : (
-                    <DataList aria-label={t("accessRequestsRequestAccess")}>
+                    <DataList aria-label={t("accessRequestsCatalog")}>
                         {entries.map((entry) => {
                             const titleId = `requestable-entitlement-${entry.id}-title`;
                             return (
