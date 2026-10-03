@@ -10,6 +10,7 @@ import ch.anass.keycloak.accessrequests.core.domain.request.DecisionStatus;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.AccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidProvisioningRetryException;
 import ch.anass.keycloak.accessrequests.core.domain.grant.ProvisioningResult;
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureCode;
@@ -79,6 +80,7 @@ public final class RequestService {
     private final AccessPackageRepository accessPackages;
     private final AccessPackageProvisioner jitProvisioner;
     private final AccessGrantAuthorizer grantAuthorizer;
+    private final boolean requireBoundPackage;
     private final Clock clock;
 
     public RequestService(
@@ -147,7 +149,7 @@ public final class RequestService {
         this(entitlementRepository, accessRequestRepository, accessGrantRepository, effectiveAccessChecker,
                 userStatusReader, requestPolicy, eventPublisher, approvalAuthorizer, transaction, provisioners,
                 notificationPublisher, clock, NO_ACCESS_PACKAGES, NO_JIT_PROVISIONER,
-                NO_PACKAGE_GRANT_AUTHORIZER);
+                NO_PACKAGE_GRANT_AUTHORIZER, false);
     }
 
     public RequestService(
@@ -166,6 +168,28 @@ public final class RequestService {
             AccessPackageRepository accessPackages,
             AccessPackageProvisioner jitProvisioner,
             AccessGrantAuthorizer grantAuthorizer) {
+        this(entitlementRepository, accessRequestRepository, accessGrantRepository, effectiveAccessChecker,
+                userStatusReader, requestPolicy, eventPublisher, approvalAuthorizer, transaction, provisioners,
+                notificationPublisher, clock, accessPackages, jitProvisioner, grantAuthorizer, true);
+    }
+
+    private RequestService(
+            EntitlementRepository entitlementRepository,
+            AccessRequestRepository accessRequestRepository,
+            AccessGrantRepository accessGrantRepository,
+            EffectiveAccessChecker effectiveAccessChecker,
+            UserStatusReader userStatusReader,
+            RequestPolicy requestPolicy,
+            AccessRequestEventPublisher eventPublisher,
+            ApprovalAuthorizer approvalAuthorizer,
+            AccessRequestTransaction transaction,
+            List<EntitlementProvisioner> provisioners,
+            AccessRequestNotificationPublisher notificationPublisher,
+            Clock clock,
+            AccessPackageRepository accessPackages,
+            AccessPackageProvisioner jitProvisioner,
+            AccessGrantAuthorizer grantAuthorizer,
+            boolean requireBoundPackage) {
         this.entitlementRepository = Objects.requireNonNull(entitlementRepository);
         this.accessRequestRepository = Objects.requireNonNull(accessRequestRepository);
         this.accessGrantRepository = Objects.requireNonNull(accessGrantRepository);
@@ -181,6 +205,7 @@ public final class RequestService {
         this.accessPackages = Objects.requireNonNull(accessPackages);
         this.jitProvisioner = Objects.requireNonNull(jitProvisioner);
         this.grantAuthorizer = Objects.requireNonNull(grantAuthorizer);
+        this.requireBoundPackage = requireBoundPackage;
         this.clock = Objects.requireNonNull(clock);
     }
 
@@ -202,6 +227,7 @@ public final class RequestService {
         try {
             return transaction.execute(() -> {
                 Entitlement entitlement = requireCurrentEntitlementForUpdate(realmId, entitlementId);
+                requireBoundPackage(entitlement);
                 Long selectedDuration = durationSeconds;
                 if (!permanent && selectedDuration == null) {
                     selectedDuration = entitlement.durationPolicy().defaultDuration().getSeconds();
@@ -274,6 +300,7 @@ public final class RequestService {
             AccessRequest request = findRequest(realmId, requestId);
             Entitlement entitlement = requireCurrentEntitlementForUpdate(realmId, request.entitlementId());
             authorizeDecision(realmId, request, approverId);
+            requireBoundPackage(entitlement);
             AccessRequest candidate = request.copy();
             Instant decidedAt = Instant.now(clock);
             candidate.approve(approverId, decisionComment, decidedAt);
@@ -323,6 +350,7 @@ public final class RequestService {
                     || !entitlement.resourceId().equals(request.resourceId())) {
                 throw new InvalidProvisioningRetryException();
             }
+            requireBoundPackage(entitlement);
 
             Instant startedAt = Instant.now(clock);
             requireRepresentableExpiry(request, startedAt);
@@ -356,6 +384,18 @@ public final class RequestService {
         if (accessPackage != null && grant.origin() == GrantOrigin.CREATED_BY_EXTENSION
                 && grant.expiresAt() != null) {
             grantAuthorizer.authorize(grant.realmId(), grant.requestId());
+        }
+    }
+
+    private void requireBoundPackage(Entitlement entitlement) {
+        if (!requireBoundPackage) {
+            return;
+        }
+        AccessPackage accessPackage = accessPackages.findByEntitlementId(entitlement.realmId(), entitlement.id())
+                .orElseThrow(AccessPackageRequiredException::new);
+        if (entitlement.resourceType() != ResourceType.GROUP
+                || !entitlement.resourceId().equals(accessPackage.groupId())) {
+            throw new AccessPackageRequiredException();
         }
     }
 
@@ -440,6 +480,11 @@ public final class RequestService {
 
     private ProvisioningResult provision(String requestId, String realmId, String requesterId, Entitlement entitlement,
             AccessPackage accessPackage) {
+        if (requireBoundPackage && (accessPackage == null
+                || entitlement.resourceType() != ResourceType.GROUP
+                || !entitlement.resourceId().equals(accessPackage.groupId()))) {
+            throw new AccessPackageRequiredException();
+        }
         if (accessPackage != null) {
             if (!entitlement.realmId().equals(accessPackage.realmId())
                     || !entitlement.id().equals(accessPackage.entitlementId())) {

@@ -20,7 +20,6 @@ import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlemen
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlementRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessPackageRepository;
 import ch.anass.keycloak.accessrequests.spi.notification.KeycloakAccessRequestNotificationOutboxPublisher;
-import ch.anass.keycloak.accessrequests.spi.provisioning.EntitlementProvisioningAdapter;
 import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageGroupFactory;
 import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageMembershipProvisioner;
 import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageGrantAuthority;
@@ -140,7 +139,7 @@ final class AccessRequestServiceFactory {
                         entitlementRepository,
                         new KeycloakRoleMembershipReader(realm, user)),
                 transaction,
-                List.of(new EntitlementProvisioningAdapter(session, realm)),
+                List.of(),
                 new KeycloakAccessRequestNotificationOutboxPublisher(realm, entityManager),
                 java.time.Clock.systemUTC(), accessPackages, new AccessPackageMembershipProvisioner(session, realm),
                 new AccessGrantAuthorizationService(grants, entitlementRepository,

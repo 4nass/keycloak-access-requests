@@ -104,7 +104,7 @@ class RequestServiceTest {
 
     @Test
     void approvedAccessPackageJoinsItsGroupWithoutGrantingTheSourceRoleDirectly() {
-        entitlements.add(financeEntitlement());
+        entitlements.add(packageEntitlement());
         AtomicInteger directGrants = new AtomicInteger();
         AtomicInteger groupJoins = new AtomicInteger();
         RequestService jitService = packageService((realmId, requesterId, accessPackage) -> {
@@ -125,7 +125,7 @@ class RequestServiceTest {
 
     @Test
     void failedJitGroupJoinNeverFallsBackToDirectRoleAndRetryUsesTheSameGroup() {
-        entitlements.add(financeEntitlement());
+        entitlements.add(packageEntitlement());
         AtomicInteger directGrants = new AtomicInteger();
         AtomicInteger attempts = new AtomicInteger();
         RequestService jitService = packageService((realmId, requesterId, accessPackage) ->
@@ -150,7 +150,7 @@ class RequestServiceTest {
 
     @Test
     void existingJitGroupMembershipDoesNotBecomeAnExtensionOwnedTemporaryGrant() {
-        entitlements.add(financeEntitlement());
+        entitlements.add(packageEntitlement());
         RequestService jitService = packageService((realmId, requesterId, accessPackage) ->
                 ProvisioningResult.alreadyPresent(), new AtomicInteger());
 
@@ -163,6 +163,34 @@ class RequestServiceTest {
         assertEquals(ch.anass.keycloak.accessrequests.core.domain.grant.GrantOrigin.PREEXISTING, grant.origin());
         assertEquals(null, grant.expiresAt());
         assertEquals(0, grantAuthorizationAttempts.get());
+    }
+
+    @Test
+    void packageBackedServiceRejectsDirectEntitlementsBeforeSubmissionOrApproval() {
+        entitlements.add(financeEntitlement());
+        AtomicInteger directGrants = new AtomicInteger();
+        RequestService packageBackedService = packageService((realmId, requesterId, accessPackage) ->
+                ProvisioningResult.granted(), directGrants);
+
+        assertThrows(AccessPackageRequiredException.class, () -> packageBackedService.create(
+                "realm-1", "requester-1", "entitlement-1", "Temporary access is needed."));
+        AccessRequest pending = service.create(
+                "realm-1", "requester-1", "entitlement-1", "Temporary access is needed.");
+        assertThrows(AccessPackageRequiredException.class, () -> packageBackedService.approve(
+                "realm-1", pending.id(), "approver-1", "Approved."));
+        assertEquals(DecisionStatus.PENDING, requests.findById("realm-1", pending.id()).orElseThrow().decisionStatus());
+        assertEquals(0, directGrants.get());
+        assertTrue(savedGrants.isEmpty());
+    }
+
+    @Test
+    void packageBackedServiceRejectsUnboundGroupEntitlements() {
+        entitlements.add(entitlement("unbound", "realm-1", ResourceType.GROUP, "other-group", "Unbound group"));
+        RequestService packageBackedService = packageService((realmId, requesterId, accessPackage) ->
+                ProvisioningResult.granted(), new AtomicInteger());
+
+        assertThrows(AccessPackageRequiredException.class, () -> packageBackedService.create(
+                "realm-1", "requester-1", "unbound", "Temporary access is needed."));
     }
 
     private RequestService packageService(AccessPackageProvisioner packageProvisioner,
@@ -891,6 +919,11 @@ class RequestServiceTest {
 
     private static Entitlement financeEntitlement() {
         return entitlement("entitlement-1", "realm-1", ResourceType.REALM_ROLE, "finance-reader",
+                "Finance Reader");
+    }
+
+    private static Entitlement packageEntitlement() {
+        return entitlement("entitlement-1", "realm-1", ResourceType.GROUP, "jit-group-1",
                 "Finance Reader");
     }
 
