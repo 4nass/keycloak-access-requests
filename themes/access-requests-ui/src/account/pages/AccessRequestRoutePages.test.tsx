@@ -68,6 +68,7 @@ await i18n.init({
                 accessRequestsApprovals: "Approvals",
                 accessRequestsApprovalsDescription: "Review requests you can approve or reject.",
                 accessRequestsApprover: "Approver",
+                accessRequestsCatalog: "Catalog",
                 accessRequestsCancel: "Cancel",
                 accessRequestsCancelRequest: "Cancel request",
                 accessRequestsCancelRequestDescription: "A canceled request cannot be restored.",
@@ -99,7 +100,8 @@ await i18n.init({
                 accessRequestsLastPage: "Last page",
                 accessRequestsLoadError: "Unable to load access requests.",
                 accessRequestsLoading: "Loading access requests",
-                accessRequestsMyRequests: "My Requests",
+                accessRequestsMyRequests: "My requests",
+                accessRequestsUserUnavailable: "User no longer available",
                 accessRequestsMyRequestsDescription: "Track your requests and cancel any that are still pending.",
                 accessRequestsNextPage: "Next page",
                 accessRequestsNoApprovals: "No approvals pending",
@@ -107,7 +109,7 @@ await i18n.init({
                 accessRequestsNoRequestableAccess: "No access available",
                 accessRequestsNoRequestableAccessDescription: "There is no access available for you to request.",
                 accessRequestsNoRequests: "No requests yet",
-                accessRequestsNoRequestsDescription: "Request access through a realm role, client role, or group; your request will appear here.",
+                accessRequestsNoRequestsDescription: "Request access from the catalog; your request will appear here.",
                 accessRequestsOf: "of",
                 accessRequestsPageLabel: "Page",
                 accessRequestsPagination: "Access request pagination",
@@ -132,7 +134,7 @@ await i18n.init({
                 accessRequestsRequestedAt: "Requested at",
                 accessRequestsResourceType: "Resource type",
                 accessRequestsResourceTypeClientRole: "Client role",
-                accessRequestsResourceTypeGroup: "Group",
+                accessRequestsResourceTypePackage: "Access package",
                 accessRequestsResourceTypeRealmRole: "Realm role",
                 accessRequestsRetry: "Retry",
                 accessRequestsRiskCritical: "Critical",
@@ -539,6 +541,7 @@ describe("Access Request Account Console route pages", () => {
             createdAt: "2026-09-03T10:00:00Z",
             decision: {
                 approverId: "finance-approver",
+                approverName: "Finance Approver",
                 comment: "Approved for month-end.",
                 decidedAt: "2026-09-03T10:05:00Z"
             },
@@ -563,10 +566,35 @@ describe("Access Request Account Console route pages", () => {
         const dialog = await screen.findByRole("dialog", { name: "Finance Reader request details" });
         await waitFor(() => expect(mocks.api.requestDetails).toHaveBeenCalledWith("request-1"));
         expect(within(dialog).getByText("I need month-end reports.")).toBeVisible();
-        expect(within(dialog).getByText("finance-approver")).toBeVisible();
+        expect(within(dialog).getByText("Finance Approver")).toBeVisible();
+        expect(within(dialog).queryByText("finance-approver")).not.toBeInTheDocument();
         expect(within(dialog).getByText("Approved for month-end.")).toBeVisible();
         expect(within(dialog).getByText("Request created")).toBeVisible();
         expect(within(dialog).getByText("Request approved")).toBeVisible();
+    });
+
+    it("does not expose an approver ID when the user no longer exists", async () => {
+        const user = userEvent.setup();
+        mocks.api.mine.mockResolvedValue(page([{
+            createdAt: "2026-09-03T10:00:00Z", decisionStatus: "APPROVED",
+            entitlementId: "finance-reader", id: "request-1", provisioningStatus: "SUCCEEDED",
+            resourceName: "Finance Reader", resourceType: "CLIENT_ROLE"
+        }]));
+        mocks.api.requestDetails.mockResolvedValue({
+            createdAt: "2026-09-03T10:00:00Z",
+            decision: { approverId: "internal-user-id", approverName: null, comment: null,
+                decidedAt: "2026-09-03T10:05:00Z" },
+            decisionStatus: "APPROVED", entitlementId: "finance-reader", history: [],
+            id: "request-1", justification: "Month-end reports", provisioningStatus: "SUCCEEDED",
+            resourceName: "Finance Reader", resourceType: "CLIENT_ROLE"
+        });
+
+        renderRoutePage(<MyRequestsRoutePage />);
+        const card = await screen.findByRole("listitem", { name: "Finance Reader" });
+        await user.click(within(card).getByRole("button", { name: "View details" }));
+        const dialog = await screen.findByRole("dialog", { name: "Finance Reader request details" });
+        expect(within(dialog).getByText("User no longer available")).toBeVisible();
+        expect(within(dialog).queryByText("internal-user-id")).not.toBeInTheDocument();
     });
 
     it("loads pending approvals and approves a request", async () => {
@@ -578,6 +606,7 @@ describe("Access Request Account Console route pages", () => {
                 id: "request-1",
                 justification: "I need month-end reports.",
                 requesterId: "anass",
+                requesterName: "Anass Chahbouni",
                 resourceName: "Finance Reader",
                 resourceType: "CLIENT_ROLE",
                 riskLevel: "LOW"
@@ -586,7 +615,7 @@ describe("Access Request Account Console route pages", () => {
 
         renderRoutePage(<ApprovalsRoutePage />);
 
-        const card = await screen.findByRole("listitem", { name: "Finance Reader requested by anass" });
+        const card = await screen.findByRole("listitem", { name: "Finance Reader requested by Anass Chahbouni" });
         await user.click(within(card).getByRole("button", { name: "Approve" }));
         const dialog = screen.getByRole("dialog", { name: "Approve Finance Reader" });
         await user.type(within(dialog).getByLabelText("Decision comment"), "Approved.");
@@ -595,6 +624,22 @@ describe("Access Request Account Console route pages", () => {
         await waitFor(() => expect(mocks.api.approve).toHaveBeenCalledWith("request-1", { comment: "Approved." }));
         await waitFor(() => expect(mocks.api.pending).toHaveBeenCalledTimes(2));
         expect(mocks.addAlert).toHaveBeenCalledWith("Access request approved.");
+    });
+
+    it("does not expose a requester ID when the user no longer exists", async () => {
+        mocks.api.pending.mockResolvedValue(page([{
+            ...pendingRequest("request-1", "Finance Reader"),
+            requesterId: "internal-user-id",
+            requesterName: null
+        }]));
+
+        renderRoutePage(<ApprovalsRoutePage />);
+
+        const card = await screen.findByRole("listitem", {
+            name: "Finance Reader requested by User no longer available"
+        });
+        expect(within(card).getByText("User no longer available")).toBeVisible();
+        expect(within(card).queryByText("internal-user-id")).not.toBeInTheDocument();
     });
 
     it("keeps approval data visible and reports a refresh failure after a decision", async () => {
@@ -653,6 +698,7 @@ function pendingRequest(id: string, resourceName: string) {
         id,
         justification: "I need month-end reports.",
         requesterId: "anass",
+        requesterName: "anass",
         resourceName,
         resourceType: "CLIENT_ROLE",
         riskLevel: "LOW"

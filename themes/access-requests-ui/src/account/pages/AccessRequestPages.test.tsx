@@ -90,8 +90,9 @@ describe("Access Request account console pages", () => {
             "accessRequestsApprove",
             "accessRequestsApproved",
             "accessRequestsApproveEntitlement",
-            "accessRequestsGroupApprovalWarning",
+            "accessRequestsPackageApprovalWarning",
             "accessRequestsApprover",
+            "accessRequestsCatalog",
             "accessRequestsCancel",
             "accessRequestsCanceled",
             "accessRequestsCancelRequest",
@@ -171,7 +172,7 @@ describe("Access Request account console pages", () => {
             "accessRequestsRequestSubmitted",
             "accessRequestsResourceType",
             "accessRequestsResourceTypeClientRole",
-            "accessRequestsResourceTypeGroup",
+            "accessRequestsResourceTypePackage",
             "accessRequestsResourceTypeRealmRole",
             "accessRequestsRetry",
             "accessRequestsRiskCritical",
@@ -185,6 +186,7 @@ describe("Access Request account console pages", () => {
             "accessRequestsClearSearch",
             "accessRequestsStatus",
             "accessRequestsSubmitRequest",
+            "accessRequestsUserUnavailable",
             "accessRequestsViewDetails"
         ].sort());
         expect(Object.values(messages).every((message) => !message.includes("''"))).toBe(true);
@@ -233,7 +235,7 @@ describe("Access Request account console pages", () => {
         );
     });
 
-    it("shows Request access and My Requests to every requester, but hides Approvals without an approval scope", () => {
+    it("shows Catalog and My requests to every requester, but hides Approvals without an approval scope", () => {
         renderAccessRequestUi(
             <Nav aria-label="Account management">
                 <NavList><AccessRequestNavigation canApprove={false} /></NavList>
@@ -242,8 +244,8 @@ describe("Access Request account console pages", () => {
         );
 
         const navigation = screen.getByRole("navigation", { name: "Account management" });
-        expect(within(navigation).getByRole("link", { name: "Request access" })).toBeVisible();
-        expect(within(navigation).getByRole("link", { name: "My Requests" })).toBeVisible();
+        expect(within(navigation).getByRole("link", { name: "Catalog" })).toBeVisible();
+        expect(within(navigation).getByRole("link", { name: "My requests" })).toBeVisible();
         expect(within(navigation).queryByRole("link", { name: "Approvals" })).not.toBeInTheDocument();
     });
 
@@ -263,12 +265,12 @@ describe("Access Request account console pages", () => {
             {
                 description: "Browse the available access and submit a request.",
                 page: <RequestAccessPage entries={[]} onRequest={vi.fn()} />,
-                title: "Request access"
+                title: "Catalog"
             },
             {
                 description: "Track your requests and cancel any that are still pending.",
                 page: <MyRequestsPage onCancel={vi.fn()} requests={[]} />,
-                title: "My Requests"
+                title: "My requests"
             },
             {
                 description: "Review requests you can approve or reject.",
@@ -292,13 +294,13 @@ describe("Access Request account console pages", () => {
             {
                 description: "There is no access available for you to request.",
                 emptyState: "No access available",
-                listLabel: "Request access",
+                listLabel: "Catalog",
                 page: <RequestAccessPage entries={[]} onRequest={vi.fn()} />
             },
             {
-                description: "Request access through a realm role, client role, or group; your request will appear here.",
+                description: "Request access from the catalog; your request will appear here.",
                 emptyState: "No requests yet",
-                listLabel: "My Requests",
+                listLabel: "My requests",
                 page: <MyRequestsPage onCancel={vi.fn()} requests={[]} />
             },
             {
@@ -410,7 +412,7 @@ describe("Access Request account console pages", () => {
             .getByText("Request pending")).toBeVisible();
     });
 
-    it("does not show the approver-only group warning to a requester", async () => {
+    it("does not show the approver-only package warning to a requester", async () => {
         const user = userEvent.setup();
         renderAccessRequestUi(<RequestAccessPage
             entries={[{
@@ -420,7 +422,7 @@ describe("Access Request account console pages", () => {
             onRequest={vi.fn()}
         />);
 
-        const warning = messages.accessRequestsGroupApprovalWarning;
+        const warning = messages.accessRequestsPackageApprovalWarning;
         expect(screen.queryByText(warning)).not.toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Request access" }));
         expect(screen.getByRole("dialog", { name: "Request access to VPN Production" })).toBeVisible();
@@ -632,6 +634,9 @@ describe("Access Request account console pages", () => {
         await user.click(within(approvedRequest).getByRole("button", { name: "View details" }));
 
         const details = screen.getByRole("dialog", { name: "VPN Production request details" });
+        expect(details.querySelector("dl")).toHaveClass("pf-m-3-col-on-lg");
+        const history = within(details).getByRole("list", { name: "History" });
+        expect(within(history).getAllByRole("listitem")).toHaveLength(3);
         expect(within(details).getByText("I support the production release.")).toBeVisible();
         expect(within(details).getByText("Finance Approver")).toBeVisible();
         expect(within(details).getByText("Approved for the release window.")).toBeVisible();
@@ -874,7 +879,7 @@ describe("Access Request account console pages", () => {
             onReject={vi.fn()}
         />);
 
-        const warning = messages.accessRequestsGroupApprovalWarning;
+        const warning = messages.accessRequestsPackageApprovalWarning;
         const group = screen.getByRole("listitem", { name: "VPN Group requested by Anass Chahbouni" });
         expect(screen.queryByText(warning)).not.toBeInTheDocument();
         await user.click(within(group).getByRole("button", { name: "Approve" }));

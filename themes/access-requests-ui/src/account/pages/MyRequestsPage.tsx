@@ -14,7 +14,8 @@ import {
     DescriptionListGroup,
     DescriptionListTerm,
     LabelGroup,
-    Modal
+    Modal,
+    Title
 } from "@patternfly/react-core";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -205,7 +206,7 @@ export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh
                         </Alert>
                     ) : (
                         <>
-                            <DescriptionList isAutoFit isCompact>
+                            <DescriptionList isCompact columnModifier={{ default: "1Col", md: "2Col", lg: "3Col" }}>
                                 <DescriptionListGroup>
                                     <DescriptionListTerm>{t("accessRequestsJustification")}</DescriptionListTerm>
                                     <DescriptionListDescription>{selectedRequest.justification}</DescriptionListDescription>
@@ -234,7 +235,9 @@ export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh
                                     <>
                                         <DescriptionListGroup>
                                             <DescriptionListTerm>{t("accessRequestsApprover")}</DescriptionListTerm>
-                                            <DescriptionListDescription>{selectedRequest.decision.approver}</DescriptionListDescription>
+                                            <DescriptionListDescription>
+                                                {selectedRequest.decision.approver || t("accessRequestsUserUnavailable")}
+                                            </DescriptionListDescription>
                                         </DescriptionListGroup>
                                         <DescriptionListGroup>
                                             <DescriptionListTerm>{t("accessRequestsDecidedAt")}</DescriptionListTerm>
@@ -256,17 +259,27 @@ export function MyRequestsPage({ requests, onCancel, onRequestDetails, onRefresh
                                     </>
                                 )}
                             </DescriptionList>
-                            <h3>{t("accessRequestsHistory")}</h3>
-                            <ol>
-                                {selectedRequest.history.map((event) => (
-                                    <li key={`${event.type}-${event.occurredAt}`}>
-                                        <HistoryEventLabel event={event.type} t={t} /> {" "}
-                                        <time dateTime={event.occurredAt}>
-                                            {formatDateTime(event.occurredAt, i18n.resolvedLanguage ?? i18n.language)}
-                                        </time>
-                                    </li>
+                            <Title headingLevel="h3" size="lg" className="pf-v5-u-mt-lg">
+                                {t("accessRequestsHistory")}
+                            </Title>
+                            <DataList aria-label={t("accessRequestsHistory")}>
+                                {selectedRequest.history.map((event, index) => (
+                                    <DataListItem key={`${event.type}-${event.occurredAt}-${index}`}>
+                                        <DataListItemRow>
+                                            <DataListItemCells dataListCells={[
+                                                <DataListCell key="type">
+                                                    <HistoryEventLabel event={event.type} t={t} />
+                                                </DataListCell>,
+                                                <DataListCell key="date">
+                                                    <time dateTime={event.occurredAt}>
+                                                        {formatDateTime(event.occurredAt, i18n.resolvedLanguage ?? i18n.language)}
+                                                    </time>
+                                                </DataListCell>
+                                            ]} />
+                                        </DataListItemRow>
+                                    </DataListItem>
                                 ))}
-                            </ol>
+                            </DataList>
                         </>
                     )}
                 </Modal>

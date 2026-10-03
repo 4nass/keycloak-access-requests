@@ -63,6 +63,8 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagina
     const [comment, setComment] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    const requesterName = (request: PendingApproval) => request.requester || t("accessRequestsUserUnavailable");
+
     const closeDialog = () => {
         setPendingDecision(undefined);
         setComment("");
@@ -132,11 +134,11 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagina
                                                     <span className="pf-v5-screen-reader" id={requestedById}>
                                                         {t("accessRequestsRequestedBy", {
                                                             entitlement: request.entitlementName,
-                                                            requester: request.requester
+                                                            requester: requesterName(request)
                                                         })}
                                                     </span>
                                                     <strong id={titleId}>{request.entitlementName}</strong>
-                                                    <p>{request.requester}</p>
+                                                    <p>{requesterName(request)}</p>
                                                     <p>{request.justification}</p>
                                                 </DataListCell>,
                                                 <DataListCell key="attributes" width={2}>
@@ -174,7 +176,7 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagina
                                         <DataListAction
                                             aria-label={t("accessRequestsRequestedBy", {
                                                 entitlement: request.entitlementName,
-                                                requester: request.requester
+                                                requester: requesterName(request)
                                             })}
                                             aria-labelledby={titleId}
                                             id={`pending-request-${request.id}-actions`}
@@ -221,7 +223,7 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagina
                         }}
                     >
                         {pendingDecision.type === "approve" && pendingDecision.request.resourceType === "GROUP" && (
-                            <Alert isInline variant="warning" title={t("accessRequestsGroupApprovalWarning")} />
+                            <Alert isInline variant="warning" title={t("accessRequestsPackageApprovalWarning")} />
                         )}
                         <p>{t("accessRequestsDuration")}: {requestedDurationLabel(
                             pendingDecision.request.durationSeconds, pendingDecision.request.permanent, t)}</p>

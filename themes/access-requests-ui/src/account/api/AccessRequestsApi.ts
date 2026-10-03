@@ -55,6 +55,7 @@ export type RequestDetails = RequestSummary & {
     justification: string;
     decision?: {
         approverId: string;
+        approverName?: string | null;
         comment: string | null;
         decidedAt: string;
     };
@@ -67,6 +68,7 @@ export type RequestDetails = RequestSummary & {
 export type PendingRequest = {
     id: string;
     requesterId: string;
+    requesterName?: string | null;
     entitlementId: string;
     resourceType: string;
     resourceName: string;
@@ -246,6 +248,7 @@ function errorMessageKey(error: AccessRequestsApiError): AccessRequestsErrorMess
 }
 
 const errorCodeMessageKeys: Record<string, AccessRequestsErrorMessageKey> = {
+    ACCESS_PACKAGE_REQUIRED: "accessRequestsErrorConflict",
     CONCURRENT_ENTITLEMENT_MODIFICATION: "accessRequestsErrorConflict",
     CONCURRENT_MODIFICATION: "accessRequestsErrorConflict",
     ENTITLEMENT_ALREADY_EXISTS: "accessRequestsErrorConflict",

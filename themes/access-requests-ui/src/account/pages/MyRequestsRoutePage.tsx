@@ -56,7 +56,7 @@ function requestDetails(details: RequestDetails) {
     return {
         decision: details.decision
             ? {
-                    approver: details.decision.approverId,
+                    approver: details.decision.approverName ?? "",
                     comment: details.decision.comment ?? "",
                     decidedAt: details.decision.decidedAt
                 }

@@ -42,7 +42,7 @@ function pendingEntries(page: { items: PendingRequest[] }): PendingApproval[] {
         id: item.id,
         justification: item.justification,
         requestedAt: item.createdAt,
-        requester: item.requesterId,
+        requester: item.requesterName ?? "",
         resourceType: item.resourceType,
         riskLevel: item.riskLevel,
         durationSeconds: item.durationSeconds,

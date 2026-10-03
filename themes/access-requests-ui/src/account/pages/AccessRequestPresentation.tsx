@@ -34,7 +34,7 @@ const provisioningStatuses: Record<string, Presentation> = {
 
 const resourceTypes: Record<string, string> = {
     CLIENT_ROLE: "accessRequestsResourceTypeClientRole",
-    GROUP: "accessRequestsResourceTypeGroup",
+    GROUP: "accessRequestsResourceTypePackage",
     REALM_ROLE: "accessRequestsResourceTypeRealmRole"
 };
 
