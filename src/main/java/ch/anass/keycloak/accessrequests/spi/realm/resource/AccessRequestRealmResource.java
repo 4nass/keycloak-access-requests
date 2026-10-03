@@ -145,11 +145,19 @@ public final class AccessRequestRealmResource {
             @QueryParam("from") String from,
             @QueryParam("to") String to,
             @QueryParam("type") String type,
+            @QueryParam("requesterId") String requesterId,
             @QueryParam("actorId") String actorId,
             @QueryParam("requestId") String requestId,
             @DefaultValue("0") @QueryParam("page") int page,
             @DefaultValue("20") @QueryParam("size") int size) {
-        return adminHandler.listAuditEvents(from, to, type, actorId, requestId, page, size);
+        return adminHandler.listAuditEvents(from, to, type, requesterId, actorId, requestId, page, size);
+    }
+
+    @GET
+    @Path("admin/audit-users")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response searchAuditUsers(@QueryParam("search") String search) {
+        return adminHandler.searchAuditUsers(search);
     }
 
     @GET

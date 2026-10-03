@@ -14,7 +14,8 @@ public final class NotificationDto {
 
     public record NotificationDeliveryResponse(
             String id, String requestId, String entitlementId, String recipientId,
-            String recipientType, String notificationType, int attemptCount, String lastAttemptAt) {
+            String recipientType, String notificationType, int attemptCount, String lastAttemptAt,
+            String requestName, String entitlementName, String recipientName) {
     }
 
     public record NotificationDeliverySummaryResponse(

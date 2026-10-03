@@ -95,7 +95,8 @@ final class AccessRequestRequesterHandler extends AccessRequestHandlerSupport {
         try {
             AccessRequestDetails details = requestDetailsService().findForRequester(
                     authenticatedRequest.realm().getId(), authenticatedRequest.user().getId(), requestId);
-            return Response.ok(RequestDetailResponse.from(details)).build();
+            return Response.ok(RequestDetailResponse.from(details,
+                    new AccessRequestUserNameResolver(session, authenticatedRequest.realm())::resolve)).build();
         } catch (RequestNotFoundException exception) {
             return error(Response.Status.NOT_FOUND, "REQUEST_NOT_FOUND", exception.getMessage(), requestId);
         }

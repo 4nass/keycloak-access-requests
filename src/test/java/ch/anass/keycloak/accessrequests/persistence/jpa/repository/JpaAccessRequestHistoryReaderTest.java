@@ -1,6 +1,9 @@
 package ch.anass.keycloak.accessrequests.persistence.jpa.repository;
 
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEventEntity;
+import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEntity;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEventType;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationFailureCode;
@@ -36,7 +39,10 @@ class JpaAccessRequestHistoryReaderTest {
     @BeforeEach
     void openEntityManager() {
         entityManager = entityManagerFactory.createEntityManager();
-        transaction(() -> entityManager.createQuery("delete from AccessRequestEventEntity").executeUpdate());
+        transaction(() -> {
+            entityManager.createQuery("delete from AccessRequestEventEntity").executeUpdate();
+            entityManager.createQuery("delete from AccessRequestEntity").executeUpdate();
+        });
     }
 
     @AfterEach
@@ -153,7 +159,36 @@ class JpaAccessRequestHistoryReaderTest {
         assertEquals(List.of("event-z", "event-a"), reader.findPageByRequestId("realm-1", "request-1", 0, 20)
                 .items().stream().map(AccessRequestEvent::id).toList());
         assertEquals(List.of("event-a", "event-z"), reader.findAll("realm-1", null, null, null,
-                null, "request-1", 0, 20).items().stream().map(AccessRequestEvent::id).toList());
+                null, null, "request-1", 0, 20).items().stream().map(AccessRequestEvent::id).toList());
+    }
+
+    @Test
+    void filtersByRequesterBeforePaginationIndependentlyOfTheEventActor() {
+        transaction(() -> {
+            entityManager.persist(AccessRequestEntity.from(request("request-a", "realm-1", "requester-a")));
+            entityManager.persist(AccessRequestEntity.from(request("request-b", "realm-1", "requester-b")));
+            entityManager.persist(AccessRequestEntity.from(request("request-c", "realm-2", "requester-a")));
+            entityManager.persist(new AccessRequestEventEntity(event("event-a", "request-a", "realm-1",
+                    AccessRequestEventType.REQUEST_APPROVED, "2026-09-03T10:00:00Z", null)));
+            entityManager.persist(new AccessRequestEventEntity(event("event-b", "request-b", "realm-1",
+                    AccessRequestEventType.REQUEST_APPROVED, "2026-09-03T10:01:00Z", null)));
+            entityManager.persist(new AccessRequestEventEntity(event("event-c", "request-c", "realm-2",
+                    AccessRequestEventType.REQUEST_APPROVED, "2026-09-03T10:02:00Z", null)));
+        });
+        entityManager.clear();
+
+        JpaAccessRequestHistoryReader reader = new JpaAccessRequestHistoryReader(entityManager);
+        var byRequester = reader.findAll("realm-1", null, null, null, "requester-a", null, null, 0, 1);
+        assertEquals(1, byRequester.total());
+        assertEquals(List.of("event-a"), byRequester.items().stream().map(AccessRequestEvent::id).toList());
+        assertEquals(0, reader.findAll("realm-1", null, null, null, "requester-a", "someone-else", null, 0, 1)
+                .total());
+        assertEquals(2, reader.findAll("realm-1", null, null, null, null, "actor-1", null, 0, 1).total());
+    }
+
+    private static AccessRequest request(String id, String realmId, String requesterId) {
+        return AccessRequest.create(id, realmId, requesterId, "entitlement-1", ResourceType.REALM_ROLE,
+                "role-1", "Role", "Needed for a project");
     }
 
     private static AccessRequestEvent event(

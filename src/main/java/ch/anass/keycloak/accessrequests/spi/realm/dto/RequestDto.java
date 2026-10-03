@@ -9,6 +9,7 @@ import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 
 import java.util.List;
+import java.util.function.Function;
 
 /** JSON payloads for requester-owned access requests. */
 public final class RequestDto {
@@ -58,10 +59,12 @@ public final class RequestDto {
             DecisionStatus decisionStatus, ProvisioningStatus provisioningStatus, String createdAt,
             String provisioningClosedAt, String justification, DecisionResponse decision,
             List<RequestHistoryEntryResponse> history, Long durationSeconds, boolean permanent) {
-        public static RequestDetailResponse from(AccessRequestDetails details) {
+        public static RequestDetailResponse from(AccessRequestDetails details,
+                Function<String, String> approverNameResolver) {
             AccessRequest request = details.request();
             DecisionResponse decision = request.approverId() == null ? null
-                    : new DecisionResponse(request.approverId(), request.decisionComment(),
+                    : new DecisionResponse(request.approverId(), approverNameResolver.apply(request.approverId()),
+                            request.decisionComment(),
                             request.decidedAt().toString());
             return new RequestDetailResponse(request.id(), request.entitlementId(), request.resourceType(),
                     request.resourceNameSnapshot(), request.decisionStatus(), request.provisioningStatus(),
@@ -73,7 +76,10 @@ public final class RequestDto {
         }
     }
 
-    public record DecisionResponse(String approverId, String comment, String decidedAt) {
+    public record DecisionResponse(String approverId, String approverName, String comment, String decidedAt) {
+        public DecisionResponse(String approverId, String comment, String decidedAt) {
+            this(approverId, null, comment, decidedAt);
+        }
     }
 
     public record RequestHistoryEntryResponse(String type, String occurredAt) {

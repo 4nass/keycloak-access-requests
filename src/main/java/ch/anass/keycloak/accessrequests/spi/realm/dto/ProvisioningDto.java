@@ -35,6 +35,7 @@ public final class ProvisioningDto {
             String id, String requesterId, String entitlementId, ResourceType resourceType,
             String resourceName, DecisionStatus decisionStatus, ProvisioningStatus provisioningStatus,
             String updatedAt, ProvisioningFailureCode failureCode, String closedAt,
-            String closedBy, String closureReason) {
+            String closedBy, String closureReason,
+            String requesterName, String entitlementName, String closedByName) {
     }
 }

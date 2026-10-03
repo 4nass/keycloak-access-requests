@@ -69,7 +69,8 @@ class NotificationDeliveryAdministrationEndpointTest {
         assertArrayEquals(
                 new String[]{
                         "id", "requestId", "entitlementId", "recipientId", "recipientType",
-                        "notificationType", "attemptCount", "lastAttemptAt"},
+                        "notificationType", "attemptCount", "lastAttemptAt",
+                        "requestName", "entitlementName", "recipientName"},
                 Arrays.stream(NotificationDto.NotificationDeliveryResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));

@@ -8,6 +8,7 @@ import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 
 import java.util.List;
+import java.util.function.Function;
 
 /** JSON payloads for the entitlement catalog and its administration. */
 public final class CatalogDto {
@@ -69,21 +70,24 @@ public final class CatalogDto {
             String id, ResourceType resourceType, String resourceId, String displayName,
             String description, RiskLevel riskLevel, String approverRoleId, boolean requestable,
             String createdAt, String updatedAt, long version,
-            long defaultDurationSeconds, long maxDurationSeconds, boolean allowPermanent) {
-        public static EntitlementResponse from(Entitlement entitlement) {
+            long defaultDurationSeconds, long maxDurationSeconds, boolean allowPermanent,
+            String resourceName, String approverRoleName) {
+        public static EntitlementResponse from(Entitlement entitlement,
+                String resourceName, String approverRoleName) {
             return new EntitlementResponse(entitlement.id(), entitlement.resourceType(),
                     entitlement.resourceId(), entitlement.displayName(), entitlement.description(),
                     entitlement.riskLevel(), entitlement.approverRoleId(), entitlement.requestable(),
                     entitlement.createdAt().toString(), entitlement.updatedAt().toString(),
                     entitlement.version(), entitlement.durationPolicy().defaultDuration().toSeconds(),
                     entitlement.durationPolicy().maxDuration().toSeconds(),
-                    entitlement.durationPolicy().allowPermanent());
+                    entitlement.durationPolicy().allowPermanent(), resourceName, approverRoleName);
         }
     }
 
     public record EntitlementListResponse(List<EntitlementResponse> items, int page, int size, long total) {
-        public static EntitlementListResponse from(EntitlementPage page) {
-            return new EntitlementListResponse(page.items().stream().map(EntitlementResponse::from).toList(),
+        public static EntitlementListResponse from(EntitlementPage page,
+                Function<Entitlement, EntitlementResponse> presentation) {
+            return new EntitlementListResponse(page.items().stream().map(presentation).toList(),
                     page.page(), page.size(), page.total());
         }
     }

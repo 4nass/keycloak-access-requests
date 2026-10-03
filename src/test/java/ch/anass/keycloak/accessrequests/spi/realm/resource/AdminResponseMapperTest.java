@@ -26,7 +26,7 @@ class AdminResponseMapperTest {
                 "Internal JDBC password=secret", "RESOURCE_MISSING", 2L);
 
         var response = AdminResponseMapper.auditEvents(
-                new JpaAccessRequestHistoryReader.AuditEventPage(List.of(event), 1, 20, 27));
+                new JpaAccessRequestHistoryReader.AuditEventPage(List.of(event), 1, 20, 27), names());
 
         assertEquals(1, response.page());
         assertEquals(20, response.size());
@@ -35,6 +35,8 @@ class AdminResponseMapperTest {
         assertEquals("request-id", response.items().getFirst().requestId());
         assertEquals("PROVISIONING_FAILED", response.items().getFirst().type());
         assertEquals("actor-id", response.items().getFirst().actorId());
+        assertEquals("Approver Name", response.items().getFirst().actorName());
+        assertEquals("Finance access", response.items().getFirst().requestName());
     }
 
     @Test
@@ -51,7 +53,7 @@ class AdminResponseMapperTest {
                 closedAt, "manager-id", "Resource was removed");
 
         var response = AdminResponseMapper.failedProvisioning(
-                new JpaAccessRequestRepository.FailedProvisioningPage(List.of(failure, closed), 0, 20, 2));
+                new JpaAccessRequestRepository.FailedProvisioningPage(List.of(failure, closed), 0, 20, 2), names());
 
         assertEquals(2, response.total());
         assertEquals(ProvisioningFailureCode.RESOURCE_MISSING, response.items().getFirst().failureCode());
@@ -59,6 +61,9 @@ class AdminResponseMapperTest {
         assertEquals(closedAt.toString(), response.items().get(1).closedAt());
         assertEquals("manager-id", response.items().get(1).closedBy());
         assertEquals("Resource was removed", response.items().get(1).closureReason());
+        assertEquals("Requester Name", response.items().getFirst().requesterName());
+        assertEquals("Role", response.items().getFirst().entitlementName());
+        assertEquals("Manager Name", response.items().get(1).closedByName());
     }
 
     @Test
@@ -71,5 +76,40 @@ class AdminResponseMapperTest {
         assertEquals(3, response.delivered());
         assertEquals(4, response.discarded());
         assertEquals(5, response.failed());
+    }
+
+    private static AdminNameLookup names() {
+        return new AdminNameLookup() {
+            @Override
+            public String user(String id) {
+                if (id == null) return null;
+                return switch (id) {
+                    case "actor-id" -> "Approver Name";
+                    case "user-id" -> "Requester Name";
+                    case "manager-id" -> "Manager Name";
+                    default -> null;
+                };
+            }
+
+            @Override
+            public String entitlement(String id, String snapshot) {
+                return snapshot;
+            }
+
+            @Override
+            public String request(String id) {
+                return "Finance access";
+            }
+
+            @Override
+            public String role(String id) {
+                return null;
+            }
+
+            @Override
+            public String resource(ResourceType type, String id) {
+                return null;
+            }
+        };
     }
 }

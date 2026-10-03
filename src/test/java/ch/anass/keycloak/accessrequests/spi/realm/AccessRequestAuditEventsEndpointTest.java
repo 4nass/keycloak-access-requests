@@ -52,12 +52,29 @@ class AccessRequestAuditEventsEndpointTest {
                 "from", String.class,
                 "to", String.class,
                 "type", String.class,
+                "requesterId", String.class,
                 "actorId", String.class,
                 "requestId", String.class,
                 "page", int.class,
                 "size", int.class), parameters);
         assertEquals("0", defaultValue(handler, "page"));
         assertEquals("20", defaultValue(handler, "size"));
+    }
+
+    @Test
+    void exposesAnAuthorizedBoundedUserLookupForHumanReadableAuditFilters() {
+        Method handler = Arrays.stream(AccessRequestRealmResource.class.getDeclaredMethods())
+                .filter(method -> method.isAnnotationPresent(GET.class))
+                .filter(method -> method.isAnnotationPresent(Path.class))
+                .filter(method -> "admin/audit-users".equals(method.getAnnotation(Path.class).value()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Audit filters need GET admin/audit-users."));
+        assertEquals(Response.class, handler.getReturnType());
+        assertEquals(MediaType.APPLICATION_JSON, handler.getAnnotation(Produces.class).value()[0]);
+        assertEquals(1, handler.getParameterCount());
+        assertEquals("search", handler.getParameters()[0].getAnnotation(QueryParam.class).value());
+        assertEquals(java.util.List.of("items"), fields(AuditDto.AuditUserListResponse.class));
+        assertEquals(java.util.List.of("id", "name", "username"), fields(AuditDto.AuditUserResponse.class));
     }
 
     @Test
@@ -68,7 +85,8 @@ class AccessRequestAuditEventsEndpointTest {
         assertTrue(page.isRecord());
         assertEquals(java.util.List.of("items", "page", "size", "total"), fields(page));
         assertTrue(event.isRecord());
-        assertEquals(java.util.List.of("id", "requestId", "type", "actorId", "occurredAt"), fields(event),
+        assertEquals(java.util.List.of("id", "requestId", "type", "actorId", "occurredAt",
+                "actorName", "requestName"), fields(event),
                 "The list must not leak decision comments, closure reasons, or raw failure diagnostics.");
     }
 
@@ -95,10 +113,11 @@ class AccessRequestAuditEventsEndpointTest {
     void usesAnAdminOnlyDetailEnvelopeWithRequesterStatusesAndHistoryActors() throws Exception {
         assertEquals(java.util.List.of("id", "requesterId", "entitlementId", "resourceType", "resourceName",
                 "decisionStatus", "provisioningStatus", "createdAt", "provisioningClosedAt", "justification",
-                "decision", "history", "historyPage", "historySize", "historyTotal"),
+                "decision", "history", "historyPage", "historySize", "historyTotal",
+                "requesterName", "entitlementName", "approverName"),
                 fields(AuditDto.AdminRequestDetailResponse.class));
         assertEquals(java.util.List.of("type", "actorId", "occurredAt", "failureCode", "closureReason",
-                        "revocationFailureCode", "revocationResolutionReason"),
+                        "revocationFailureCode", "revocationResolutionReason", "actorName"),
                 fields(AuditDto.AdminRequestHistoryEntryResponse.class));
         assertTrue(!fields(RequestDto.RequestDetailResponse.class).contains("requesterId"));
         assertTrue(!fields(RequestDto.RequestHistoryEntryResponse.class).contains("actorId"));

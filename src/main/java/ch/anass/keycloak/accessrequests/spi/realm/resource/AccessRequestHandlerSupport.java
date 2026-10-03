@@ -75,6 +75,10 @@ abstract class AccessRequestHandlerSupport {
         return services.entitlementRepository();
     }
 
+    protected AdminDisplayNameResolver adminNames(RealmModel realm) {
+        return new AdminDisplayNameResolver(session, realm, entitlementRepository(), requestRepository());
+    }
+
     protected JpaAccessPackageRepository accessPackageRepository() {
         return services.accessPackageRepository();
     }

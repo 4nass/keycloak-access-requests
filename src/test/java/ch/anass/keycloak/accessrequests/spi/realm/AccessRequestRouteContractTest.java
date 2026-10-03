@@ -50,7 +50,8 @@ class AccessRequestRouteContractTest {
                         + "query:resourceType,query:size=20,query:status,query:to",
                 "GET admin/capabilities | consumes=- | produces=application/json | params=-",
                 "GET admin/events | consumes=- | produces=application/json | params=query:actorId,query:from,"
-                        + "query:page=0,query:requestId,query:size=20,query:to,query:type",
+                        + "query:page=0,query:requestId,query:requesterId,query:size=20,query:to,query:type",
+                "GET admin/audit-users | consumes=- | produces=application/json | params=query:search",
                 "GET admin/requests/{requestId} | consumes=- | produces=application/json | "
                         + "params=path:requestId,query:historyPage=0,query:historySize=20",
                 "GET admin/notification-deliveries | consumes=- | produces=application/json | "
@@ -80,8 +81,8 @@ class AccessRequestRouteContractTest {
                         + "params=body,path:requestId",
                 "POST {requestId}/reject | consumes=application/json | produces=application/json | "
                         + "params=body,path:requestId"), routes);
-        assertEquals(29, routes.size());
-        assertEquals(29, Arrays.stream(methods).filter(method -> method.isAnnotationPresent(Path.class)).count());
+        assertEquals(30, routes.size());
+        assertEquals(30, Arrays.stream(methods).filter(method -> method.isAnnotationPresent(Path.class)).count());
     }
 
     private static String route(Method method) {

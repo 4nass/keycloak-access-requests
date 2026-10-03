@@ -12,6 +12,8 @@ import ch.anass.keycloak.accessrequests.core.service.InvalidRequestedDurationExc
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestNotificationOutboxRepository;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApiDto.AdminCapabilitiesResponse;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.AuditDto.AuditUserListResponse;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.AuditDto.AuditUserResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.NotificationDto.NotificationDeliverySummaryResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ProvisioningDto.ProvisioningClosureResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ProvisioningDto.ProvisioningClosureSubmission;
@@ -21,6 +23,8 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationRe
 import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageGrantRevocationRunner;
 import jakarta.ws.rs.core.Response;
 import java.time.Instant;
+import org.keycloak.models.UserModel;
+import java.util.stream.Stream;
 
 import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestErrors.error;
 import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestQueryParameters.parseEnum;
@@ -41,6 +45,7 @@ final class AccessRequestAdminHandler extends AccessRequestHandlerSupport {
             String from,
             String to,
             String type,
+            String requesterId,
             String actorId,
             String requestId,
             int page,
@@ -49,10 +54,21 @@ final class AccessRequestAdminHandler extends AccessRequestHandlerSupport {
         try {
             var result = historyReader().findAll(
                     manager.realm().getId(), parseInstant(from, "from"), parseInstant(to, "to"),
-                    parseEnum(AccessRequestEventType.class, type, "type"), actorId, requestId, page, size);
-            return Response.ok(AdminResponseMapper.auditEvents(result)).build();
+                    parseEnum(AccessRequestEventType.class, type, "type"), requesterId, actorId, requestId, page, size);
+            return Response.ok(AdminResponseMapper.auditEvents(result, adminNames(manager.realm()))).build();
         } catch (IllegalArgumentException exception) {
             return error(Response.Status.BAD_REQUEST, "INVALID_AUDIT_EVENT_QUERY", exception.getMessage(), null);
+        }
+    }
+
+    public Response searchAuditUsers(String search) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        String term = search == null ? "" : search.trim();
+        if (term.length() < 2 || term.length() > 100) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_AUDIT_USER_QUERY", null, null);
+        }
+        try (Stream<UserModel> matches = session.users().searchForUserStream(manager.realm(), term, 0, 20)) {
+            return Response.ok(new AuditUserListResponse(matches.map(AuditUserResponse::from).toList())).build();
         }
     }
 
@@ -69,7 +85,8 @@ final class AccessRequestAdminHandler extends AccessRequestHandlerSupport {
         try {
             var history = historyReader()
                     .findPageByRequestId(manager.realm().getId(), requestId, historyPage, historySize);
-            return Response.ok(AdminResponseMapper.requestDetail(request, history)).build();
+            return Response.ok(AdminResponseMapper.requestDetail(request, history,
+                    adminNames(manager.realm()))).build();
         } catch (IllegalArgumentException exception) {
             return error(Response.Status.BAD_REQUEST, "INVALID_AUDIT_EVENT_QUERY", exception.getMessage(), requestId);
         }
@@ -81,7 +98,8 @@ final class AccessRequestAdminHandler extends AccessRequestHandlerSupport {
         AccessRequestManager manager = requireAccessRequestManager();
         try {
             return Response.ok(AdminResponseMapper.notificationDeliveries(
-                    notificationOutboxRepository().findFailed(manager.realm().getId(), page, size))).build();
+                    notificationOutboxRepository().findFailed(manager.realm().getId(), page, size),
+                    adminNames(manager.realm()))).build();
         } catch (IllegalArgumentException exception) {
             return error(Response.Status.BAD_REQUEST, "INVALID_NOTIFICATION_DELIVERY_QUERY", exception.getMessage(), null);
         }
@@ -101,7 +119,8 @@ final class AccessRequestAdminHandler extends AccessRequestHandlerSupport {
                     "CLOSED".equals(state)
                             ? repository.findClosedProvisioning(manager.realm().getId(), page, size)
                             : repository.findFailedProvisioning(manager.realm().getId(), page, size);
-            return Response.ok(AdminResponseMapper.failedProvisioning(failedRequests)).build();
+            return Response.ok(AdminResponseMapper.failedProvisioning(failedRequests,
+                    adminNames(manager.realm()))).build();
         } catch (IllegalArgumentException exception) {
             return error(
                     Response.Status.BAD_REQUEST,
@@ -119,7 +138,8 @@ final class AccessRequestAdminHandler extends AccessRequestHandlerSupport {
         }
         try {
             return Response.ok(AdminResponseMapper.revocationFailures(grantRevocationFailures()
-                    .findPage(manager.realm().getId(), "OPEN".equals(state), page, size))).build();
+                    .findPage(manager.realm().getId(), "OPEN".equals(state), page, size),
+                    adminNames(manager.realm()))).build();
         } catch (IllegalArgumentException exception) {
             return error(Response.Status.BAD_REQUEST, "INVALID_REVOCATION_FAILURE_QUERY",
                     exception.getMessage(), null);

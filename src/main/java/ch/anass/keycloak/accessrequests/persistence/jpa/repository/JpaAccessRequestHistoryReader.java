@@ -87,7 +87,7 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
     }
 
     public AuditEventPage findAll(String realmId, Instant from, Instant to, AccessRequestEventType type,
-            String actorId, String requestId, int page, int size) {
+            String requesterId, String actorId, String requestId, int page, int size) {
         if (realmId == null || realmId.isBlank()) {
             throw new IllegalArgumentException("realmId must be provided");
         }
@@ -110,6 +110,12 @@ public final class JpaAccessRequestHistoryReader implements AccessRequestHistory
         if (type != null) {
             conditions.append(" and entity.type = :type");
             parameters.put("type", type);
+        }
+        if (requesterId != null && !requesterId.isBlank()) {
+            conditions.append(" and exists (select request.id from AccessRequestEntity request"
+                    + " where request.id = entity.requestId and request.realmId = entity.realmId"
+                    + " and request.requesterId = :requesterId)");
+            parameters.put("requesterId", requesterId);
         }
         if (actorId != null && !actorId.isBlank()) {
             conditions.append(" and entity.actorId = :actorId");

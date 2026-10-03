@@ -39,6 +39,12 @@ import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestE
 
 final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
 
+    private static EntitlementResponse present(Entitlement entitlement, AdminDisplayNameResolver names) {
+        return EntitlementResponse.from(entitlement,
+                names.resource(entitlement.resourceType(), entitlement.resourceId()),
+                names.role(entitlement.approverRoleId()));
+    }
+
     AccessRequestCatalogHandler(AccessRequestServiceFactory services) {
         super(services);
     }
@@ -75,7 +81,9 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
         try {
             EntitlementPage entitlementPage = entitlementRepository().findAll(
                     new EntitlementQuery(manager.realm().getId(), page, size));
-            return Response.ok(EntitlementListResponse.from(entitlementPage)).build();
+            AdminDisplayNameResolver names = adminNames(manager.realm());
+            return Response.ok(EntitlementListResponse.from(entitlementPage,
+                    entitlement -> present(entitlement, names))).build();
         } catch (IllegalArgumentException exception) {
             return error(Response.Status.BAD_REQUEST, "INVALID_ENTITLEMENT_QUERY", exception.getMessage(), null);
         }
@@ -105,7 +113,8 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
                         .created(createdEntitlement);
                 return createdEntitlement;
             });
-            return Response.status(Response.Status.CREATED).entity(EntitlementResponse.from(persisted)).build();
+            return Response.status(Response.Status.CREATED)
+                    .entity(present(persisted, adminNames(manager.realm()))).build();
         } catch (DuplicateEntitlementException exception) {
             return error(
                     Response.Status.CONFLICT,
@@ -141,7 +150,8 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
                 new KeycloakEntitlementAdminEventPublisher(session, manager.realm(), manager.auth()).created(saved);
                 return saved;
             });
-            return Response.status(Response.Status.CREATED).entity(EntitlementResponse.from(persisted)).build();
+            return Response.status(Response.Status.CREATED)
+                    .entity(present(persisted, adminNames(manager.realm()))).build();
         } catch (DuplicateEntitlementException exception) {
             return error(Response.Status.CONFLICT, "ENTITLEMENT_ALREADY_EXISTS", exception.getMessage(), null);
         } catch (IllegalArgumentException exception) {
@@ -173,7 +183,8 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
 
     public Response getEntitlement(String entitlementId) {
         AccessRequestManager manager = requireAccessRequestManager();
-        return Response.ok(EntitlementResponse.from(findEntitlement(manager.realm(), entitlementId))).build();
+        return Response.ok(present(findEntitlement(manager.realm(), entitlementId),
+                adminNames(manager.realm()))).build();
     }
 
     public Response updateEntitlement(
@@ -209,8 +220,9 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
             updated = validatedSubmission.requestable()
                     ? updated.publish(updatedAt)
                     : updated.unpublish(updatedAt);
-            return Response.ok(EntitlementResponse.from(
-                    persistEntitlementUpdate(updated, validatedSubmission.version(), manager))).build();
+            return Response.ok(present(
+                    persistEntitlementUpdate(updated, validatedSubmission.version(), manager),
+                    adminNames(manager.realm()))).build();
         } catch (ConcurrentEntitlementModificationException exception) {
             return error(Response.Status.CONFLICT, "CONCURRENT_ENTITLEMENT_MODIFICATION", exception.getMessage(), null);
         }

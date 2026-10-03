@@ -13,7 +13,8 @@ public final class RevocationDto {
     public record RevocationFailureResponse(String requestId, String requesterId, String entitlementId,
             ResourceType resourceType, String resourceId, String deliveryGroupId, String expiresAt,
             GrantRevocationFailureCode failureCode, int attemptCount, String firstFailedAt,
-            String lastFailedAt, String nextAttemptAt, String resolvedAt) {
+            String lastFailedAt, String nextAttemptAt, String resolvedAt,
+            String requesterName, String entitlementName, String resourceName) {
     }
 
     public record RevocationFailureListResponse(

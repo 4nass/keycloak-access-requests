@@ -36,7 +36,8 @@ final class AccessRequestApprovalHandler extends AccessRequestHandlerSupport {
                     authenticatedRequest.user().getId(),
                     page,
                     size);
-            return Response.ok(PendingRequestListResponse.from(requestPage)).build();
+            return Response.ok(PendingRequestListResponse.from(requestPage,
+                    new AccessRequestUserNameResolver(session, authenticatedRequest.realm())::resolve)).build();
         } catch (IllegalArgumentException exception) {
             return error(Response.Status.BAD_REQUEST, "INVALID_REQUEST_QUERY", exception.getMessage(), null);
         }

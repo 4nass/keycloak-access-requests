@@ -153,7 +153,8 @@ class EntitlementCatalogAdministrationEndpointTest {
                 new String[]{
                         "id", "resourceType", "resourceId", "displayName", "description", "riskLevel",
                         "approverRoleId", "requestable", "createdAt", "updatedAt", "version",
-                        "defaultDurationSeconds", "maxDurationSeconds", "allowPermanent"},
+                        "defaultDurationSeconds", "maxDurationSeconds", "allowPermanent",
+                        "resourceName", "approverRoleName"},
                 Arrays.stream(CatalogDto.EntitlementResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));

@@ -44,7 +44,8 @@ class FailedProvisioningAdministrationEndpointTest {
                 new String[]{
                         "id", "requesterId", "entitlementId", "resourceType", "resourceName",
                         "decisionStatus", "provisioningStatus", "updatedAt", "failureCode",
-                        "closedAt", "closedBy", "closureReason"},
+                        "closedAt", "closedBy", "closureReason", "requesterName", "entitlementName",
+                        "closedByName"},
                 Arrays.stream(ProvisioningDto.FailedProvisioningRequestResponse.class.getRecordComponents())
                         .map(component -> component.getName())
                         .toArray(String[]::new));
