@@ -1,20 +1,22 @@
 import {
     Alert, Button, DataList, DataListCell, DataListItem, DataListItemCells, DataListItemRow,
     DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm,
-    EmptyState, Label, PageSection, Pagination, Spinner, Text, TextContent, Title
+    EmptyState, Label, Modal, ModalVariant, Pagination, Spinner, Title
 } from "@patternfly/react-core";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { presentEntitlementsAdminError, type AdminAuditRequestDetails } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
 import { auditEventTypes } from "./auditEventTypes";
+import { adminActorLabel } from "./adminActorLabel";
 import { failureCodeKey } from "./failureCodePresentation";
 
 export function AuditRequestDetailsPage() {
     const { t, i18n } = useTranslation();
     const api = useEntitlementsAdminApi();
+    const navigate = useNavigate();
     const { realm, requestId } = useParams();
     const [page, setPage] = useState(0);
     const [size, setSize] = useState(20);
@@ -46,14 +48,12 @@ export function AuditRequestDetailsPage() {
     const formatDate = (date: string) => new Intl.DateTimeFormat(i18n.resolvedLanguage || "en", {
         dateStyle: "medium", timeStyle: "short"
     }).format(new Date(date));
+    const close = () => navigate(`/${encodeURIComponent(realm ?? "")}/access-requests/events`, { replace: true });
 
-    return <>
-        <PageSection variant="light">
-            <Title headingLevel="h1">{t("accessRequestsAdminEventsRequest")}: {requestId}</Title>
-            <TextContent><Text component="p"><Link to={`/${encodeURIComponent(realm ?? "")}/access-requests/events`}>
-                {t("accessRequestsAdminEvents")}</Link></Text></TextContent>
-        </PageSection>
-        <PageSection>
+    return <Modal isOpen onClose={close} variant={ModalVariant.large}
+        title={`${t("accessRequestsAdminEventsRequestTitle")}${currentDetails
+            ? `: ${currentDetails.entitlementName ?? currentDetails.resourceName}` : ""}`}
+        actions={[<Button key="close" onClick={close}>{t("accessRequestsAdminEventsClose")}</Button>]}>
             {errorPresentation && <Alert isInline variant="danger"
                 title={errorPresentation.requestId
                     ? `${t(errorPresentation.messageKey)} (${errorPresentation.requestId})`
@@ -62,11 +62,13 @@ export function AuditRequestDetailsPage() {
             />}
             {!currentDetails && !errorPresentation && <EmptyState><Spinner aria-label={t("loading")} /></EmptyState>}
             {currentDetails && <>
-                <DescriptionList isHorizontal>
+                <DescriptionList isCompact columnModifier={{ default: "1Col", md: "2Col", lg: "3Col" }}>
                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningRequester")}</DescriptionListTerm>
-                        <DescriptionListDescription>{currentDetails.requesterId}</DescriptionListDescription></DescriptionListGroup>
+                        <DescriptionListDescription>{currentDetails.requesterName
+                            ?? t("accessRequestsAdminUserUnavailable")}</DescriptionListDescription></DescriptionListGroup>
                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningEntitlement")}</DescriptionListTerm>
-                        <DescriptionListDescription>{currentDetails.entitlementId}</DescriptionListDescription></DescriptionListGroup>
+                        <DescriptionListDescription>{currentDetails.entitlementName
+                            ?? currentDetails.resourceName}</DescriptionListDescription></DescriptionListGroup>
                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningResource")}</DescriptionListTerm>
                         <DescriptionListDescription>{currentDetails.resourceName}</DescriptionListDescription></DescriptionListGroup>
                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminEventsDecisionStatus")}</DescriptionListTerm>
@@ -80,15 +82,18 @@ export function AuditRequestDetailsPage() {
                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminEventsJustification")}</DescriptionListTerm>
                         <DescriptionListDescription>{currentDetails.justification}</DescriptionListDescription></DescriptionListGroup>
                     {currentDetails.decision && <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminEventsActor")}</DescriptionListTerm>
-                        <DescriptionListDescription>{currentDetails.decision.approverId}: {currentDetails.decision.comment}</DescriptionListDescription></DescriptionListGroup>}
+                        <DescriptionListDescription>{currentDetails.approverName
+                            ?? t("accessRequestsAdminUserUnavailable")}: {currentDetails.decision.comment}</DescriptionListDescription></DescriptionListGroup>}
                 </DescriptionList>
-                <Title headingLevel="h2" size="lg">{t("accessRequestsAdminEventsHistory")}</Title>
+                <Title headingLevel="h3" size="lg" className="pf-v5-u-mt-lg">
+                    {t("accessRequestsAdminEventsHistory")}</Title>
                 <DataList aria-label={t("accessRequestsAdminEventsHistory")}>
                     {currentDetails.history.map((event, index) => <DataListItem key={`${event.type}-${event.occurredAt}-${index}`}>
                         <DataListItemRow><DataListItemCells dataListCells={[
                             <DataListCell key="type">{t(auditEventTypes[event.type])}</DataListCell>,
                             <DataListCell key="date">{formatDate(event.occurredAt)}</DataListCell>,
-                            <DataListCell key="actor">{t("accessRequestsAdminEventsActor")}: {event.actorId}</DataListCell>,
+                            <DataListCell key="actor">{t("accessRequestsAdminEventsActor")}: {adminActorLabel(
+                                event.actorId, event.actorName, t)}</DataListCell>,
                             ...(event.failureCode ? [<DataListCell key="failure-code">
                                 {t("accessRequestsAdminFailureCause")}: {t(failureCodeKey(event.failureCode))}
                             </DataListCell>] : []),
@@ -118,8 +123,7 @@ export function AuditRequestDetailsPage() {
                     onPerPageSelect={(_event, next) => { setPage(0); setSize(next); }}
                 />}
             </>}
-        </PageSection>
-    </>;
+    </Modal>;
 }
 
 const decisionLabels = {

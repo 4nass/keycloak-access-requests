@@ -83,21 +83,25 @@ const revocationFailuresRoute: AdminRoute = {
 };
 
 const auditEventsRoute: AdminRoute = {
-    path: "/:realm/access-requests/events",
     element: <AuditEventsRoute />,
-    handle: {
-        access: "anyone",
-        breadcrumb: (translate) => translate("accessRequestsAdminEvents")
-    }
-};
-
-const auditRequestDetailsRoute: AdminRoute = {
-    path: "/:realm/access-requests/requests/:requestId",
-    element: <AuditRequestDetailsRoute />,
-    handle: {
-        access: "anyone",
-        breadcrumb: (translate) => translate("accessRequestsAdminEventsRequest")
-    }
+    children: [
+        {
+            path: "/:realm/access-requests/events",
+            element: <></>,
+            handle: {
+                access: "anyone",
+                breadcrumb: (translate: (key: string) => string) => translate("accessRequestsAdminEvents")
+            }
+        },
+        {
+            path: "/:realm/access-requests/requests/:requestId",
+            element: <AuditRequestDetailsRoute />,
+            handle: {
+                access: "anyone",
+                breadcrumb: (translate: (key: string) => string) => translate("accessRequestsAdminEventsRequest")
+            }
+        }
+    ]
 };
 
 const notFoundRoute = keycloakRoutes.filter((route) => route.path === "*");
@@ -107,7 +111,7 @@ export const routes: RouteObject[] = [
     {
         path: "/",
         element: <AccessRequestsAdminApp />,
-        children: [entitlementCatalogRoute, auditEventsRoute, auditRequestDetailsRoute,
+        children: [entitlementCatalogRoute, auditEventsRoute,
             notificationDeliveryRoute, failedProvisioningRoute, revocationFailuresRoute,
             ...standardRoutes, ...notFoundRoute]
     }

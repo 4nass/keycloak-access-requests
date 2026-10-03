@@ -15,12 +15,10 @@ describe("Administration Console routes", () => {
         const revocationFailuresIndex = children.findIndex(
             (route) => route.path === "/:realm/access-requests/revocation-failures"
         );
-        const auditEventsIndex = children.findIndex(
-            (route) => route.path === "/:realm/access-requests/events"
-        );
-        const requestDetailIndex = children.findIndex(
-            (route) => route.path === "/:realm/access-requests/requests/:requestId"
-        );
+        const auditShellIndex = children.findIndex((route) => route.children?.some(
+            (child) => child.path === "/:realm/access-requests/events"
+        ));
+        const auditRoutes = children[auditShellIndex]?.children ?? [];
         const notFoundIndex = children.findIndex((route) => route.path === "*");
 
         expect(catalogIndex).toBeGreaterThanOrEqual(0);
@@ -31,10 +29,10 @@ describe("Administration Console routes", () => {
         expect(failedProvisioningIndex).toBeLessThan(notFoundIndex);
         expect(revocationFailuresIndex).toBeGreaterThanOrEqual(0);
         expect(revocationFailuresIndex).toBeLessThan(notFoundIndex);
-        expect(auditEventsIndex).toBeGreaterThanOrEqual(0);
-        expect(auditEventsIndex).toBeLessThan(notFoundIndex);
-        expect(requestDetailIndex).toBeGreaterThanOrEqual(0);
-        expect(requestDetailIndex).toBeLessThan(notFoundIndex);
+        expect(auditShellIndex).toBeGreaterThanOrEqual(0);
+        expect(auditShellIndex).toBeLessThan(notFoundIndex);
+        expect(auditRoutes.some((route) => route.path === "/:realm/access-requests/events")).toBe(true);
+        expect(auditRoutes.some((route) => route.path === "/:realm/access-requests/requests/:requestId")).toBe(true);
         expect(children.some((route) => route.path === "/:realm/page-section/access-requests")).toBe(false);
     });
 });
