@@ -174,10 +174,10 @@ class JpaAccessRequestAuditEventSearchTest {
     private static Object search(EntityManager entityManager, String realm, Instant from, Instant to,
             AccessRequestEventType type, String actor, String request, int page, int size) throws Exception {
         Method method = JpaAccessRequestHistoryReader.class.getMethod("findAll", String.class,
-                Instant.class, Instant.class, AccessRequestEventType.class, String.class, String.class,
+                Instant.class, Instant.class, AccessRequestEventType.class, String.class, String.class, String.class,
                 int.class, int.class);
         return method.invoke(new JpaAccessRequestHistoryReader(entityManager), realm, from, to,
-                type, actor, request, page, size);
+                type, null, actor, request, page, size);
     }
 
     @SuppressWarnings("unchecked")
