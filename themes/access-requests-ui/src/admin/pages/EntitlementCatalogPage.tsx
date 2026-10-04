@@ -41,7 +41,6 @@ import { useTranslation } from "react-i18next";
 import {
     presentEntitlementsAdminError,
     type Entitlement,
-    type EntitlementCreation,
     type EntitlementsAdminApi
 } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
@@ -51,7 +50,12 @@ import { AccessPackageDetails } from "./AccessPackageDetails";
 import { KeycloakReferenceSelector } from "./KeycloakReferenceSelector";
 import { DURATION_PRESETS, durationInput, durationSeconds, durationText, type DurationUnit } from "./catalogDuration";
 
-type FormValues = Omit<EntitlementCreation, "defaultDurationSeconds" | "maxDurationSeconds" | "allowPermanent"> & {
+type FormValues = {
+    approverRoleId: string;
+    description: string;
+    displayName: string;
+    resourceType: Entitlement["resourceType"];
+    riskLevel: Entitlement["riskLevel"];
     requestable: boolean;
     defaultDurationAmount: string;
     defaultDurationUnit: DurationUnit;
@@ -61,23 +65,10 @@ type FormValues = Omit<EntitlementCreation, "defaultDurationSeconds" | "maxDurat
 };
 
 type DialogState = {
-    entitlement?: Entitlement;
-    mode: "create" | "edit";
+    entitlement: Entitlement;
 };
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50].map((value) => ({ title: String(value), value }));
-
-const emptyForm: FormValues = {
-    approverRoleId: "",
-    allowPermanent: false,
-    ...DURATION_PRESETS.LOW,
-    description: "",
-    displayName: "",
-    requestable: false,
-    resourceId: "",
-    resourceType: "REALM_ROLE",
-    riskLevel: "LOW"
-};
 
 export function EntitlementCatalogPage() {
     const { t } = useTranslation();
@@ -88,8 +79,8 @@ export function EntitlementCatalogPage() {
     const [loading, setLoading] = useState(true);
     const [refreshError, setRefreshError] = useState<unknown>();
     const [dialog, setDialog] = useState<DialogState>();
-    const [jitDialogOpen, setJitDialogOpen] = useState(false);
-    const [form, setForm] = useState<FormValues>(emptyForm);
+    const [packageDialogOpen, setPackageDialogOpen] = useState(false);
+    const [form, setForm] = useState<FormValues>();
     const [formError, setFormError] = useState<unknown>();
     const [durationError, setDurationError] = useState(false);
     const [isSaving, setSaving] = useState(false);
@@ -123,14 +114,6 @@ export function EntitlementCatalogPage() {
         };
     }, [load]);
 
-    const openCreate = () => {
-        setActionNotice(undefined);
-        setForm(emptyForm);
-        setFormError(undefined);
-        setDurationError(false);
-        setDialog({ mode: "create" });
-    };
-
     const openEdit = (entitlement: Entitlement) => {
         setActionNotice(undefined);
         setForm({
@@ -143,13 +126,12 @@ export function EntitlementCatalogPage() {
             requestable: entitlement.requestable,
             maxDurationAmount: durationInput(entitlement.maxDurationSeconds).amount,
             maxDurationUnit: durationInput(entitlement.maxDurationSeconds).unit,
-            resourceId: entitlement.resourceId,
             resourceType: entitlement.resourceType,
             riskLevel: entitlement.riskLevel
         });
         setFormError(undefined);
         setDurationError(false);
-        setDialog({ entitlement, mode: "edit" });
+        setDialog({ entitlement });
     };
 
     const closeDialog = () => {
@@ -161,7 +143,7 @@ export function EntitlementCatalogPage() {
 
     const save = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        if (!dialog) {
+        if (!dialog || !form) {
             return;
         }
 
@@ -177,33 +159,18 @@ export function EntitlementCatalogPage() {
         setFormError(undefined);
         setDurationError(false);
         try {
-            if (dialog.mode === "create") {
-                await api.create({
-                    approverRoleId: form.approverRoleId,
-                    allowPermanent: form.allowPermanent,
-                    defaultDurationSeconds,
-                    description: form.description,
-                    displayName: form.displayName,
-                    maxDurationSeconds,
-                    resourceId: form.resourceId,
-                    resourceType: form.resourceType,
-                    riskLevel: form.riskLevel
-                });
-                setActionNotice(t("accessRequestsAdminCreated"));
-            } else {
-                await api.update(dialog.entitlement!.id, {
-                    approverRoleId: form.approverRoleId,
-                    allowPermanent: form.allowPermanent,
-                    defaultDurationSeconds,
-                    description: form.description,
-                    displayName: form.displayName,
-                    maxDurationSeconds,
-                    requestable: form.requestable,
-                    riskLevel: form.riskLevel,
-                    version: dialog.entitlement!.version
-                });
-                setActionNotice(t("accessRequestsAdminUpdated"));
-            }
+            await api.update(dialog.entitlement.id, {
+                approverRoleId: form.approverRoleId,
+                allowPermanent: form.allowPermanent,
+                defaultDurationSeconds,
+                description: form.description,
+                displayName: form.displayName,
+                maxDurationSeconds,
+                requestable: form.requestable,
+                riskLevel: form.riskLevel,
+                version: dialog.entitlement.version
+            });
+            setActionNotice(t("accessRequestsAdminUpdated"));
             setDialog(undefined);
             await load();
         } catch (error) {
@@ -214,12 +181,12 @@ export function EntitlementCatalogPage() {
     };
 
     const updateField = <Key extends keyof FormValues>(key: Key, value: FormValues[Key]) => {
-        setForm((current) => ({ ...current, [key]: value }));
+        setForm((current) => current ? { ...current, [key]: value } : current);
         setDurationError(false);
     };
 
     const updateRisk = (riskLevel: FormValues["riskLevel"]) => {
-        setForm((current) => ({ ...current, riskLevel, ...DURATION_PRESETS[riskLevel], allowPermanent: false }));
+        setForm((current) => current ? { ...current, riskLevel, ...DURATION_PRESETS[riskLevel], allowPermanent: false } : current);
         setDurationError(false);
     };
 
@@ -252,12 +219,7 @@ export function EntitlementCatalogPage() {
                 <Toolbar aria-label={t("accessRequestsAdminCatalog")}>
                     <ToolbarContent>
                         <ToolbarItem>
-                            <Button onClick={openCreate} type="button">
-                                {t("accessRequestsAdminCreateEntitlement")}
-                            </Button>
-                        </ToolbarItem>
-                        <ToolbarItem>
-                            <Button onClick={() => setJitDialogOpen(true)} type="button" variant="secondary">
+                            <Button onClick={() => setPackageDialogOpen(true)} type="button">
                                 {t("accessRequestsAdminPackageCreate")}
                             </Button>
                         </ToolbarItem>
@@ -305,7 +267,7 @@ export function EntitlementCatalogPage() {
                     />
                 )}
             </PageSection>
-            {dialog && (
+            {dialog && form && (
                 <EntitlementDialog
                     api={api}
                     entitlementId={dialog.entitlement?.id}
@@ -314,18 +276,17 @@ export function EntitlementCatalogPage() {
                     durationError={durationError}
                     form={form}
                     isSaving={isSaving}
-                    mode={dialog.mode}
                     onClose={closeDialog}
                     onSave={save}
                     onUpdate={updateField}
                     onRiskChange={updateRisk}
                 />
             )}
-            {jitDialogOpen && <AccessPackageDialog
+            {packageDialogOpen && <AccessPackageDialog
                 api={api}
-                onClose={() => setJitDialogOpen(false)}
+                onClose={() => setPackageDialogOpen(false)}
                 onCreated={(created) => {
-                    setJitDialogOpen(false);
+                    setPackageDialogOpen(false);
                     openEdit(created);
                     setActionNotice(t("accessRequestsAdminPackageCreated"));
                     void load();
@@ -397,7 +358,6 @@ function EntitlementDialog({
     durationError,
     form,
     isSaving,
-    mode,
     onClose,
     onSave,
     onUpdate,
@@ -410,16 +370,14 @@ function EntitlementDialog({
     durationError: boolean;
     form: FormValues;
     isSaving: boolean;
-    mode: "create" | "edit";
     onClose: () => void;
     onSave: (event: FormEvent<HTMLFormElement>) => Promise<void>;
     onUpdate: <Key extends keyof FormValues>(key: Key, value: FormValues[Key]) => void;
     onRiskChange: (riskLevel: FormValues["riskLevel"]) => void;
 }) {
     const { t } = useTranslation();
-    const isCreate = mode === "create";
     const [packageConfigurationValid, setPackageConfigurationValid] = useState<boolean | undefined>();
-    const modalTitle = t(isCreate ? "accessRequestsAdminCreateEntitlement" : "accessRequestsAdminEditEntitlement");
+    const modalTitle = t("accessRequestsAdminEditEntitlement");
 
     return (
         <Modal
@@ -440,43 +398,8 @@ function EntitlementDialog({
             {error && <Alert isInline title={error} variant="danger" className="pf-v5-u-mb-lg" />}
             {durationError && <Alert isInline title={t("accessRequestsAdminInvalidDuration")} variant="danger" className="pf-v5-u-mb-lg" />}
             <Form id="entitlement-form" onSubmit={(event) => void onSave(event)}>
-                {(isCreate || form.resourceType !== "GROUP") && <FormGroup fieldId="entitlement-resource-type" isRequired label={t("accessRequestsAdminResourceType")}>
-                    <FormSelect
-                        id="entitlement-resource-type"
-                        isDisabled={!isCreate || isSaving}
-                        onChange={(_event, value) => {
-                            onUpdate("resourceType", value as FormValues["resourceType"]);
-                            onUpdate("resourceId", "");
-                        }}
-                        value={form.resourceType}
-                    >
-                        <FormSelectOption label={t("accessRequestsAdminResourceTypeRealmRole")} value="REALM_ROLE" />
-                        <FormSelectOption label={t("accessRequestsAdminResourceTypeClientRole")} value="CLIENT_ROLE" />
-                        <FormSelectOption label={t("accessRequestsAdminResourceTypeGroup")} value="GROUP" />
-                    </FormSelect>
-                </FormGroup>}
-                {isCreate && form.resourceType === "GROUP" && <Alert
-                    isInline
-                    variant="warning"
-                    title={t("accessRequestsAdminGroupAccessWarning")}
-                />}
-                {(isCreate || form.resourceType !== "GROUP") && <FormGroup fieldId="entitlement-resource-id" isRequired label={t("accessRequestsAdminResourceId")}>
-                    {isCreate ? (
-                        <KeycloakReferenceSelector
-                            api={api}
-                            fieldId="entitlement-resource-id"
-                            isDisabled={isSaving}
-                            key={form.resourceType}
-                            onSelect={(value) => onUpdate("resourceId", value)}
-                            resourceType={form.resourceType}
-                            searchLabel="accessRequestsAdminSearchResources"
-                            searchPlaceholder="accessRequestsAdminSearchResourcesPlaceholder"
-                            selectionPlaceholder="accessRequestsAdminSelectResource"
-                            value={form.resourceId}
-                        />
-                    ) : (
-                        <TextInput id="entitlement-resource-id" readOnly value={resourceName ?? t("accessRequestsAdminNotAvailable")} />
-                    )}
+                {form.resourceType !== "GROUP" && <FormGroup fieldId="entitlement-resource-id" label={t("accessRequestsAdminResourceId")}>
+                    <TextInput id="entitlement-resource-id" readOnly value={resourceName ?? t("accessRequestsAdminNotAvailable")} />
                 </FormGroup>}
                 <FormGroup fieldId="entitlement-display-name" isRequired label={t("accessRequestsAdminDisplayName")}>
                     <TextInput
@@ -549,7 +472,7 @@ function EntitlementDialog({
                         value={form.approverRoleId}
                     />
                 </FormGroup>
-                {!isCreate && form.resourceType === "GROUP" && entitlementId && (
+                {form.resourceType === "GROUP" && entitlementId && (
                     <AccessPackageDetails api={api} entitlementId={entitlementId}
                         onValidityChange={setPackageConfigurationValid} />
                 )}
@@ -558,8 +481,7 @@ function EntitlementDialog({
                     variant="info"
                     title={t("accessRequestsAdminDirectEntitlementDraftOnly")}
                 />}
-                {!isCreate && (
-                    <FormGroup fieldId="entitlement-requestable">
+                <FormGroup fieldId="entitlement-requestable">
                         <Checkbox
                             id="entitlement-requestable"
                             isChecked={form.requestable}
@@ -568,8 +490,7 @@ function EntitlementDialog({
                             label={t("accessRequestsAdminRequestable")}
                             onChange={(_event, checked) => onUpdate("requestable", checked)}
                         />
-                    </FormGroup>
-                )}
+                </FormGroup>
             </Form>
         </Modal>
     );

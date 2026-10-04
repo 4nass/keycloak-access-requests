@@ -33,9 +33,8 @@ selected as an actor.
 The Catalog tab provides:
 
 - a paged catalog including drafts and published entitlements;
-- search-backed Keycloak resource and approver-role selectors;
-- creation of draft entitlements;
-- creation of draft access packages from selected realm/client roles, with a dedicated `AR_PKG_` group;
+- search-backed Keycloak role and approver-role selectors;
+- one creation path for draft access packages from selected realm/client roles; this also creates the catalog entitlement and a dedicated `AR_PKG_` group;
 - metadata, risk, approver-role, duration-policy, and requestable-state updates;
 - optimistic-lock feedback when another administrator changed the same entitlement.
 
@@ -46,7 +45,7 @@ ID are not shown in Access Requests screens; they remain available in Keycloak G
 administration API for troubleshooting. The source roles remain managed by Keycloak or external
 identity systems; the extension provisions membership in its dedicated package group, not direct
 role assignments.
-Direct role and group drafts remain closed to requests; only bound access packages can be published.
+Direct role and group drafts created through the API remain closed to requests; the Admin Console does not offer that creation path. Only bound access packages can be published.
 
 For an operational recovery of a failed package revocation, use the administration API to look up
 the package binding and identify its dedicated Keycloak group. Remove only the affected user's

@@ -114,7 +114,7 @@ The server returns `403 Forbidden` when a caller tries to cancel another user's 
 | `GET` | `/admin/capabilities` | Confirm catalog-management access for the current admin |
 | `GET` | `/admin/references` | Search selectable Keycloak roles or groups |
 | `GET` | `/admin/entitlements` | List all entitlement drafts and published entitlements |
-| `POST` | `/admin/entitlements` | Create a draft entitlement |
+| `POST` | `/admin/entitlements` | Create an API-only direct draft; it cannot be published |
 | `POST` | `/admin/access-packages` | Create a draft package with its dedicated group and role bindings |
 | `GET` | `/admin/entitlements/{entitlementId}` | Get one entitlement |
 | `GET` | `/admin/access-packages/{packageId}` | Inspect the bound group, roles, and configuration health |
@@ -150,7 +150,7 @@ An empty or one-character `search` does not enumerate the realm; without `select
 }
 ```
 
-The selected resource must exist and match `resourceType`. The approver role must exist in the same realm. The duration values are configurable per entitlement; omitting them on creation applies the risk-level defaults and `allowPermanent=false`. Creation always produces a draft with `requestable=false` and returns `201 Created`. Explicit `requestable=true` is rejected with `409 ACCESS_PACKAGE_REQUIRED` rather than silently ignored. A duplicate resource in the same realm returns `409 Conflict`.
+The selected resource must exist and match `resourceType`. The approver role must exist in the same realm. The duration values are configurable per entitlement; omitting them on creation applies the risk-level defaults and `allowPermanent=false`. Creation always produces a draft with `requestable=false` and returns `201 Created`. Explicit `requestable=true` is rejected with `409 ACCESS_PACKAGE_REQUIRED` rather than silently ignored. A duplicate resource in the same realm returns `409 Conflict`. The Admin Console does not use this endpoint for creation: its single creation path is `POST /admin/access-packages`, which creates the entitlement as part of the package.
 
 Direct role and group drafts cannot be made requestable. Temporary access is delivered only through a bound access package, so that expiry can remove the extension-owned group membership without touching rights managed elsewhere. New temporary grants without a delivery group are rejected at persistence, and missing grant authorization fails the provisioning transaction. Create a package with `POST /admin/access-packages` for new requestable access. A direct draft sent to `PUT` with `requestable=true` returns `409 ACCESS_PACKAGE_REQUIRED`.
 

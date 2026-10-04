@@ -85,7 +85,7 @@ class AccessRequestAdminConsoleBrowserIT {
                     !AccessRequestBrowserScreenshots.enabled());
             if (AccessRequestBrowserScreenshots.enabled()) {
                 captureEmptyAdminCatalog(keycloak, fixture);
-                createSeedEntitlement(keycloak, fixture.globalAdminToken(),
+                createSeedPackage(keycloak, fixture.globalAdminToken(),
                         createRealmRole(keycloak, fixture.globalAdminToken(), "reporting-readers-late"),
                         fixture.approverRoleId());
             }
@@ -115,10 +115,9 @@ class AccessRequestAdminConsoleBrowserIT {
             String requestClientId = createRequestTestClient(keycloak, adminToken);
             enableAccountConsoleForAccessRequests(keycloak, adminToken);
 
-            String suffix = UUID.randomUUID().toString();
-            String roleName = "browser-target-" + suffix;
+            String roleName = "project-reader";
             String entitlementName = "Project reporting access";
-            String approverRoleName = "browser-approver-" + suffix;
+            String approverRoleName = "project-approver";
             String roleId = createRealmRole(keycloak, adminToken, roleName);
             String approverRoleId = createRealmRole(keycloak, adminToken, approverRoleName);
             String requesterUsername = "workflow-requester";
@@ -134,14 +133,15 @@ class AccessRequestAdminConsoleBrowserIT {
 
             AdminConsoleFixture workflowCatalog = new AdminConsoleFixture(
                     adminToken, manager.managerUsername(), manager.managerPassword(),
-                    manager.observerUsername(), manager.observerPassword(), roleId, approverRoleId);
+                    manager.observerUsername(), manager.observerPassword(), roleId, roleName,
+                    approverRoleId, approverRoleName);
             chrome.start();
             RemoteWebDriver driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
             try {
                 configureDriver(driver);
                 logInToAdminConsole(keycloak, driver, manager.managerUsername(), manager.managerPassword());
                 openAccessRequests(driver);
-                createAndPublishAccessPackage(driver, workflowCatalog, entitlementName);
+                createAndPublishAccessPackage(driver, workflowCatalog, entitlementName, true);
                 assertNoJavaScriptErrors(driver);
             } finally {
                 driver.quit();
@@ -642,15 +642,17 @@ class AccessRequestAdminConsoleBrowserIT {
 
         String managerRoleName = "manage-access-requests";
         String managerRoleId = createRealmRole(keycloak, globalAdminToken, managerRoleName);
-        String approverRoleId = createRealmRole(keycloak, globalAdminToken, "reporting-approvers");
-        String managedTargetRoleId = createRealmRole(keycloak, globalAdminToken, "managed-reporting-readers");
+        String approverRoleName = "reporting-approvers";
+        String managedTargetRoleName = "managed-reporting-readers";
+        String approverRoleId = createRealmRole(keycloak, globalAdminToken, approverRoleName);
+        String managedTargetRoleId = createRealmRole(keycloak, globalAdminToken, managedTargetRoleName);
 
         assignRealmRole(keycloak, globalAdminToken, managerUserId, managerRoleId, managerRoleName);
         assignMasterRealmManagementRole(keycloak, globalAdminToken, managerUserId, "view-realm");
         assignMasterRealmManagementRole(keycloak, globalAdminToken, observerUserId, "view-realm");
         if (seedCatalog) {
             String seedTargetRoleId = createRealmRole(keycloak, globalAdminToken, "reporting-readers");
-            createSeedEntitlement(keycloak, globalAdminToken, seedTargetRoleId, approverRoleId);
+            createSeedPackage(keycloak, globalAdminToken, seedTargetRoleId, approverRoleId);
         }
 
         return new AdminConsoleFixture(
@@ -660,7 +662,9 @@ class AccessRequestAdminConsoleBrowserIT {
                 observerUsername,
                 observerPassword,
                 managedTargetRoleId,
-                approverRoleId);
+                managedTargetRoleName,
+                approverRoleId,
+                approverRoleName);
     }
 
     private void captureEmptyAdminCatalog(KeycloakContainer keycloak, AdminConsoleFixture fixture) throws Exception {
@@ -694,16 +698,14 @@ class AccessRequestAdminConsoleBrowserIT {
                 assertThemeMode(driver, darkMode);
                 openAccessRequests(driver);
                 assertPageHeading(driver, "Access requests");
-                assertCatalogLoaded(driver, "Browser seed entitlement");
+                assertCatalogLoaded(driver, "Browser seed package");
 
                 if (exerciseCatalogWorkflow) {
-                    String displayName = "Managed reporting access";
-                    createEntitlement(driver, fixture, displayName);
-                    updateEntitlement(driver, displayName);
-                    assertEntitlementWasPersisted(keycloak, fixture.globalAdminToken(), displayName);
                     String packageName = "Temporary reporting access";
-                    createAndPublishAccessPackage(driver, fixture, packageName);
+                    createAndPublishAccessPackage(driver, fixture, packageName, false);
                     assertAccessPackageWasPersisted(keycloak, fixture, packageName);
+                    updateEntitlement(driver, packageName);
+                    assertEntitlementWasPersisted(keycloak, fixture.globalAdminToken(), packageName);
                 }
 
                 AccessRequestBrowserScreenshots.capture(driver,
@@ -859,7 +861,7 @@ class AccessRequestAdminConsoleBrowserIT {
                 logInToAdminConsole(keycloak, driver, fixture.observerUsername(), fixture.observerPassword());
                 openAccessRequestsDirectly(driver);
                 assertPageHeading(driver, "You do not have permission to manage access requests in this realm.");
-                assertTrue(driver.findElements(By.xpath("//button[normalize-space()='Create entitlement']")).isEmpty(),
+                assertTrue(driver.findElements(By.xpath("//button[normalize-space()='Create access package']")).isEmpty(),
                         "An administrator without manage-access-requests must not see catalog write controls.");
                 assertApiRequestStatus(driver, "/access-requests/admin/capabilities", 403);
                 driver.navigate().to(adminConsoleUri() + "#/master/access-requests/provisioning-failures");
@@ -1357,41 +1359,16 @@ class AccessRequestAdminConsoleBrowserIT {
                 By.xpath("//h2[normalize-space()=" + xpathLiteral(displayName) + "]")));
     }
 
-    private void createEntitlement(WebDriver driver, AdminConsoleFixture fixture, String displayName) {
-        WebDriverWait wait = waitFor(driver);
-        wait.until(ExpectedConditions.elementToBeClickable(
-                By.xpath("//button[normalize-space()='Create entitlement']"))).click();
-        driver.findElement(By.id("entitlement-resource-id-search")).sendKeys(fixture.managedTargetRoleId());
-        new Select(wait.until(ExpectedConditions.elementToBeClickable(By.id("entitlement-resource-id"))))
-                .selectByValue(fixture.managedTargetRoleId());
-        driver.findElement(By.id("entitlement-display-name")).sendKeys(displayName);
-        driver.findElement(By.id("entitlement-description")).sendKeys("Created through the deployed Administration Console.");
-        driver.findElement(By.id("entitlement-approver-role-search")).sendKeys(fixture.approverRoleId());
-        new Select(wait.until(ExpectedConditions.elementToBeClickable(By.id("entitlement-approver-role"))))
-                .selectByValue(fixture.approverRoleId());
-        driver.findElement(By.xpath("//button[normalize-space()='Save']")).click();
-
-        try {
-            wait.until(ExpectedConditions.visibilityOfElementLocated(
-                    By.xpath("//h2[normalize-space()=" + xpathLiteral(displayName) + "]")));
-        } catch (TimeoutException exception) {
-            throw new AssertionError(
-                    "The browser did not display the created entitlement. Page: %s. Requests: %s. Browser log: %s"
-                            .formatted(driver.findElement(By.tagName("body")).getText(), apiRequests(driver), browserLog(driver)),
-                    exception);
-        }
-    }
-
     private void updateEntitlement(WebDriver driver, String displayName) {
         WebDriverWait wait = waitFor(driver);
         String itemXPath = "//*[contains(@class, 'pf-v5-c-data-list__item') and .//h2[normalize-space()="
                 + xpathLiteral(displayName) + "]]";
         By item = By.xpath(itemXPath);
         wait.until(ExpectedConditions.elementToBeClickable(
-                By.xpath(itemXPath + "//button[normalize-space()='Edit entitlement']"))).click();
+                By.xpath(itemXPath + "//button[normalize-space()='Edit access policy']"))).click();
 
         WebElement requestable = driver.findElement(By.id("entitlement-requestable"));
-        assertFalse(requestable.isEnabled(), "A direct entitlement must remain a closed draft.");
+        assertTrue(requestable.isEnabled(), "The package has already been reviewed and published.");
         WebElement description = driver.findElement(By.id("entitlement-description"));
         description.clear();
         description.sendKeys("Updated through the deployed Administration Console.");
@@ -1401,26 +1378,33 @@ class AccessRequestAdminConsoleBrowserIT {
                 By.xpath(itemXPath + "//*[normalize-space()='Updated through the deployed Administration Console.']")));
     }
 
-    private void createAndPublishAccessPackage(WebDriver driver, AdminConsoleFixture fixture, String displayName) {
+    private void createAndPublishAccessPackage(WebDriver driver, AdminConsoleFixture fixture, String displayName,
+            boolean captureCreation) throws Exception {
         WebDriverWait wait = waitFor(driver);
         wait.until(ExpectedConditions.elementToBeClickable(
                 By.xpath("//button[normalize-space()='Create access package']"))).click();
         driver.findElement(By.id("access-package-display-name")).sendKeys(displayName);
         driver.findElement(By.id("access-package-description"))
                 .sendKeys("Created through the deployed Administration Console.");
-        driver.findElement(By.id("access-package-approver-search")).sendKeys(fixture.approverRoleId());
+        driver.findElement(By.id("access-package-approver-search")).sendKeys(fixture.approverRoleName());
         wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(
                 "#access-package-approver option[value='" + fixture.approverRoleId() + "']")));
         new Select(wait.until(ExpectedConditions.elementToBeClickable(By.id("access-package-approver"))))
                 .selectByValue(fixture.approverRoleId());
-        driver.findElement(By.id("access-package-role-search")).sendKeys(fixture.managedTargetRoleId());
+        driver.findElement(By.id("access-package-role-search")).sendKeys(fixture.managedTargetRoleName());
         wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(
                 "#access-package-role option[value='" + fixture.managedTargetRoleId() + "']")));
         new Select(wait.until(ExpectedConditions.elementToBeClickable(By.id("access-package-role"))))
                 .selectByValue(fixture.managedTargetRoleId());
         driver.findElement(By.xpath("//button[normalize-space()='Add role']")).click();
-        wait.until(ExpectedConditions.visibilityOfElementLocated(
+        WebElement selectedRoles = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.xpath("//*[@aria-label='Selected roles']")));
+        if (captureCreation) {
+            ((JavascriptExecutor) driver).executeScript(
+                    "arguments[0].scrollIntoView({block:'center'})", selectedRoles);
+            AccessRequestBrowserScreenshots.capture(driver, "workflow-admin-create-access-package-roles");
+            captureDialogAtTop(driver, "workflow-admin-create-access-package");
+        }
         driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Create access package']")).click();
 
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
@@ -1430,11 +1414,26 @@ class AccessRequestAdminConsoleBrowserIT {
         WebElement requestable = wait.until(ExpectedConditions.elementToBeClickable(By.id("entitlement-requestable")));
         assertFalse(requestable.isSelected(), "A new access package must be closed until reviewed.");
         requestable.click();
+        if (captureCreation) {
+            wait.until(ignored -> !new Select(driver.findElement(By.id("entitlement-approver-role")))
+                    .getFirstSelectedOption().getText().equals(fixture.approverRoleId()));
+            AccessRequestBrowserScreenshots.capture(driver, "workflow-admin-publish-access-package");
+            captureDialogAtTop(driver, "workflow-admin-review-access-package");
+        }
         driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Save']")).click();
         String itemXPath = "//*[contains(@class, 'pf-v5-c-data-list__item') and .//h2[normalize-space()="
                 + xpathLiteral(displayName) + "]]";
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.xpath(itemXPath + "//*[normalize-space()='Open for requests']")));
+    }
+
+    private void captureDialogAtTop(WebDriver driver, String name) throws Exception {
+        ((JavascriptExecutor) driver).executeScript("""
+                const dialog = document.querySelector('[role="dialog"]');
+                const body = dialog?.querySelector('.pf-v5-c-modal-box__body');
+                if (body) body.scrollTop = 0;
+                """);
+        AccessRequestBrowserScreenshots.capture(driver, name);
     }
 
     private void assertAccessPackageWasPersisted(KeycloakContainer keycloak, AdminConsoleFixture fixture,
@@ -1483,8 +1482,8 @@ class AccessRequestAdminConsoleBrowserIT {
                 break;
             }
         }
-        assertTrue(draft != null, "The direct draft must remain in the catalog.");
-        assertFalse(draft.path("requestable").asBoolean());
+        assertTrue(draft != null, "The package entitlement must remain in the catalog.");
+        assertTrue(draft.path("requestable").asBoolean());
         assertEquals("Updated through the deployed Administration Console.", draft.path("description").asText());
     }
 
@@ -1563,21 +1562,20 @@ class AccessRequestAdminConsoleBrowserIT {
         assertEquals(204, response.statusCode());
     }
 
-    private void createSeedEntitlement(
+    private void createSeedPackage(
             KeycloakContainer keycloak, String globalAdminToken, String targetRoleId, String approverRoleId) throws Exception {
         HttpResponse<String> created = HTTP_CLIENT.send(
-                adminRequest(keycloak, "/realms/master/access-requests/admin/entitlements", globalAdminToken)
+                adminRequest(keycloak, "/realms/master/access-requests/admin/access-packages", globalAdminToken)
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString("""
                                 {
-                                  "resourceType":"REALM_ROLE",
-                                  "resourceId":"%s",
-                                  "displayName":"Browser seed entitlement",
+                                  "displayName":"Browser seed package",
                                   "description":"Used to verify the deployed Administration Console catalog.",
                                   "riskLevel":"LOW",
-                                  "approverRoleId":"%s"
+                                  "approverRoleId":"%s",
+                                  "roleMappings":[{"type":"REALM_ROLE","roleId":"%s"}]
                                 }
-                                """.formatted(targetRoleId, approverRoleId)))
+                                """.formatted(approverRoleId, targetRoleId)))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(201, created.statusCode());
@@ -1739,7 +1737,9 @@ class AccessRequestAdminConsoleBrowserIT {
             String observerUsername,
             String observerPassword,
             String managedTargetRoleId,
-            String approverRoleId) {
+            String managedTargetRoleName,
+            String approverRoleId,
+            String approverRoleName) {
     }
 
     private record FailedProvisioningFixture(

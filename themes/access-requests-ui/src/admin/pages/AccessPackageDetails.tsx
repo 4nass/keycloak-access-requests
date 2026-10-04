@@ -1,6 +1,6 @@
 import {
     Alert, DataList, DataListCell, DataListItem, DataListItemCells, DataListItemRow,
-    Label, Spinner, Text, Title
+    Label, Spinner, Title
 } from "@patternfly/react-core";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -67,8 +67,7 @@ export function AccessPackageDetails({ api, entitlementId, onValidityChange }: {
                     <DataListItemCells dataListCells={[<DataListCell key="role">
                         <Label>{t(role.type === "REALM_ROLE"
                             ? "accessRequestsAdminResourceTypeRealmRole" : "accessRequestsAdminResourceTypeClientRole")}</Label>
-                        {" "}{role.name ?? role.roleId}
-                        {role.name && <Text component="small">({role.roleId})</Text>}
+                        {" "}<span title={role.roleId}>{role.name ?? role.roleId}</span>
                         {role.missing && <Label color="red">{t("accessRequestsAdminPackageMissingRole")}</Label>}
                     </DataListCell>]} />
                 </DataListItemRow>

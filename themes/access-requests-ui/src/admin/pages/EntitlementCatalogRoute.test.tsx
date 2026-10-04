@@ -25,7 +25,8 @@ describe("EntitlementCatalogRoute", () => {
     it("renders catalog controls only after the server grants catalog management", async () => {
         render(<EntitlementCatalogRoute />);
 
-        expect(await screen.findByRole("button", { name: "accessRequestsAdminCreateEntitlement" })).toBeVisible();
+        expect(await screen.findByRole("button", { name: "accessRequestsAdminPackageCreate" })).toBeVisible();
+        expect(screen.queryByRole("button", { name: "accessRequestsAdminCreateEntitlement" })).not.toBeInTheDocument();
         expect(api.capabilities).toHaveBeenCalledOnce();
     });
 
@@ -35,7 +36,7 @@ describe("EntitlementCatalogRoute", () => {
         render(<EntitlementCatalogRoute />);
 
         expect(await screen.findByRole("heading", { name: "accessRequestsAdminErrorForbidden" })).toBeVisible();
-        expect(screen.queryByRole("button", { name: "accessRequestsAdminCreateEntitlement" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "accessRequestsAdminPackageCreate" })).not.toBeInTheDocument();
         expect(api.list).not.toHaveBeenCalled();
     });
 

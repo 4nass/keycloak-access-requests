@@ -160,45 +160,16 @@ describe("EntitlementCatalogPage", () => {
         await waitFor(() => expect(screen.getByText("accessRequestsAdminUpdated")).toBeVisible());
     });
 
-    it("selects immutable Keycloak resources and approver roles instead of accepting raw identifiers", async () => {
+    it("offers one creation path through access packages", async () => {
         const user = userEvent.setup();
-        api.create.mockResolvedValue({ ...entitlement, id: "finance-reader" });
         render(<EntitlementCatalogPage />);
 
         await screen.findByRole("heading", { name: "Finance Reader" });
-        await user.click(screen.getByRole("button", { name: "accessRequestsAdminCreateEntitlement" }));
-        expect(api.references).not.toHaveBeenCalled();
-        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminSearchResources" }), "finance");
-        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminSearchApproverRoles" }), "finance");
-        await waitFor(() => expect(api.references).toHaveBeenCalledWith("REALM_ROLE",
-            expect.objectContaining({ search: "finance" })));
-        await user.selectOptions(
-            screen.getByRole("combobox", { name: "accessRequestsAdminSelectResource" }),
-            "finance-reader-role"
-        );
-        await waitFor(() => expect(screen.getByRole("combobox", { name: "accessRequestsAdminSelectApproverRole" }))
-            .toHaveTextContent("Finance Approvers"));
-        await user.selectOptions(
-            screen.getByRole("combobox", { name: "accessRequestsAdminSelectApproverRole" }),
-            "finance-approvers"
-        );
-        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminDisplayName" }), "Finance reader access");
-        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminDescription" }), "Read-only finance access.");
-        await user.click(screen.getByRole("button", { name: "accessRequestsAdminSave" }));
-
-        await waitFor(() => expect(api.create).toHaveBeenCalledWith({
-            approverRoleId: "finance-approvers",
-            allowPermanent: false,
-            defaultDurationSeconds: 2_592_000,
-            description: "Read-only finance access.",
-            displayName: "Finance reader access",
-            maxDurationSeconds: 7_776_000,
-            resourceId: "finance-reader-role",
-            resourceType: "REALM_ROLE",
-            riskLevel: "LOW"
-        }));
-        expect(screen.queryByRole("textbox", { name: "accessRequestsAdminResourceId" })).not.toBeInTheDocument();
-        expect(screen.queryByRole("textbox", { name: "accessRequestsAdminApproverRole" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "accessRequestsAdminCreateEntitlement" })).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminPackageCreate" }));
+        expect(screen.getByRole("dialog", { name: "accessRequestsAdminPackageCreate" })).toBeVisible();
+        expect(screen.queryByRole("combobox", { name: "accessRequestsAdminSelectResource" })).not.toBeInTheDocument();
+        expect(api.create).not.toHaveBeenCalled();
     });
 
     it("creates a closed access package and shows its roles without exposing the delivery group", async () => {
@@ -253,6 +224,7 @@ describe("EntitlementCatalogPage", () => {
         await waitFor(() => expect(screen.getByRole("heading", { name: "accessRequestsAdminPackageDetails" })).toBeVisible());
         expect(screen.getByRole("dialog"))
             .toHaveTextContent("Finance Reader");
+        expect(screen.getByRole("dialog")).not.toHaveTextContent("finance-reader-role");
         expect(screen.queryByText("AR_PKG_TEMPORARY_ACCESS")).not.toBeInTheDocument();
         expect(screen.queryByDisplayValue("jit-group-id")).not.toBeInTheDocument();
         expect(screen.getByRole("checkbox", { name: "accessRequestsAdminRequestable" })).not.toBeChecked();
@@ -441,8 +413,8 @@ describe("EntitlementCatalogPage", () => {
         render(<EntitlementCatalogPage />);
 
         await screen.findByRole("heading", { name: "Finance Reader" });
-        await user.click(screen.getByRole("button", { name: "accessRequestsAdminCreateEntitlement" }));
-        const search = screen.getByRole("textbox", { name: "accessRequestsAdminSearchResources" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminPackageCreate" }));
+        const search = screen.getByRole("textbox", { name: "accessRequestsAdminPackageSearchRoles" });
         await user.type(search, "f");
         await new Promise((resolve) => window.setTimeout(resolve, 350));
         expect(api.references).not.toHaveBeenCalled();
@@ -463,8 +435,8 @@ describe("EntitlementCatalogPage", () => {
         render(<EntitlementCatalogPage />);
 
         await screen.findByRole("heading", { name: "Finance Reader" });
-        await user.click(screen.getByRole("button", { name: "accessRequestsAdminCreateEntitlement" }));
-        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminSearchResources" }), "reader");
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminPackageCreate" }));
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminPackageSearchRoles" }), "reader");
         await screen.findByRole("option", { name: "Reader 1" });
         await user.click(screen.getByRole("button", { name: "accessRequestsAdminReferencesLoadMore" }));
         await screen.findByRole("option", { name: "Reader 2" });
@@ -472,11 +444,11 @@ describe("EntitlementCatalogPage", () => {
         expect(api.references).toHaveBeenCalledWith("REALM_ROLE", expect.objectContaining({ first: 1, search: "reader" }));
         expect(screen.getByRole("option", { name: "Reader 1" })).toBeInTheDocument();
         expect(screen.queryByRole("button", { name: "accessRequestsAdminReferencesLoadMore" })).not.toBeInTheDocument();
-        await user.selectOptions(screen.getByRole("combobox", { name: "accessRequestsAdminSelectResource" }), "reader-2");
+        await user.selectOptions(screen.getByRole("combobox", { name: "accessRequestsAdminPackageSelectRole" }), "reader-2");
         expect(screen.getByRole("option", { name: "Reader 2" })).toBeInTheDocument();
-        await user.clear(screen.getByRole("textbox", { name: "accessRequestsAdminSearchResources" }));
-        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminSearchResources" }), "other");
-        await waitFor(() => expect(screen.getByRole("combobox", { name: "accessRequestsAdminSelectResource" }))
+        await user.clear(screen.getByRole("textbox", { name: "accessRequestsAdminPackageSearchRoles" }));
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminPackageSearchRoles" }), "other");
+        await waitFor(() => expect(screen.getByRole("combobox", { name: "accessRequestsAdminPackageSelectRole" }))
             .toHaveValue("reader-2"));
         expect(screen.getByRole("option", { name: "Reader 2" })).toBeInTheDocument();
     });
@@ -504,8 +476,8 @@ describe("EntitlementCatalogPage", () => {
         render(<EntitlementCatalogPage />);
 
         await screen.findByRole("heading", { name: "Finance Reader" });
-        await user.click(screen.getByRole("button", { name: "accessRequestsAdminCreateEntitlement" }));
-        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminSearchResources" }), "reader");
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminPackageCreate" }));
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminPackageSearchRoles" }), "reader");
         await screen.findByRole("option", { name: "Reader 1" });
         await user.click(screen.getByRole("button", { name: "accessRequestsAdminReferencesLoadMore" }));
         await screen.findByText("accessRequestsAdminErrorUnexpected");
@@ -515,7 +487,7 @@ describe("EntitlementCatalogPage", () => {
         expect(nextPageAttempts).toBe(2);
     });
 
-    it("warns about composite group access only while creating a group entitlement", async () => {
+    it("warns about effective permissions when creating a package", async () => {
         const user = userEvent.setup();
         api.list.mockResolvedValue({
             items: [{ ...entitlement, resourceType: "GROUP" }], page: 0, size: 20, total: 1
@@ -523,17 +495,12 @@ describe("EntitlementCatalogPage", () => {
         render(<EntitlementCatalogPage />);
 
         await screen.findByRole("heading", { name: "Finance Reader" });
-        expect(screen.queryByText("accessRequestsAdminGroupAccessWarning")).not.toBeInTheDocument();
-        await user.click(screen.getByRole("button", { name: "accessRequestsAdminCreateEntitlement" }));
-        const resourceType = screen.getByRole("combobox", { name: "accessRequestsAdminResourceType" });
-        expect(screen.queryByText("accessRequestsAdminGroupAccessWarning")).not.toBeInTheDocument();
-        await user.selectOptions(resourceType, "GROUP");
-        expect(screen.getByText("accessRequestsAdminGroupAccessWarning")).toBeVisible();
-        await user.selectOptions(resourceType, "CLIENT_ROLE");
-        expect(screen.queryByText("accessRequestsAdminGroupAccessWarning")).not.toBeInTheDocument();
+        expect(screen.queryByText("accessRequestsAdminPackageAccessWarning")).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminPackageCreate" }));
+        expect(screen.getByText("accessRequestsAdminPackageAccessWarning")).toBeVisible();
         await user.click(screen.getByRole("button", { name: "accessRequestsAdminCancel" }));
         await user.click(screen.getByRole("button", { name: "accessRequestsAdminEditEntitlement" }));
-        expect(screen.queryByText("accessRequestsAdminGroupAccessWarning")).not.toBeInTheDocument();
+        expect(screen.queryByText("accessRequestsAdminPackageAccessWarning")).not.toBeInTheDocument();
     });
 
     it("retains the existing page and shows a safe inline error when refresh fails", async () => {
