@@ -13,7 +13,11 @@ These images are captured in a browser against Keycloak with the built extension
 | Admin · Revocation failures | [Open, empty](admin-revocation-failures-light.png), [open, dark](admin-revocation-failures-dark.png), [resolved, empty](admin-revocation-failures-resolved-empty-light.png) | [Open incident](admin-revocation-failures-filled-light.png), [resolved incident](admin-revocation-failures-resolved-filled-light.png) |
 | Admin · Events | [Empty search](admin-events-light.png) | [Event history](admin-events-filled-light.png), [request details](workflow-admin-request-history.png) |
 
+The Admin setup captures show the [access package form](workflow-admin-create-access-package.png), its [selected role](workflow-admin-create-access-package-roles.png), the [package review](workflow-admin-review-access-package.png), and the [requestable setting before publication](workflow-admin-publish-access-package.png).
+
 The [submission](workflow-request-access.png), [pending request](workflow-my-requests-pending.png), and [approver queue](workflow-approvals-pending.png) captures show the rest of the request journey. Light and dark refer to the browser color scheme used by the tests.
+
+Creating an access package also creates its associated catalog entitlement and dedicated delivery group. The Admin Console has one creation path; administrators review the package policy before opening it to requests. Direct entitlement drafts remain available to API clients but cannot be published as requestable access.
 
 Each populated screenshot shows all data displayed by that page in its pictured state; it is not a claim that every lifecycle transition or every possible failure code can appear in one image. The actual tests also assert loaded API responses and the absence of browser JavaScript errors.
 
