@@ -36,10 +36,12 @@ await i18n.init({ initImmediate: false, lng: "en", resources: { en: { translatio
     accessRequestsAdminFailedProvisioningRequester: "Requester",
     accessRequestsAdminFailedProvisioningEntitlement: "Entitlement",
     accessRequestsAdminRevocationExpiredAt: "Expired at",
+    accessRequestsAdminPermanent: "Permanent",
     accessRequestsAdminRevocationAttempts: "Attempts",
     accessRequestsAdminRevocationFirstFailedAt: "First failure",
     accessRequestsAdminRevocationLastFailedAt: "Last failure",
     accessRequestsAdminRevocationNextAttempt: "Next attempt",
+    accessRequestsAdminRevocationManualRetryOnly: "Manual retry only",
     accessRequestsAdminRevocationResolvedAt: "Resolved at",
     accessRequestsAdminEventsViewRequest: "View request",
     accessRequestsAdminRevocationOpenEmpty: "No open failures.",
@@ -94,6 +96,16 @@ describe("RevocationFailuresPage", () => {
         expect(screen.getByRole("link", { name: "View request: request-1" })).toHaveAttribute(
             "href", "/master/access-requests/requests/request-1"
         );
+    });
+
+    it("shows a failed manual removal of permanent access without assuming an expiry", async () => {
+        mocks.api.revocationFailures.mockResolvedValueOnce({
+            items: [{ ...item, expiresAt: null }], page: 0, size: 20, total: 1
+        });
+        renderPage();
+        expect(await screen.findByText("Permanent")).toBeVisible();
+        expect(screen.getByText("Manual retry only")).toBeVisible();
+        expect(screen.getByRole("button", { name: "Retry revocation" })).toBeVisible();
     });
 
     it("does not keep old rows actionable when the next page fails to load", async () => {

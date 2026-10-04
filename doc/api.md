@@ -74,7 +74,7 @@ Each item contains its entitlement ID, resource type, display name, description,
 }
 ```
 
-`justification` must contain 10 to 2,000 characters. `durationSeconds` must be a positive integer no greater than the entitlement's maximum; omit it to use the current default. To request permanent access, send `"permanent": true` and omit `durationSeconds`; this is accepted only if `allowPermanent=true`. Invalid combinations return `400 Bad Request`. A successful submission returns `201 Created` and the request ID, decision and provisioning status, and selected duration/permanent flag. Requester and approver reads include that selection. For a temporary package grant owned by the extension, the expiry starts after successful provisioning and a background job revokes the package-group membership when due.
+`justification` must contain 10 to 2,000 characters. `durationSeconds` must be a positive integer no greater than the entitlement's maximum; omit it to use the current default. To request permanent access, send `"permanent": true` and omit `durationSeconds`; this is accepted only if `allowPermanent=true`. Invalid combinations return `400 Bad Request`. A successful submission returns `201 Created` and the request ID, decision and provisioning status, and selected duration/permanent flag. Requester and approver reads include that selection. For a temporary package grant owned by the extension, the expiry starts after successful provisioning and a background job revokes the package-group membership when due. A permanent package grant has no expiry and is excluded from the scheduler, but a manager can revoke its membership manually through the Admin Console.
 
 The server returns `409 Conflict` when the entitlement is not requestable, the user already has the resource, or a request for the same entitlement is already pending.
 
@@ -294,6 +294,29 @@ so the Account Console can distinguish a closed failure from one still awaiting 
 Closure e-mail is queued for the requester and the entitlement's
 current approver role when the entitlement still exists; delivery to a deleted requester is
 discarded. The reason is not included in e-mail.
+
+## Package grant revocation
+
+Managers with `manage-access-requests` can inspect a grant on
+`GET /admin/requests/{requestId}`. The `grant` field contains its origin, revocation state,
+expiry (omitted for permanent access), and a `manuallyRevocable` UI hint. The server checks
+authorization and current package ownership again for every write.
+
+`POST /admin/grants/{requestId}/revocation` accepts `{"reason":"..."}` (10–1000 characters).
+It removes only an extension-owned, authorized package-group membership, including a permanent
+one, and records the actor and reason in the request history. It returns `200` with `REVOKED`
+or `FAILED`; an operational failure is also listed in
+`GET /admin/revocation-failures?state=OPEN`. An invalid reason returns `400`, a missing grant
+`404`, and an ineligible or already revoked grant `409`. A pre-existing membership is never
+claimed for removal. Manual revocation of a temporary grant is allowed before expiry. A failed
+manual removal of permanent access requires an operator-initiated retry or verified resolution;
+the expiry scheduler never picks up permanent grants.
+
+`POST /admin/grants/{requestId}/revocation/retry` retries an open failure, and
+`POST /admin/grants/{requestId}/revocation/resolve` records an externally completed removal
+only after the server verifies that the recorded package membership is absent. Both operations
+remain available for a failed manual revocation of permanent access. Expiry alone never
+revokes a permanent grant.
 
 ## Error handling
 

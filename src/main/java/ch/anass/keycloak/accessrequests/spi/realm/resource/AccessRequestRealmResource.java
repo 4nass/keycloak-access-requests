@@ -13,6 +13,7 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.AccessPackageRe
 import ch.anass.keycloak.accessrequests.spi.realm.dto.NotificationDto.NotificationDeliverySummaryResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ProvisioningDto.ProvisioningClosureSubmission;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationResolutionSubmission;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationSubmission;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RequestDto.RequestSubmission;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
@@ -203,6 +204,14 @@ public final class AccessRequestRealmResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response retryGrantRevocation(@PathParam("requestId") String requestId) {
         return adminHandler.retryGrantRevocation(requestId);
+    }
+
+    @POST
+    @Path("admin/grants/{requestId}/revocation")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response revokeGrant(@PathParam("requestId") String requestId, RevocationSubmission submission) {
+        return adminHandler.revokeGrant(requestId, submission);
     }
 
     @POST

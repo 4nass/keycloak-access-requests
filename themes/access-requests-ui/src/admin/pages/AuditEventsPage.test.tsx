@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const api = vi.hoisted(() => ({ auditEvents: vi.fn(), auditRequest: vi.fn(), auditUsers: vi.fn(), capabilities: vi.fn() }));
+const api = vi.hoisted(() => ({ auditEvents: vi.fn(), auditRequest: vi.fn(), auditUsers: vi.fn(),
+    capabilities: vi.fn(), revokeGrant: vi.fn() }));
 vi.mock("../api/useEntitlementsAdminApi", () => ({ useEntitlementsAdminApi: () => api }));
 
 import { AuditEventsPage, localAuditDayBoundary } from "./AuditEventsPage";
@@ -24,6 +25,7 @@ function renderPage(component = <AuditEventsPage />) {
 
 describe("Access request audit page", () => {
     beforeEach(() => {
+        api.revokeGrant.mockReset();
         api.auditEvents.mockReset().mockResolvedValue({ items: [event], page: 0, size: 20, total: 1 });
         api.auditUsers.mockReset().mockResolvedValue({ items: [] });
         api.capabilities.mockReset().mockResolvedValue({ canManageCatalog: true });
@@ -239,6 +241,56 @@ describe("Administrative request detail", () => {
         await user.click(screen.getByRole("button", { name: "accessRequestsAdminEventsClose" }));
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
         expect(screen.getByText("Events list")).toBeVisible();
+    });
+
+    it("confirms and audits manual removal of an owned permanent grant", async () => {
+        const user = userEvent.setup();
+        const detail = {
+            id: "request-1", requesterId: "requester-1", requesterName: "Alex Reader",
+            entitlementId: "entitlement-1", entitlementName: "Reporting access", resourceName: "Reporting access",
+            decisionStatus: "APPROVED", provisioningStatus: "SUCCEEDED", provisioningClosedAt: null,
+            createdAt: "2026-09-24T10:00:00Z", justification: "I need access.", decision: null,
+            history: [], historyPage: 0, historySize: 20, historyTotal: 0,
+            grant: { origin: "CREATED_BY_EXTENSION", revocationState: "AUTHORIZED",
+                expiresAt: null, manuallyRevocable: true }
+        };
+        api.auditRequest.mockReset().mockResolvedValueOnce(detail)
+            .mockRejectedValueOnce(new Error("Refresh failed"));
+        api.revokeGrant.mockResolvedValue({ requestId: "request-1", status: "REVOKED", failureCode: null });
+        render(<MemoryRouter initialEntries={["/master/access-requests/requests/request-1"]}>
+            <Routes><Route path="/:realm/access-requests/requests/:requestId" element={<AuditRequestDetailsPage />} /></Routes>
+        </MemoryRouter>);
+
+        expect(await screen.findByText("accessRequestsAdminPermanent")).toBeVisible();
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminRevokeAccess" }));
+        const confirm = screen.getByRole("button", { name: "accessRequestsAdminRevokeAccess" });
+        expect(confirm).toBeDisabled();
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminRevocationResolutionReason" }),
+            "Manager withdrew permanent access.");
+        await user.click(confirm);
+        await waitFor(() => expect(api.revokeGrant).toHaveBeenCalledWith(
+            "request-1", "Manager withdrew permanent access."));
+        expect(await screen.findByText("accessRequestsAdminRevokeAccessSuccess")).toBeVisible();
+        await waitFor(() => expect(api.auditRequest).toHaveBeenCalledTimes(2));
+        expect(screen.queryByRole("button", { name: "accessRequestsAdminRevokeAccess" })).not.toBeInTheDocument();
+    });
+
+    it("never offers manual removal for a pre-existing package membership", async () => {
+        api.auditRequest.mockReset().mockResolvedValue({
+            id: "request-2", requesterId: "requester-2", entitlementId: "entitlement-2",
+            resourceName: "Existing access", decisionStatus: "APPROVED", provisioningStatus: "SUCCEEDED",
+            createdAt: "2026-09-24T10:00:00Z", justification: "Existing access.", decision: null,
+            history: [], historyPage: 0, historySize: 20, historyTotal: 0,
+            grant: { origin: "PREEXISTING", revocationState: "UNVERIFIED", expiresAt: null,
+                manuallyRevocable: false }
+        });
+        render(<MemoryRouter initialEntries={["/master/access-requests/requests/request-2"]}>
+            <Routes><Route path="/:realm/access-requests/requests/:requestId" element={<AuditRequestDetailsPage />} /></Routes>
+        </MemoryRouter>);
+        expect(await screen.findByRole("dialog", {
+            name: "accessRequestsAdminEventsRequestTitle: Existing access"
+        })).toBeVisible();
+        expect(screen.queryByRole("button", { name: "accessRequestsAdminRevokeAccess" })).not.toBeInTheDocument();
     });
 
     it("pages long request histories without keeping the previous page visible", async () => {

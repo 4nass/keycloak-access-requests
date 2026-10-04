@@ -122,6 +122,13 @@ public record AccessGrant(
                 && revocationState == GrantRevocationState.AUTHORIZED;
     }
 
+    /** Manual removal is limited to an extension-owned package membership. */
+    public boolean canManuallyRevoke() {
+        return origin == GrantOrigin.CREATED_BY_EXTENSION
+                && deliveryGroupId != null
+                && revocationState == GrantRevocationState.AUTHORIZED;
+    }
+
     public boolean isDueAt(Instant now) {
         Objects.requireNonNull(now, "now must not be null");
         return origin == GrantOrigin.CREATED_BY_EXTENSION
@@ -147,7 +154,8 @@ public record AccessGrant(
         }
         boolean eligiblePolicy = deliveryGroupId != null
                 || (resourceType != ResourceType.GROUP && entitlement.exclusiveJit());
-        if (origin != GrantOrigin.CREATED_BY_EXTENSION || expiresAt == null
+        if (origin != GrantOrigin.CREATED_BY_EXTENSION
+                || (expiresAt == null && deliveryGroupId == null)
                 || revocationState == GrantRevocationState.INVALIDATED
                 || revocationState == GrantRevocationState.REVOKED
                 || !eligiblePolicy || !exclusivelyManaged) {
@@ -165,7 +173,7 @@ public record AccessGrant(
     }
 
     public AccessGrant markRevoked() {
-        if (!canAutoRevoke()) {
+        if (!canAutoRevoke() && !canManuallyRevoke()) {
             throw new IllegalStateException("Revocation requires independently verified authority");
         }
         return withState(GrantRevocationState.REVOKED);

@@ -28,8 +28,7 @@ final class AccessPackageGrantVerifier {
 
     Optional<Membership> resolve(AccessGrant grant) {
         Objects.requireNonNull(grant, "grant must not be null");
-        if (grant.origin() != GrantOrigin.CREATED_BY_EXTENSION || grant.expiresAt() == null
-                || grant.deliveryGroupId() == null
+        if (grant.origin() != GrantOrigin.CREATED_BY_EXTENSION || grant.deliveryGroupId() == null
                 || (grant.revocationState() != GrantRevocationState.UNVERIFIED
                 && grant.revocationState() != GrantRevocationState.AUTHORIZED)
                 || !realm.getId().equals(grant.realmId())) {

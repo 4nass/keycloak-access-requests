@@ -1,9 +1,9 @@
 import {
     Alert, Button, DataList, DataListCell, DataListItem, DataListItemCells, DataListItemRow,
     DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm,
-    EmptyState, Label, Modal, ModalVariant, Pagination, Spinner, Title
+    EmptyState, Form, FormGroup, Label, Modal, ModalVariant, Pagination, Spinner, TextArea, Title
 } from "@patternfly/react-core";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -27,6 +27,12 @@ export function AuditRequestDetailsPage() {
         api: typeof api; requestId: string; page: number; size: number; cause: unknown
     }>();
     const [retry, setRetry] = useState(0);
+    const [revokeMode, setRevokeMode] = useState(false);
+    const [revokeReason, setRevokeReason] = useState("");
+    const [revoking, setRevoking] = useState(false);
+    const revocationInFlight = useRef(false);
+    const [revokeError, setRevokeError] = useState<unknown>();
+    const [revokeNotice, setRevokeNotice] = useState<"REVOKED" | "FAILED">();
 
     useEffect(() => {
         if (!requestId) return;
@@ -49,11 +55,63 @@ export function AuditRequestDetailsPage() {
         dateStyle: "medium", timeStyle: "short"
     }).format(new Date(date));
     const close = () => navigate(`/${encodeURIComponent(realm ?? "")}/access-requests/events`, { replace: true });
+    const revoke = async () => {
+        if (!requestId || revocationInFlight.current
+            || revokeReason.trim().length < 10 || revokeReason.trim().length > 1000) return;
+        revocationInFlight.current = true;
+        setRevoking(true);
+        setRevokeError(undefined);
+        try {
+            const result = await api.revokeGrant(requestId, revokeReason.trim());
+            setRevokeNotice(result.status);
+            if (result.status === "REVOKED") {
+                setDetails((previous) => previous?.requestId === requestId ? {
+                    ...previous, data: { ...previous.data,
+                        grant: previous.data.grant ? { ...previous.data.grant,
+                            manuallyRevocable: false, revocationState: "REVOKED" } : null }
+                } : previous);
+            }
+            setRevokeMode(false);
+            setRetry((value) => value + 1);
+        } catch (failure) {
+            setRevokeError(failure);
+        } finally {
+            revocationInFlight.current = false;
+            setRevoking(false);
+        }
+    };
 
-    return <Modal isOpen onClose={close} variant={ModalVariant.large}
+    return <Modal isOpen onClose={() => { if (!revoking) close(); }} variant={ModalVariant.large}
         title={`${t("accessRequestsAdminEventsRequestTitle")}${currentDetails
             ? `: ${currentDetails.entitlementName ?? currentDetails.resourceName}` : ""}`}
-        actions={[<Button key="close" onClick={close}>{t("accessRequestsAdminEventsClose")}</Button>]}>
+        actions={revokeMode ? [
+            <Button key="revoke" variant="danger" isLoading={revoking} isDisabled={revoking || revokeReason.trim().length < 10}
+                onClick={() => void revoke()}>{t("accessRequestsAdminRevokeAccess")}</Button>,
+            <Button key="back" variant="link" isDisabled={revoking} onClick={() => setRevokeMode(false)}>
+                {t("accessRequestsAdminCancel")}</Button>
+        ] : [
+            ...(currentDetails?.grant?.manuallyRevocable ? [<Button key="revoke" variant="danger"
+                onClick={() => { setRevokeReason(""); setRevokeError(undefined); setRevokeNotice(undefined); setRevokeMode(true); }}>
+                {t("accessRequestsAdminRevokeAccess")}</Button>] : []),
+            <Button key="close" onClick={close}>{t("accessRequestsAdminEventsClose")}</Button>
+        ]}>
+            {revokeMode && <>
+                <Alert isInline variant="warning" title={t("accessRequestsAdminRevokeAccessWarning")} />
+                {revokeError && <Alert isInline variant="danger"
+                    title={t(presentEntitlementsAdminError(revokeError).messageKey)} />}
+                <Form onSubmit={(event) => { event.preventDefault(); void revoke(); }}>
+                    <FormGroup fieldId="grant-revocation-reason" isRequired
+                        label={t("accessRequestsAdminRevocationResolutionReason")}>
+                        <TextArea id="grant-revocation-reason" autoFocus maxLength={1000} value={revokeReason}
+                            onChange={(_event, value) => setRevokeReason(value)} />
+                    </FormGroup>
+                </Form>
+            </>}
+            {!revokeMode && revokeNotice && <Alert isInline
+                variant={revokeNotice === "REVOKED" ? "success" : "danger"}
+                title={t(revokeNotice === "REVOKED" ? "accessRequestsAdminRevokeAccessSuccess"
+                    : "accessRequestsAdminRevocationRetryFailed")} />}
+            {!revokeMode && <>
             {errorPresentation && <Alert isInline variant="danger"
                 title={errorPresentation.requestId
                     ? `${t(errorPresentation.messageKey)} (${errorPresentation.requestId})`
@@ -79,6 +137,11 @@ export function AuditRequestDetailsPage() {
                             {t(provisioningLabels[currentDetails.provisioningStatus].key)}</Label></DescriptionListDescription></DescriptionListGroup>
                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminEventsOccurredAt")}</DescriptionListTerm>
                         <DescriptionListDescription>{formatDate(currentDetails.createdAt)}</DescriptionListDescription></DescriptionListGroup>
+                    {currentDetails.grant && <DescriptionListGroup>
+                        <DescriptionListTerm>{t("accessRequestsAdminGrantExpiry")}</DescriptionListTerm>
+                        <DescriptionListDescription>{currentDetails.grant.expiresAt
+                            ? formatDate(currentDetails.grant.expiresAt) : t("accessRequestsAdminPermanent")}
+                        </DescriptionListDescription></DescriptionListGroup>}
                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminEventsJustification")}</DescriptionListTerm>
                         <DescriptionListDescription>{currentDetails.justification}</DescriptionListDescription></DescriptionListGroup>
                     {currentDetails.decision && <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminEventsActor")}</DescriptionListTerm>
@@ -122,6 +185,7 @@ export function AuditRequestDetailsPage() {
                     onSetPage={(_event, next) => setPage(next - 1)}
                     onPerPageSelect={(_event, next) => { setPage(0); setSize(next); }}
                 />}
+            </>}
             </>}
     </Modal>;
 }

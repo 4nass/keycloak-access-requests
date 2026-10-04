@@ -193,7 +193,8 @@ export function RevocationFailuresPage() {
                                         <DescriptionListDescription>{t(state === "OPEN"
                                             ? "accessRequestsAdminFailureOpen" : "accessRequestsAdminFailureResolved")}</DescriptionListDescription></DescriptionListGroup>
                                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminRevocationExpiredAt")}</DescriptionListTerm>
-                                        <DescriptionListDescription>{formatDate(item.expiresAt)}</DescriptionListDescription></DescriptionListGroup>
+                                        <DescriptionListDescription>{item.expiresAt
+                                            ? formatDate(item.expiresAt) : t("accessRequestsAdminPermanent")}</DescriptionListDescription></DescriptionListGroup>
                                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminFailureCause")}</DescriptionListTerm>
                                         <DescriptionListDescription>{stale ? t("accessRequestsAdminRevocationDiagnosticPending")
                                             : t(codeKey(item.failureCode))}</DescriptionListDescription></DescriptionListGroup>
@@ -203,9 +204,13 @@ export function RevocationFailuresPage() {
                                         <DescriptionListDescription>{formatDate(item.firstFailedAt)}</DescriptionListDescription></DescriptionListGroup>
                                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminRevocationLastFailedAt")}</DescriptionListTerm>
                                         <DescriptionListDescription>{formatDate(item.lastFailedAt)}</DescriptionListDescription></DescriptionListGroup>
-                                    {state === "OPEN" && !stale && <DescriptionListGroup>
+                                    {state === "OPEN" && !stale && item.expiresAt && <DescriptionListGroup>
                                         <DescriptionListTerm>{t("accessRequestsAdminRevocationNextAttempt")}</DescriptionListTerm>
                                         <DescriptionListDescription>{formatDate(item.nextAttemptAt)}</DescriptionListDescription>
+                                    </DescriptionListGroup>}
+                                    {state === "OPEN" && !stale && !item.expiresAt && <DescriptionListGroup>
+                                        <DescriptionListTerm>{t("accessRequestsAdminRevocationNextAttempt")}</DescriptionListTerm>
+                                        <DescriptionListDescription>{t("accessRequestsAdminRevocationManualRetryOnly")}</DescriptionListDescription>
                                     </DescriptionListGroup>}
                                     {item.resolvedAt && <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminRevocationResolvedAt")}</DescriptionListTerm>
                                         <DescriptionListDescription>{formatDate(item.resolvedAt)}</DescriptionListDescription></DescriptionListGroup>}

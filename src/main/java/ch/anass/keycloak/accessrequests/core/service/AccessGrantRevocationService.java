@@ -59,24 +59,40 @@ public final class AccessGrantRevocationService {
                 return false;
             }
 
-            if (!authority.isExclusivelyManaged(grant)) {
-                throw new GrantRevocationAuthorityException();
-            }
-
-            try {
-                revoker.revoke(grant);
-            } catch (GrantRevocationAuthorityException exception) {
-                throw exception;
-            } catch (RuntimeException exception) {
-                throw new GrantRevocationRemovalException(exception);
-            }
-            grants.updateIfVersionMatches(grant.markRevoked(), grant.version())
-                    .orElseThrow(() -> new ConcurrentGrantModificationException(requestId));
-            if (failures != null) {
-                failures.resolve(realmId, requestId, Instant.now(clock));
-            }
-            return true;
+            return removeLocked(grant);
         });
+    }
+
+    /** On-demand removal of an owned package grant, including one without an expiry. */
+    public boolean revokeManually(String realmId, String requestId) {
+        Objects.requireNonNull(realmId, "realmId must not be null");
+        Objects.requireNonNull(requestId, "requestId must not be null");
+        return transaction.execute(() -> {
+            AccessGrant grant = grants.findByRequestIdForUpdate(realmId, requestId).orElse(null);
+            if (grant != null && (!realmId.equals(grant.realmId()) || !requestId.equals(grant.requestId()))) {
+                throw new IllegalStateException("Revocation repository returned a grant outside the requested scope");
+            }
+            return grant != null && grant.canManuallyRevoke() && removeLocked(grant);
+        });
+    }
+
+    private boolean removeLocked(AccessGrant grant) {
+        if (!authority.isExclusivelyManaged(grant)) {
+            throw new GrantRevocationAuthorityException();
+        }
+        try {
+            revoker.revoke(grant);
+        } catch (GrantRevocationAuthorityException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new GrantRevocationRemovalException(exception);
+        }
+        grants.updateIfVersionMatches(grant.markRevoked(), grant.version())
+                .orElseThrow(() -> new ConcurrentGrantModificationException(grant.requestId()));
+        if (failures != null) {
+            failures.resolve(grant.realmId(), grant.requestId(), Instant.now(clock));
+        }
+        return true;
     }
 
     /** Administrative reconciliation: record success only when the historical membership is absent. */
@@ -91,7 +107,8 @@ public final class AccessGrantRevocationService {
                 return false;
             }
             AccessGrant grant = grants.findByRequestIdForUpdate(realmId, requestId).orElse(null);
-            if (grant == null || grant.deliveryGroupId() == null || !grant.canAutoRevokeAt(Instant.now(clock))) {
+            if (grant == null || grant.deliveryGroupId() == null
+                    || (!grant.canAutoRevokeAt(Instant.now(clock)) && !grant.canManuallyRevoke())) {
                 return false;
             }
             if (inspector.membership(grant) != AccessGrantMembershipInspector.Membership.ABSENT) {

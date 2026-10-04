@@ -33,18 +33,23 @@ public final class AccessPackageGrantRevocationRunner {
     }
 
     public static Outcome scheduled(KeycloakSessionFactory factory, String realmId, String requestId) {
-        return attempt(factory, realmId, requestId, SYSTEM_ACTOR, false);
+        return attempt(factory, realmId, requestId, SYSTEM_ACTOR, Mode.SCHEDULED, null);
     }
 
     public static Outcome retry(KeycloakSessionFactory factory, String realmId, String requestId, String actorId) {
         boolean open = KeycloakModelUtils.runJobInTransactionWithResult(factory, session ->
                 new JpaGrantRevocationFailureRepository(entityManager(session))
                         .findOpen(realmId, requestId).isPresent());
-        return open ? attempt(factory, realmId, requestId, actorId, true) : Outcome.notActionable();
+        return open ? attempt(factory, realmId, requestId, actorId, Mode.RETRY, null) : Outcome.notActionable();
+    }
+
+    public static Outcome manual(KeycloakSessionFactory factory, String realmId, String requestId,
+            String actorId, String reason) {
+        return attempt(factory, realmId, requestId, actorId, Mode.MANUAL, reason);
     }
 
     private static Outcome attempt(KeycloakSessionFactory factory, String realmId, String requestId,
-            String actorId, boolean manual) {
+            String actorId, Mode mode, String reason) {
         Objects.requireNonNull(factory);
         try {
             boolean revoked = KeycloakModelUtils.runJobInTransactionWithResult(factory, session -> {
@@ -56,21 +61,28 @@ public final class AccessPackageGrantRevocationRunner {
                 EntityManager entityManager = entityManager(session);
                 JpaAccessGrantRepository grants = new JpaAccessGrantRepository(entityManager);
                 JpaAccessPackageRepository packages = new JpaAccessPackageRepository(entityManager);
-                boolean changed = new AccessGrantRevocationService(grants,
+                AccessGrantRevocationService revocation = new AccessGrantRevocationService(grants,
                         new AccessPackageGrantAuthority(session, realm, packages),
                         new AccessPackageMembershipRevoker(session, realm, packages),
                         new KeycloakAccessRequestTransaction(session), Clock.systemUTC(),
-                        new JpaGrantRevocationFailureRepository(entityManager))
-                        .revokeExpired(realmId, requestId, !manual);
+                        new JpaGrantRevocationFailureRepository(entityManager));
+                boolean changed = switch (mode) {
+                    case SCHEDULED -> revocation.revokeExpired(realmId, requestId);
+                    case MANUAL -> revocation.revokeManually(realmId, requestId);
+                    case RETRY -> grants.findByRequestId(realmId, requestId)
+                            .filter(grant -> grant.deliveryGroupId() != null).isPresent()
+                                    ? revocation.revokeManually(realmId, requestId)
+                                    : revocation.revokeExpired(realmId, requestId, false);
+                };
                 if (changed) {
                     new JpaAccessRequestEventPublisher(entityManager).publish(
-                            AccessRequestEvent.revocationSucceeded(requestId, realmId, actorId, Instant.now()));
+                            AccessRequestEvent.revocationSucceeded(requestId, realmId, actorId, Instant.now(), reason));
                 }
                 return changed;
             });
             return revoked ? Outcome.revoked() : Outcome.notActionable();
         } catch (RuntimeException exception) {
-            LOG.warnf(exception, "Could not revoke expired package grant %s in realm %s.", requestId, realmId);
+            LOG.warnf(exception, "Could not revoke package grant %s in realm %s.", requestId, realmId);
             GrantRevocationFailureCode code = failureCode(exception);
             GrantRevocationFailure failure = KeycloakModelUtils.runJobInTransactionWithResult(factory, session -> {
                 EntityManager entityManager = entityManager(session);
@@ -102,6 +114,8 @@ public final class AccessPackageGrantRevocationRunner {
         return Objects.requireNonNull(session.getProvider(JpaConnectionProvider.class),
                 "Keycloak JPA connection provider must not be null").getEntityManager();
     }
+
+    private enum Mode { SCHEDULED, RETRY, MANUAL }
 
     public record Outcome(Status status, GrantRevocationFailureCode failureCode) {
         public enum Status { REVOKED, FAILED, NOT_ACTIONABLE }

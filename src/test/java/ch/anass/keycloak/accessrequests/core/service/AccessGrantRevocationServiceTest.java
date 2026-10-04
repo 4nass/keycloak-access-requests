@@ -199,6 +199,60 @@ class AccessGrantRevocationServiceTest {
     }
 
     @Test
+    void managerCanRemoveAnOwnedPermanentPackageGrantButSchedulerCannot() {
+        Fixture fixture = fixture(packageGrant(GrantOrigin.CREATED_BY_EXTENSION, null,
+                GrantRevocationState.AUTHORIZED), true, AT_EXPIRY);
+
+        assertTrue(!fixture.service().revokeExpired("realm-1", "request-1"));
+        assertTrue(fixture.service().revokeManually("realm-1", "request-1"));
+        assertTrue(!fixture.service().revokeManually("realm-1", "request-1"));
+        assertEquals(1, fixture.removals.get());
+        assertEquals(GrantRevocationState.REVOKED, fixture.repository.current().revocationState());
+    }
+
+    @Test
+    void failedManualRemovalOfPermanentAccessRemainsRetryable() {
+        Fixture fixture = fixture(packageGrant(GrantOrigin.CREATED_BY_EXTENSION, null,
+                GrantRevocationState.AUTHORIZED), true, AT_EXPIRY);
+        fixture.revoker = current -> {
+            if (fixture.removals.incrementAndGet() == 1) {
+                throw new IllegalStateException("Temporary group provider outage");
+            }
+        };
+
+        assertThrows(GrantRevocationRemovalException.class,
+                () -> fixture.service().revokeManually("realm-1", "request-1"));
+        assertEquals(GrantRevocationState.AUTHORIZED, fixture.repository.current().revocationState());
+        assertTrue(fixture.service().revokeManually("realm-1", "request-1"));
+        assertEquals(2, fixture.removals.get());
+        assertEquals(GrantRevocationState.REVOKED, fixture.repository.current().revocationState());
+    }
+
+    @Test
+    void manualRemovalFailsClosedForPreexistingUnverifiedAndUnboundGrants() {
+        AccessGrant[] ineligible = {
+                packageGrant(GrantOrigin.PREEXISTING, null, GrantRevocationState.UNVERIFIED),
+                packageGrant(GrantOrigin.CREATED_BY_EXTENSION, null, GrantRevocationState.UNVERIFIED),
+                grant(GrantOrigin.CREATED_BY_EXTENSION, EXPIRES_AT, GrantRevocationState.AUTHORIZED)
+        };
+        for (AccessGrant grant : ineligible) {
+            Fixture fixture = fixture(grant, true, AT_EXPIRY);
+            assertTrue(!fixture.service().revokeManually("realm-1", "request-1"));
+            assertEquals(0, fixture.removals.get());
+        }
+    }
+
+    @Test
+    void manualRemovalRechecksPackageAuthorityBeforeTouchingMembership() {
+        Fixture fixture = fixture(packageGrant(GrantOrigin.CREATED_BY_EXTENSION, null,
+                GrantRevocationState.AUTHORIZED), false, AT_EXPIRY);
+
+        assertThrows(GrantRevocationAuthorityException.class,
+                () -> fixture.service().revokeManually("realm-1", "request-1"));
+        assertEquals(0, fixture.removals.get());
+    }
+
+    @Test
     void refusesPackageMembershipRemovalWhenCurrentOwnershipVerificationFails() {
         Fixture fixture = fixture(packageGrant(GrantOrigin.CREATED_BY_EXTENSION, EXPIRES_AT,
                 GrantRevocationState.AUTHORIZED), false, AT_EXPIRY);

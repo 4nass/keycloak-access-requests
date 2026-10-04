@@ -132,6 +132,27 @@ class JpaAccessGrantRepositoryTest {
     }
 
     @Test
+    void authorizesAndManuallyRevokesPermanentPackageMembershipWithNullExpiryCas() {
+        AccessGrant permanent = withExpiry(packageGrant("request-permanent", GrantRevocationState.UNVERIFIED), null);
+        inTransaction(() -> repository.create(permanent));
+        entityManager.clear();
+
+        AccessGrant authorized = inTransactionResult(() -> revocationRepository().updateIfVersionMatches(
+                permanent.authorizeForRevocation(packageEntitlement(), true), 0).orElseThrow());
+        assertTrue(authorized.canManuallyRevoke());
+        assertFalse(authorized.canAutoRevoke());
+        assertEquals(1, authorized.version());
+
+        AccessGrant revoked = inTransactionResult(() -> revocationRepository().updateIfVersionMatches(
+                authorized.markRevoked(), authorized.version()).orElseThrow());
+        assertEquals(GrantRevocationState.REVOKED, revoked.revocationState());
+        assertEquals(2, revoked.version());
+        assertEquals(null, revoked.expiresAt());
+        assertTrue(inTransactionResult(() -> revocationRepository().updateIfVersionMatches(
+                authorized.markRevoked(), authorized.version())).isEmpty());
+    }
+
+    @Test
     void authorizesANewPackageGrantBeforeTheProvisioningTransactionCommits() {
         AccessGrant created = packageGrant("request-package-same-transaction", GrantRevocationState.UNVERIFIED);
         entityManager.getTransaction().begin();
@@ -304,7 +325,7 @@ class JpaAccessGrantRepositoryTest {
     }
 
     @Test
-    void packageRevocationRequiresPriorAuthorizationAndAnExtensionOwnedTemporaryGrant() {
+    void packageRevocationRequiresPriorAuthorizationAndExtensionOwnership() {
         AccessGrant unverified = packageGrant("request-package-unverified", GrantRevocationState.UNVERIFIED);
         AccessGrant preexisting = new AccessGrant("request-package-preexisting", "realm-1", "user-1",
                 "entitlement-1", ResourceType.REALM_ROLE, "source-role", GrantOrigin.PREEXISTING,
@@ -326,10 +347,11 @@ class JpaAccessGrantRepositoryTest {
                 withState(preexisting, GrantRevocationState.AUTHORIZED, GrantOrigin.CREATED_BY_EXTENSION), 0))
                 .isEmpty());
         assertTrue(inTransactionResult(() -> revocation.updateIfVersionMatches(
-                withState(permanent, GrantRevocationState.AUTHORIZED), 0)).isEmpty());
+                permanent.authorizeForRevocation(packageEntitlement(), true), 0)).isPresent());
         assertEquals(unverified, repository.findByRequestId("realm-1", unverified.requestId()).orElseThrow());
         assertEquals(preexisting, repository.findByRequestId("realm-1", preexisting.requestId()).orElseThrow());
-        assertEquals(permanent, repository.findByRequestId("realm-1", permanent.requestId()).orElseThrow());
+        assertEquals(GrantRevocationState.AUTHORIZED,
+                repository.findByRequestId("realm-1", permanent.requestId()).orElseThrow().revocationState());
     }
 
     @Test

@@ -97,7 +97,7 @@ class AccessPackageGrantAdaptersTest {
     }
 
     @Test
-    void doesNotClaimPreexistingPermanentOrUnboundAccess() {
+    void claimsOnlyAnOwnedAndBoundPackageEvenWhenItsExpiryIsPermanent() {
         Fixture fixture = new Fixture();
         AccessGrant unbound = new AccessGrant("request-1", "realm-1", "user-1", "entitlement-1",
                 ResourceType.REALM_ROLE, "realm-role-1", GrantOrigin.CREATED_BY_EXTENSION,
@@ -112,7 +112,7 @@ class AccessPackageGrantAdaptersTest {
 
         assertFalse(fixture.authority().isExclusivelyManaged(unbound));
         assertFalse(fixture.authority().isExclusivelyManaged(preexisting));
-        assertFalse(fixture.authority().isExclusivelyManaged(permanent));
+        assertTrue(fixture.authority().isExclusivelyManaged(permanent));
     }
 
     @Test

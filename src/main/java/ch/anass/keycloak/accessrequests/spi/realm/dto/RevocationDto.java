@@ -27,4 +27,7 @@ public final class RevocationDto {
 
     public record RevocationResolutionSubmission(String reason) {
     }
+
+    public record RevocationSubmission(String reason) {
+    }
 }

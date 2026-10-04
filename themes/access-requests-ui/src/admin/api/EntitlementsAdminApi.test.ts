@@ -75,6 +75,17 @@ describe("Entitlements administration API client", () => {
         }));
     });
 
+    it("sends an audited manual revocation request for a permanent grant", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ requestId: "request-1", status: "REVOKED" }));
+        await createApi(fetchMock).revokeGrant("request/1", "No longer required for this assignment.");
+        expect(request(fetchMock).url).toBe(
+            "https://keycloak.example/realms/finance/access-requests/admin/grants/request%2F1/revocation"
+        );
+        expect(request(fetchMock).init).toEqual(expect.objectContaining({
+            method: "POST", body: JSON.stringify({ reason: "No longer required for this assignment." })
+        }));
+    });
+
     it("loads a paginated audit event page with independent requester and actor filters", async () => {
         const event = {
             id: "event-1",

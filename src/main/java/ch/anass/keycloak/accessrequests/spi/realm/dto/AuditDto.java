@@ -8,6 +8,7 @@ import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureC
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningStatus;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationFailureCode;
+import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RequestDto.DecisionResponse;
 
 import java.util.List;
@@ -39,10 +40,11 @@ public final class AuditDto {
             String createdAt, String provisioningClosedAt, String justification,
             DecisionResponse decision, List<AdminRequestHistoryEntryResponse> history,
             int historyPage, int historySize, long historyTotal,
-            String requesterName, String entitlementName, String approverName) {
+            String requesterName, String entitlementName, String approverName,
+            AdminGrantResponse grant) {
         public static AdminRequestDetailResponse from(AccessRequest request, List<AccessRequestEvent> events,
                 int page, int size, long total, String requesterName, String entitlementName,
-                Function<String, String> userName) {
+                Function<String, String> userName, AccessGrant grant) {
             DecisionResponse decision = request.approverId() == null ? null
                     : new DecisionResponse(request.approverId(), request.decisionComment(),
                             request.decidedAt().toString());
@@ -53,7 +55,16 @@ public final class AuditDto {
                     request.justification(), decision,
                     events.stream().map(event -> AdminRequestHistoryEntryResponse.from(event,
                             userName.apply(event.actorId()))).toList(), page, size, total,
-                    requesterName, entitlementName, userName.apply(request.approverId()));
+                    requesterName, entitlementName, userName.apply(request.approverId()),
+                    grant == null ? null : AdminGrantResponse.from(grant));
+        }
+    }
+
+    public record AdminGrantResponse(String origin, String revocationState, String expiresAt,
+            boolean manuallyRevocable) {
+        static AdminGrantResponse from(AccessGrant grant) {
+            return new AdminGrantResponse(grant.origin().name(), grant.revocationState().name(),
+                    grant.expiresAt() == null ? null : grant.expiresAt().toString(), grant.canManuallyRevoke());
         }
     }
 

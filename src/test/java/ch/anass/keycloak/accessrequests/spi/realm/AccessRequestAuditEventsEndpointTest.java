@@ -114,7 +114,7 @@ class AccessRequestAuditEventsEndpointTest {
         assertEquals(java.util.List.of("id", "requesterId", "entitlementId", "resourceType", "resourceName",
                 "decisionStatus", "provisioningStatus", "createdAt", "provisioningClosedAt", "justification",
                 "decision", "history", "historyPage", "historySize", "historyTotal",
-                "requesterName", "entitlementName", "approverName"),
+                "requesterName", "entitlementName", "approverName", "grant"),
                 fields(AuditDto.AdminRequestDetailResponse.class));
         assertEquals(java.util.List.of("type", "actorId", "occurredAt", "failureCode", "closureReason",
                         "revocationFailureCode", "revocationResolutionReason", "actorName"),

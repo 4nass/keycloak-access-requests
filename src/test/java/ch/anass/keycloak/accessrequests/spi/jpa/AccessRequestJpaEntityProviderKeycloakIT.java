@@ -587,7 +587,10 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(200, permanentApproval.statusCode(), permanentApproval.body());
         assertGroupMembership(server, adminToken, permanentId, groupId);
         assertPackageGrantState(permanentRequestId, permanentId, groupId,
-                "CREATED_BY_EXTENSION", "UNVERIFIED", 0);
+                "CREATED_BY_EXTENSION", "AUTHORIZED", 1, true);
+        assertPermanentPackageGrantCanBeManuallyRevoked(server, adminToken, managerToken,
+                clientId, password, entitlementId, approverToken, requestsEndpoint, accessRequestsEndpoint,
+                groupId, preexistingRequestId);
 
         String retryUsername = "package-retry-requester-" + UUID.randomUUID();
         createEnabledUser(server, adminToken, retryUsername, password);
@@ -685,6 +688,74 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 manualResolutionRequestId, manualResolutionId);
     }
 
+    private void assertPermanentPackageGrantCanBeManuallyRevoked(GenericContainer<?> server,
+            String adminToken, String managerToken, String clientId, String password,
+            String entitlementId, String approverToken, URI requestsEndpoint,
+            URI accessRequestsEndpoint, String groupId, String preexistingRequestId) throws Exception {
+        String username = "package-manual-revocation-" + UUID.randomUUID();
+        createEnabledUser(server, adminToken, username, password);
+        String requesterToken = accessToken(server, clientId, username, password);
+        String requesterId = subjectOf(requesterToken);
+        HttpClient client = HttpClient.newHttpClient();
+        HttpResponse<String> submitted = client.send(requestSubmission(requestsEndpoint, requesterToken, """
+                {"entitlementId":"%s","justification":"Temporary assignment with permanent grant.","permanent":true}
+                """.formatted(entitlementId)), HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, submitted.statusCode(), submitted.body());
+        String requestId = responseId(submitted.body());
+        HttpResponse<String> approved = client.send(requestDecision(accessRequestsEndpoint, approverToken,
+                requestId, "approve", "Approved."), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, approved.statusCode(), approved.body());
+        assertPackageGrantState(requestId, requesterId, groupId, "CREATED_BY_EXTENSION", "AUTHORIZED", 1, true);
+
+        String base = accessRequestsEndpoint + "/admin/grants/";
+        URI revoke = URI.create(base + requestId + "/revocation");
+        HttpResponse<String> invalid = client.send(HttpRequest.newBuilder(revoke)
+                .header("Authorization", "Bearer " + managerToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"reason\":\"short\"}"))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, invalid.statusCode(), invalid.body());
+        assertGroupMembership(server, adminToken, requesterId, groupId);
+
+        HttpResponse<String> preexisting = client.send(HttpRequest.newBuilder(
+                        URI.create(base + preexistingRequestId + "/revocation"))
+                .header("Authorization", "Bearer " + managerToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"reason\":\"Access no longer required.\"}"))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, preexisting.statusCode(), preexisting.body());
+
+        String reason = "Assignment ended; manager withdrew permanent access.";
+        HttpResponse<String> revoked = client.send(HttpRequest.newBuilder(revoke)
+                .header("Authorization", "Bearer " + managerToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        new ObjectMapper().createObjectNode().put("reason", reason).toString()))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, revoked.statusCode(), revoked.body());
+        assertTrue(revoked.body().contains("\"status\":\"REVOKED\""));
+        assertNoGroupMembership(server, adminToken, requesterId, groupId);
+        assertGrantRevocationState(requestId, "REVOKED", 2);
+
+        HttpResponse<String> detail = client.send(HttpRequest.newBuilder(
+                        URI.create(accessRequestsEndpoint + "/admin/requests/" + requestId))
+                .header("Authorization", "Bearer " + managerToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, detail.statusCode(), detail.body());
+        JsonNode body = new ObjectMapper().readTree(detail.body());
+        assertEquals("REVOKED", body.path("grant").path("revocationState").asText());
+        assertFalse(body.path("grant").path("manuallyRevocable").asBoolean());
+        assertFalse(body.path("grant").hasNonNull("expiresAt"));
+        assertTrue(detail.body().contains(reason), detail.body());
+
+        HttpResponse<String> repeated = client.send(HttpRequest.newBuilder(revoke)
+                .header("Authorization", "Bearer " + managerToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"reason\":\"Second attempt is unnecessary.\"}"))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, repeated.statusCode(), repeated.body());
+    }
+
     private void prepareScheduledPackageRevocations() throws SQLException {
         assertNotNull(scheduledPackageGrant, "The first Keycloak run must provision a temporary package grant");
         try (Connection connection = DriverManager.getConnection(
@@ -746,7 +817,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     }
 
     private void assertFailedScheduledPackageGrantRetained(GenericContainer<?> server) throws Exception {
-        assertTrue(server.getLogs().contains("Could not revoke expired package grant "
+        assertTrue(server.getLogs().contains("Could not revoke package grant "
                         + scheduledPackageGrant.failedRequestId()),
                 "The timer must attempt and report the failing grant before moving to the next candidate");
         assertGrantRevocationState(scheduledPackageGrant.failedRequestId(), "AUTHORIZED", 1);
@@ -820,6 +891,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 .formatted(server.getHost(), server.getMappedPort(8080));
         URI list = URI.create(base + "/revocation-failures");
         URI retry = URI.create(base + "/grants/" + requestId + "/revocation/retry");
+        URI manual = URI.create(base + "/grants/" + requestId + "/revocation");
         URI resolve = URI.create(base + "/grants/" + requestId + "/revocation/resolve");
         HttpClient client = HttpClient.newHttpClient();
         assertEquals(403, client.send(HttpRequest.newBuilder(list)
@@ -829,6 +901,11 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 .header("Authorization", "Bearer " + nonManagerToken)
                 .POST(HttpRequest.BodyPublishers.noBody()).build(),
                 HttpResponse.BodyHandlers.discarding()).statusCode());
+        assertEquals(403, client.send(HttpRequest.newBuilder(manual)
+                .header("Authorization", "Bearer " + nonManagerToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"reason\":\"Access no longer required.\"}"))
+                .build(), HttpResponse.BodyHandlers.discarding()).statusCode());
         HttpRequest unauthorizedResolution = HttpRequest.newBuilder(resolve)
                 .header("Authorization", "Bearer " + nonManagerToken)
                 .header("Content-Type", "application/json")
@@ -1017,6 +1094,11 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
     private void assertPackageGrantState(String requestId, String requesterId, String groupId,
             String origin, String revocationState, long version) throws SQLException {
+        assertPackageGrantState(requestId, requesterId, groupId, origin, revocationState, version, false);
+    }
+
+    private void assertPackageGrantState(String requestId, String requesterId, String groupId,
+            String origin, String revocationState, long version, boolean permanent) throws SQLException {
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              PreparedStatement statement = connection.prepareStatement("""
@@ -1033,7 +1115,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 assertEquals(groupId, row.getString("DELIVERY_GROUP_ID"));
                 assertEquals(origin, row.getString("GRANT_ORIGIN"));
                 assertEquals(revocationState, row.getString("REVOCATION_STATE"));
-                if ("AUTHORIZED".equals(revocationState)) {
+                if ("AUTHORIZED".equals(revocationState) && !permanent) {
                     assertTrue(row.getLong("EXPIRES_TIMESTAMP") > 0);
                 } else {
                     assertNull(row.getObject("EXPIRES_TIMESTAMP", Long.class));

@@ -73,6 +73,10 @@ final class AccessRequestServiceFactory {
         return new JpaAccessRequestRepository(entityManager());
     }
 
+    JpaAccessGrantRepository accessGrantRepository() {
+        return new JpaAccessGrantRepository(entityManager());
+    }
+
     JpaGrantRevocationFailureRepository grantRevocationFailures() {
         return new JpaGrantRevocationFailureRepository(entityManager());
     }

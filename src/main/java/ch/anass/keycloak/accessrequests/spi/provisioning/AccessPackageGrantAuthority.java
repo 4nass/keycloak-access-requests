@@ -6,7 +6,7 @@ import ch.anass.keycloak.accessrequests.core.port.AccessPackageRepository;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 
-/** Confirms that a temporary package grant still belongs to the extension. */
+/** Confirms that a package grant still belongs to the extension. */
 public final class AccessPackageGrantAuthority implements AccessGrantRevocationAuthority {
 
     private final AccessPackageGrantVerifier verifier;

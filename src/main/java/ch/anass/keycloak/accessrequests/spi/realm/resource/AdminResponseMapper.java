@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.spi.realm.resource;
 
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestNotificationOutboxEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestHistoryReader;
@@ -31,10 +32,10 @@ final class AdminResponseMapper {
 
     static AdminRequestDetailResponse requestDetail(
             AccessRequest request, JpaAccessRequestHistoryReader.AuditEventPage history,
-            AdminNameLookup names) {
+            AccessGrant grant, AdminNameLookup names) {
         return AdminRequestDetailResponse.from(request, history.items(),
                 history.page(), history.size(), history.total(), names.user(request.requesterId()),
-                names.entitlement(request.entitlementId(), request.resourceNameSnapshot()), names::user);
+                names.entitlement(request.entitlementId(), request.resourceNameSnapshot()), names::user, grant);
     }
 
     static FailedProvisioningRequestListResponse failedProvisioning(
@@ -61,7 +62,8 @@ final class AdminResponseMapper {
             var grant = item.grant();
             var failure = item.failure();
             return new RevocationFailureResponse(grant.requestId(), grant.requesterId(), grant.entitlementId(),
-                    grant.resourceType(), grant.resourceId(), grant.deliveryGroupId(), grant.expiresAt().toString(),
+                    grant.resourceType(), grant.resourceId(), grant.deliveryGroupId(),
+                    grant.expiresAt() == null ? null : grant.expiresAt().toString(),
                     failure.code(), failure.attemptCount(), failure.firstFailedAt().toString(),
                     failure.lastFailedAt().toString(), failure.nextAttemptAt().toString(),
                     failure.resolvedAt() == null ? null : failure.resolvedAt().toString(),

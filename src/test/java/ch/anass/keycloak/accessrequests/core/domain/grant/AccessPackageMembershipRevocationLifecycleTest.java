@@ -67,17 +67,21 @@ class AccessPackageMembershipRevocationLifecycleTest {
     }
 
     @Test
-    void preexistingPermanentAndInvalidatedMembershipsCannotBeRemovedAtExpiry() {
+    void permanentMembershipCanBeAuthorizedForManualRemovalButNeverExpires() {
         AccessGrant preexisting = membership(GrantOrigin.PREEXISTING, null, GrantRevocationState.UNVERIFIED);
         AccessGrant permanent = membership(GrantOrigin.CREATED_BY_EXTENSION, null, GrantRevocationState.UNVERIFIED);
         AccessGrant invalidated = membership(GrantOrigin.CREATED_BY_EXTENSION, EXPIRES_AT,
                 GrantRevocationState.INVALIDATED);
 
-        for (AccessGrant grant : List.of(preexisting, permanent, invalidated)) {
+        for (AccessGrant grant : List.of(preexisting, invalidated)) {
             assertFalse(grant.canAutoRevokeAt(EXPIRES_AT.plus(Duration.ofDays(30))));
             assertThrows(IllegalStateException.class, () -> grant.authorizeForRevocation(entitlement(), true));
             assertThrows(IllegalStateException.class, grant::markRevoked);
         }
+        AccessGrant authorized = permanent.authorizeForRevocation(entitlement(), true);
+        assertFalse(authorized.canAutoRevokeAt(EXPIRES_AT.plus(Duration.ofDays(30))));
+        assertTrue(authorized.canManuallyRevoke());
+        assertEquals(GrantRevocationState.REVOKED, authorized.markRevoked().revocationState());
     }
 
     @Test

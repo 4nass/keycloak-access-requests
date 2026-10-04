@@ -111,7 +111,7 @@ public final class JpaAccessGrantRepository implements AccessGrantRevocationRepo
             return Optional.empty();
         }
         if (updated.version() != expectedVersion || updated.origin() != GrantOrigin.CREATED_BY_EXTENSION
-                || updated.expiresAt() == null
+                || (updated.expiresAt() == null && updated.deliveryGroupId() == null)
                 || (updated.resourceType() == ResourceType.GROUP && updated.deliveryGroupId() == null)) {
             return Optional.empty();
         }
@@ -119,6 +119,9 @@ public final class JpaAccessGrantRepository implements AccessGrantRevocationRepo
         String deliveryGroupCondition = updated.deliveryGroupId() == null
                 ? " and entity.deliveryGroupId is null"
                 : " and entity.deliveryGroupId = :deliveryGroupId";
+        String expiryCondition = updated.expiresAt() == null
+                ? " and entity.expiresTimestamp is null"
+                : " and entity.expiresTimestamp = :expiresTimestamp";
         Query query = entityManager.createQuery("""
                         update AccessGrantEntity entity
                            set entity.revocationState = :nextState,
@@ -131,10 +134,9 @@ public final class JpaAccessGrantRepository implements AccessGrantRevocationRepo
                            and entity.resourceId = :resourceId
                            and entity.origin = :origin
                            and entity.recordedTimestamp = :recordedTimestamp
-                           and entity.expiresTimestamp = :expiresTimestamp
                            and entity.version = :expectedVersion
                            and entity.revocationState = :previousState
-                        """ + deliveryGroupCondition)
+                        """ + expiryCondition + deliveryGroupCondition)
                 .setParameter("nextState", updated.revocationState())
                 .setParameter("requestId", updated.requestId())
                 .setParameter("realmId", updated.realmId())
@@ -144,9 +146,11 @@ public final class JpaAccessGrantRepository implements AccessGrantRevocationRepo
                 .setParameter("resourceId", updated.resourceId())
                 .setParameter("origin", updated.origin())
                 .setParameter("recordedTimestamp", updated.recordedAt().toEpochMilli())
-                .setParameter("expiresTimestamp", updated.expiresAt().toEpochMilli())
                 .setParameter("expectedVersion", expectedVersion)
                 .setParameter("previousState", previousState);
+        if (updated.expiresAt() != null) {
+            query.setParameter("expiresTimestamp", updated.expiresAt().toEpochMilli());
+        }
         if (updated.deliveryGroupId() != null) {
             query.setParameter("deliveryGroupId", updated.deliveryGroupId());
         }

@@ -20,6 +20,7 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.ProvisioningDto.Provisioni
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RequestDto.RequestResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationRetryResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationResolutionSubmission;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationSubmission;
 import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageGrantRevocationRunner;
 import jakarta.ws.rs.core.Response;
 import java.time.Instant;
@@ -86,6 +87,7 @@ final class AccessRequestAdminHandler extends AccessRequestHandlerSupport {
             var history = historyReader()
                     .findPageByRequestId(manager.realm().getId(), requestId, historyPage, historySize);
             return Response.ok(AdminResponseMapper.requestDetail(request, history,
+                    accessGrantRepository().findByRequestId(manager.realm().getId(), requestId).orElse(null),
                     adminNames(manager.realm()))).build();
         } catch (IllegalArgumentException exception) {
             return error(Response.Status.BAD_REQUEST, "INVALID_AUDIT_EVENT_QUERY", exception.getMessage(), requestId);
@@ -153,6 +155,25 @@ final class AccessRequestAdminHandler extends AccessRequestHandlerSupport {
         }
         var result = AccessPackageGrantRevocationRunner.retry(session.getKeycloakSessionFactory(),
                 manager.realm().getId(), requestId, manager.user().getId());
+        if (result.status() == AccessPackageGrantRevocationRunner.Outcome.Status.NOT_ACTIONABLE) {
+            return error(Response.Status.CONFLICT, "REVOCATION_NOT_ACTIONABLE", null, requestId);
+        }
+        return Response.ok(new RevocationRetryResponse(requestId, result.status().name(),
+                result.failureCode())).build();
+    }
+
+    public Response revokeGrant(String requestId, RevocationSubmission submission) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        if (submission == null || submission.reason() == null
+                || submission.reason().strip().length() < 10 || submission.reason().strip().length() > 1000) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_REVOCATION_REASON",
+                    "reason must contain 10 to 1000 characters", requestId);
+        }
+        if (accessGrantRepository().findByRequestId(manager.realm().getId(), requestId).isEmpty()) {
+            return error(Response.Status.NOT_FOUND, "GRANT_NOT_FOUND", null, requestId);
+        }
+        var result = AccessPackageGrantRevocationRunner.manual(session.getKeycloakSessionFactory(),
+                manager.realm().getId(), requestId, manager.user().getId(), submission.reason().strip());
         if (result.status() == AccessPackageGrantRevocationRunner.Outcome.Status.NOT_ACTIONABLE) {
             return error(Response.Status.CONFLICT, "REVOCATION_NOT_ACTIONABLE", null, requestId);
         }

@@ -74,6 +74,12 @@ export type AdminAuditRequestDetails = {
     provisioningClosedAt: string | null;
     justification: string;
     decision: { approverId: string; comment: string; decidedAt: string } | null;
+    grant: {
+        origin: "CREATED_BY_EXTENSION" | "PREEXISTING";
+        revocationState: "UNVERIFIED" | "AUTHORIZED" | "INVALIDATED" | "REVOKED";
+        expiresAt: string | null;
+        manuallyRevocable: boolean;
+    } | null;
     history: {
         type: AdminAuditEventType;
         actorId: string;
@@ -173,7 +179,7 @@ export type RevocationFailure = {
     resourceId: string;
     resourceName?: string | null;
     deliveryGroupId: string;
-    expiresAt: string;
+    expiresAt: string | null;
     failureCode: RevocationFailureCode;
     attemptCount: number;
     firstFailedAt: string;
@@ -266,6 +272,7 @@ export type EntitlementsAdminApi = {
     closeFailedProvisioning(id: string, reason: string): Promise<ProvisioningClosureResult>;
     revocationFailures(query?: { page?: number; size?: number; state?: "OPEN" | "RESOLVED" }): Promise<RevocationFailurePage>;
     retryGrantRevocation(id: string): Promise<RevocationRetryResult>;
+    revokeGrant(id: string, reason: string): Promise<RevocationRetryResult>;
     resolveGrantRevocation(id: string, reason: string): Promise<RevocationRetryResult>;
     references(type: Entitlement["resourceType"], query?: {
         search?: string;
@@ -393,6 +400,10 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
         retryGrantRevocation: (id) => request(
             `/admin/grants/${encodeURIComponent(id)}/revocation/retry`,
             { method: "POST" }
+        ),
+        revokeGrant: (id, reason) => request(
+            `/admin/grants/${encodeURIComponent(id)}/revocation`,
+            json("POST", { reason })
         ),
         resolveGrantRevocation: (id, reason) => request(
             `/admin/grants/${encodeURIComponent(id)}/revocation/resolve`,
