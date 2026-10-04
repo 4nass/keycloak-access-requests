@@ -153,6 +153,119 @@ class JpaEntitlementRepositoryTest {
     }
 
     @Test
+    void storesAutoApprovalAsDisabledByDefault() {
+        Entitlement draft = unpublished("auto-default", "realm-1", ResourceType.GROUP,
+                "package-default", "Default package", "Default approval policy.", RiskLevel.LOW);
+        persist(draft);
+        entityManager.clear();
+
+        Entitlement restored = repository.findById("realm-1", draft.id()).orElseThrow();
+        assertFalse(restored.autoApproveLowRisk());
+        assertEquals(Boolean.FALSE, entityManager.createNativeQuery("""
+                        select AUTO_APPROVE_LOW_RISK from AR_ENTITLEMENT where ID = :id
+                        """)
+                .setParameter("id", draft.id())
+                .getSingleResult());
+    }
+
+    @Test
+    void rehydratesEnabledAutoApprovalAcrossAllCatalogReadPaths() {
+        Entitlement enabled = unpublished("auto-enabled", "realm-1", ResourceType.GROUP,
+                "package-enabled", "Automatic package", "Automatically approved low-risk access.", RiskLevel.LOW)
+                .withAutoApproval(true, CREATED_AT.plusSeconds(1))
+                .publish(CREATED_AT.plusSeconds(1));
+        persist(enabled);
+        entityManager.clear();
+
+        assertTrue(repository.findById("realm-1", enabled.id()).orElseThrow().autoApproveLowRisk());
+        assertTrue(EntityTransactionSupport.call(entityManager,
+                () -> repository.findByIdForUpdate("realm-1", enabled.id()).orElseThrow())
+                .autoApproveLowRisk());
+        assertTrue(repository.findAll(new EntitlementQuery("realm-1", 0, 20))
+                .items().getFirst().autoApproveLowRisk());
+        assertTrue(repository.findRequestable(new CatalogQuery("realm-1", null, null, null, 0, 20))
+                .items().getFirst().autoApproveLowRisk());
+    }
+
+    @Test
+    void updatesAutoApprovalWithOptimisticLockingAndPersistsItsRemoval() {
+        Entitlement initial = unpublished("auto-update", "realm-1", ResourceType.GROUP,
+                "package-update", "Updated package", "Changeable approval policy.", RiskLevel.LOW);
+        persist(initial);
+        entityManager.clear();
+
+        Entitlement enabled = initial.withAutoApproval(true, CREATED_AT.plusSeconds(1));
+        Entitlement updated = EntityTransactionSupport.call(entityManager,
+                () -> repository.updateIfVersionMatches(enabled, initial.version()).orElseThrow());
+        assertTrue(updated.autoApproveLowRisk());
+        assertEquals(initial.version() + 1, updated.version());
+
+        EntityTransactionSupport.execute(entityManager,
+                () -> assertTrue(repository.updateIfVersionMatches(initial, initial.version()).isEmpty()));
+        assertTrue(repository.findById("realm-1", initial.id()).orElseThrow().autoApproveLowRisk());
+
+        Entitlement disabled = updated.withAutoApproval(false, CREATED_AT.plusSeconds(2));
+        Entitlement saved = EntityTransactionSupport.call(entityManager,
+                () -> repository.updateIfVersionMatches(disabled, updated.version()).orElseThrow());
+        entityManager.clear();
+        assertFalse(saved.autoApproveLowRisk());
+        assertFalse(repository.findById("realm-1", initial.id()).orElseThrow().autoApproveLowRisk());
+        assertEquals(Boolean.FALSE, entityManager.createNativeQuery("""
+                        select AUTO_APPROVE_LOW_RISK from AR_ENTITLEMENT where ID = :id
+                        """)
+                .setParameter("id", initial.id())
+                .getSingleResult());
+    }
+
+    @Test
+    void persistsAutomaticApprovalBeingClearedWhenRiskIsRaised() {
+        Entitlement enabled = unpublished("auto-risk", "realm-1", ResourceType.GROUP,
+                "package-risk", "Risk package", "Risk-sensitive approval policy.", RiskLevel.LOW)
+                .withAutoApproval(true, CREATED_AT.plusSeconds(1));
+        persist(enabled);
+        entityManager.clear();
+
+        Entitlement mediumRisk = enabled.updateDetails(enabled.displayName(), enabled.description(),
+                RiskLevel.MEDIUM, enabled.approverRoleId(), enabled.durationPolicy(), CREATED_AT.plusSeconds(2));
+        assertFalse(mediumRisk.autoApproveLowRisk());
+        EntityTransactionSupport.execute(entityManager,
+                () -> repository.updateIfVersionMatches(mediumRisk, enabled.version()).orElseThrow());
+        entityManager.clear();
+
+        Entitlement restored = repository.findById("realm-1", enabled.id()).orElseThrow();
+        assertEquals(RiskLevel.MEDIUM, restored.riskLevel());
+        assertFalse(restored.autoApproveLowRisk());
+        assertEquals(Boolean.FALSE, entityManager.createNativeQuery("""
+                        select AUTO_APPROVE_LOW_RISK from AR_ENTITLEMENT where ID = :id
+                        """)
+                .setParameter("id", enabled.id())
+                .getSingleResult());
+    }
+
+    @Test
+    void auditsTheAutoApprovalSettingAsAnImmutablePolicySnapshot() {
+        Entitlement enabled = unpublished("auto-audit", "realm-1", ResourceType.GROUP,
+                "package-audit", "Audited package", "Audited approval policy.", RiskLevel.LOW)
+                .withAutoApproval(true, CREATED_AT.plusSeconds(1));
+        Entitlement disabled = enabled.withAutoApproval(false, CREATED_AT.plusSeconds(2)).withVersion(1);
+
+        EntityTransactionSupport.execute(entityManager, () -> {
+            JpaEntitlementAuditEventPublisher publisher = new JpaEntitlementAuditEventPublisher(entityManager);
+            publisher.publish(EntitlementAuditEvent.created(enabled, "catalog-manager-1"));
+            publisher.publish(EntitlementAuditEvent.updated(disabled, "catalog-manager-2"));
+        });
+        entityManager.clear();
+
+        List<?> snapshots = entityManager.createNativeQuery("""
+                        select AUTO_APPROVE_LOW_RISK from AR_ENTITLEMENT_HISTORY
+                         where ENTITLEMENT_ID = :id order by VERSION
+                        """)
+                .setParameter("id", enabled.id())
+                .getResultList();
+        assertEquals(List.of(true, false), snapshots);
+    }
+
+    @Test
     void returnsDraftAndRequestableEntitlementsForAdministrativePagination() {
         persist(published("entitlement-3", "realm-1", ResourceType.REALM_ROLE, "role-3", "Charlie",
                 "Third entitlement.", RiskLevel.LOW));
@@ -259,6 +372,21 @@ class JpaEntitlementRepositoryTest {
             try {
                 operation.run();
                 transaction.commit();
+            } catch (RuntimeException | Error exception) {
+                if (transaction.isActive()) {
+                    transaction.rollback();
+                }
+                throw exception;
+            }
+        }
+
+        private static <T> T call(EntityManager entityManager, java.util.function.Supplier<T> operation) {
+            var transaction = entityManager.getTransaction();
+            transaction.begin();
+            try {
+                T result = operation.get();
+                transaction.commit();
+                return result;
             } catch (RuntimeException | Error exception) {
                 if (transaction.isActive()) {
                     transaction.rollback();

@@ -315,8 +315,29 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             }
             assertTrue(tableExists(connection, "ar_entitlement"));
             assertTrue(tableExists(connection, "ar_entitlement_history"));
+            assertAutoApprovalColumnDefaultsToDisabled(connection, "ar_entitlement");
+            assertAutoApprovalColumnDefaultsToDisabled(connection, "ar_entitlement_history");
             assertTrue(tableExists(connection, "ar_notification_outbox"));
             assertEquals(2, providerChangeSetCount(connection));
+        }
+    }
+
+    private void assertAutoApprovalColumnDefaultsToDisabled(Connection connection, String table) throws SQLException {
+        try (PreparedStatement query = connection.prepareStatement("""
+                select is_nullable, column_default
+                  from information_schema.columns
+                 where table_schema = 'public'
+                   and table_name = ?
+                   and column_name = 'auto_approve_low_risk'
+                """)) {
+            query.setString(1, table);
+            try (ResultSet column = query.executeQuery()) {
+                assertTrue(column.next(), () -> table + " must store the low-risk auto-approval policy");
+                assertEquals("NO", column.getString("is_nullable"));
+                assertEquals("false", column.getString("column_default"),
+                        "New and pre-existing catalog policies must default to manual approval");
+                assertFalse(column.next());
+            }
         }
     }
 
