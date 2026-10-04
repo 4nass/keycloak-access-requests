@@ -119,13 +119,13 @@ class EntitlementCatalogAdministrationEndpointTest {
         assertTrue(update.isRecord());
         assertArrayEquals(
                 new String[]{"displayName", "description", "riskLevel", "approverRoleId", "requestable", "version",
-                        "defaultDurationSeconds", "maxDurationSeconds", "allowPermanent"},
+                        "defaultDurationSeconds", "maxDurationSeconds", "allowPermanent", "autoApproveLowRisk"},
                 Arrays.stream(update.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));
         assertArrayEquals(
                 new Class<?>[]{String.class, String.class, RiskLevel.class, String.class, Boolean.class,
-                        Long.class, Long.class, Long.class, Boolean.class},
+                        Long.class, Long.class, Long.class, Boolean.class, Boolean.class},
                 Arrays.stream(update.getRecordComponents())
                         .map(RecordComponent::getType)
                         .toArray(Class<?>[]::new));
@@ -154,7 +154,7 @@ class EntitlementCatalogAdministrationEndpointTest {
                         "id", "resourceType", "resourceId", "displayName", "description", "riskLevel",
                         "approverRoleId", "requestable", "createdAt", "updatedAt", "version",
                         "defaultDurationSeconds", "maxDurationSeconds", "allowPermanent",
-                        "resourceName", "approverRoleName"},
+                        "resourceName", "approverRoleName", "autoApproveLowRisk"},
                 Arrays.stream(CatalogDto.EntitlementResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));

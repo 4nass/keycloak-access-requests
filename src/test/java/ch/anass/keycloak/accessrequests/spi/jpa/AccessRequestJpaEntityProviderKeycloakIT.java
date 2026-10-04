@@ -86,6 +86,180 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     }
 
     @Test
+    void configuresLowRiskAutoApprovalThroughTheAdminApiAndAppliesItToNewRequests() throws Exception {
+        try (KeycloakContainer server = keycloak()) {
+            server.start();
+            HttpClient client = HttpClient.newHttpClient();
+            ObjectMapper json = new ObjectMapper();
+            String adminToken = accessToken(server, "admin-cli");
+            String roleId = createRealmRole(server, adminToken, "auto-approval-source-" + UUID.randomUUID());
+            String approverRoleId = createRealmRole(server, adminToken, "auto-approval-approver-" + UUID.randomUUID());
+            URI packages = URI.create("http://%s:%d/realms/master/access-requests/admin/access-packages"
+                    .formatted(server.getHost(), server.getMappedPort(8080)));
+            URI entitlements = URI.create("http://%s:%d/realms/master/access-requests/admin/entitlements"
+                    .formatted(server.getHost(), server.getMappedPort(8080)));
+            URI requests = URI.create("http://%s:%d/realms/master/access-requests/requests"
+                    .formatted(server.getHost(), server.getMappedPort(8080)));
+            String packageBody = """
+                    {"displayName":"Temporary reporting access","description":"Reporting package for a project.",
+                     "riskLevel":"LOW","approverRoleId":"%s",
+                     "roleMappings":[{"type":"REALM_ROLE","roleId":"%s"}]%s}
+                    """;
+            String defaultBody = packageBody.formatted(approverRoleId, roleId, "");
+            String enabledBody = packageBody.formatted(approverRoleId, roleId, ",\"autoApproveLowRisk\":true");
+
+            assertEquals(401, client.send(HttpRequest.newBuilder(packages)
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(defaultBody)).build(),
+                    HttpResponse.BodyHandlers.discarding()).statusCode());
+
+            String clientId = "auto-approval-client-" + UUID.randomUUID();
+            createDirectAccessClient(server, adminToken, clientId);
+            addAccessRequestsAudience(server, adminToken, clientId);
+            String requesterOne = "auto-approval-requester-" + UUID.randomUUID();
+            createEnabledUser(server, adminToken, requesterOne, "requester-password");
+            String requesterOneToken = accessToken(server, clientId, requesterOne, "requester-password");
+            assertEquals(403, client.send(HttpRequest.newBuilder(packages)
+                            .header("Authorization", "Bearer " + requesterOneToken)
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(defaultBody)).build(),
+                    HttpResponse.BodyHandlers.discarding()).statusCode());
+
+            int groupsBeforeInvalidPolicy = accessPackageGroupCount(server, adminToken);
+            HttpResponse<String> invalidRisk = client.send(HttpRequest.newBuilder(packages)
+                            .header("Authorization", "Bearer " + adminToken)
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(enabledBody.replace("\"LOW\"", "\"MEDIUM\"")))
+                            .build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(400, invalidRisk.statusCode(), invalidRisk.body());
+            assertEquals(groupsBeforeInvalidPolicy, accessPackageGroupCount(server, adminToken),
+                    "A rejected policy must not leave an orphan package group");
+
+            HttpResponse<String> defaultPolicy = client.send(HttpRequest.newBuilder(packages)
+                            .header("Authorization", "Bearer " + adminToken)
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(defaultBody)).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(201, defaultPolicy.statusCode(), defaultPolicy.body());
+            assertTrue(json.readTree(defaultPolicy.body()).has("autoApproveLowRisk"));
+            assertFalse(json.readTree(defaultPolicy.body()).path("autoApproveLowRisk").asBoolean());
+
+            HttpResponse<String> created = client.send(HttpRequest.newBuilder(packages)
+                            .header("Authorization", "Bearer " + adminToken)
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(enabledBody)).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(201, created.statusCode(), created.body());
+            JsonNode draft = json.readTree(created.body());
+            assertTrue(draft.path("autoApproveLowRisk").asBoolean(), created.body());
+            assertFalse(draft.path("requestable").asBoolean(), "Creation must not publish the package implicitly");
+            String entitlementId = draft.path("id").asText();
+            String groupId = draft.path("resourceId").asText();
+            URI entitlement = URI.create(entitlements + "/" + entitlementId);
+
+            HttpResponse<String> reloaded = client.send(HttpRequest.newBuilder(entitlement)
+                            .header("Authorization", "Bearer " + adminToken).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, reloaded.statusCode());
+            assertTrue(json.readTree(reloaded.body()).path("autoApproveLowRisk").asBoolean());
+            HttpResponse<String> listed = client.send(HttpRequest.newBuilder(entitlements)
+                            .header("Authorization", "Bearer " + adminToken).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, listed.statusCode());
+            assertTrue(listed.body().contains("\"autoApproveLowRisk\":true"));
+
+            String updateBody = """
+                    {"displayName":"Temporary reporting access","description":"Reporting package for a project.",
+                     "riskLevel":"%s","approverRoleId":"%s","requestable":true,"version":%d%s}
+                    """;
+            HttpResponse<String> published = client.send(HttpRequest.newBuilder(entitlement)
+                            .header("Authorization", "Bearer " + adminToken)
+                            .header("Content-Type", "application/json")
+                            .PUT(HttpRequest.BodyPublishers.ofString(
+                                    updateBody.formatted("LOW", approverRoleId, 0, ""))).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, published.statusCode(), published.body());
+            assertTrue(json.readTree(published.body()).path("autoApproveLowRisk").asBoolean(),
+                    "Omitting the optional policy on update must preserve its current value");
+
+            HttpResponse<String> stale = client.send(HttpRequest.newBuilder(entitlement)
+                            .header("Authorization", "Bearer " + adminToken)
+                            .header("Content-Type", "application/json")
+                            .PUT(HttpRequest.BodyPublishers.ofString(updateBody.formatted(
+                                    "LOW", approverRoleId, 0, ",\"autoApproveLowRisk\":false"))).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(409, stale.statusCode(), stale.body());
+
+            HttpResponse<String> invalidUpdate = client.send(HttpRequest.newBuilder(entitlement)
+                            .header("Authorization", "Bearer " + adminToken)
+                            .header("Content-Type", "application/json")
+                            .PUT(HttpRequest.BodyPublishers.ofString(updateBody.formatted(
+                                    "HIGH", approverRoleId, 1, ",\"autoApproveLowRisk\":true"))).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(400, invalidUpdate.statusCode(), invalidUpdate.body());
+
+            HttpResponse<String> automaticRequest = client.send(requestSubmission(requests, requesterOneToken,
+                            entitlementId, "Temporary reporting access is needed."),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(201, automaticRequest.statusCode(), automaticRequest.body());
+            JsonNode completed = json.readTree(automaticRequest.body());
+            assertEquals("APPROVED", completed.path("decisionStatus").asText());
+            assertEquals("SUCCEEDED", completed.path("provisioningStatus").asText());
+            assertGroupMembership(server, adminToken, subjectOf(requesterOneToken), groupId);
+            assertPackageGrantState(completed.path("id").asText(), subjectOf(requesterOneToken), groupId,
+                    "CREATED_BY_EXTENSION", "AUTHORIZED", 1);
+            try (Connection connection = DriverManager.getConnection(
+                    POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+                assertProvisioningAuditEvent(connection, completed.path("id").asText(),
+                        "REQUEST_APPROVED", "system:auto-approval");
+            }
+
+            HttpResponse<String> disabled = client.send(HttpRequest.newBuilder(entitlement)
+                            .header("Authorization", "Bearer " + adminToken)
+                            .header("Content-Type", "application/json")
+                            .PUT(HttpRequest.BodyPublishers.ofString(updateBody.formatted(
+                                    "LOW", approverRoleId, 1, ",\"autoApproveLowRisk\":false"))).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, disabled.statusCode(), disabled.body());
+            assertFalse(json.readTree(disabled.body()).path("autoApproveLowRisk").asBoolean());
+            String requesterTwo = "manual-approval-requester-" + UUID.randomUUID();
+            createEnabledUser(server, adminToken, requesterTwo, "requester-password");
+            String requesterTwoToken = accessToken(server, clientId, requesterTwo, "requester-password");
+            HttpResponse<String> manualRequest = client.send(requestSubmission(requests, requesterTwoToken,
+                            entitlementId, "Temporary reporting access needs review."),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(201, manualRequest.statusCode(), manualRequest.body());
+            assertEquals("PENDING", json.readTree(manualRequest.body()).path("decisionStatus").asText());
+            assertNoGroupMembership(server, adminToken, subjectOf(requesterTwoToken), groupId);
+            try (Connection connection = DriverManager.getConnection(
+                    POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                 PreparedStatement grants = connection.prepareStatement(
+                         "select count(*) from AR_ACCESS_GRANT where REQUEST_ID = ?")) {
+                grants.setString(1, json.readTree(manualRequest.body()).path("id").asText());
+                try (ResultSet row = grants.executeQuery()) {
+                    assertTrue(row.next());
+                    assertEquals(0, row.getLong(1), "Manual review must not provision the pending request");
+                }
+            }
+            try (Connection connection = DriverManager.getConnection(
+                    POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                 PreparedStatement history = connection.prepareStatement("""
+                         select AUTO_APPROVE_LOW_RISK from AR_ENTITLEMENT_HISTORY
+                          where ENTITLEMENT_ID = ? order by VERSION
+                         """)) {
+                history.setString(1, entitlementId);
+                try (ResultSet rows = history.executeQuery()) {
+                    for (boolean expected : List.of(true, true, false)) {
+                        assertTrue(rows.next(), "Each committed policy change must have an audit snapshot");
+                        assertEquals(expected, rows.getBoolean(1));
+                    }
+                    assertFalse(rows.next(), "Rejected and stale updates must not create audit entries");
+                }
+            }
+        }
+    }
+
+    @Test
     void appliesTheProviderChangelogAtKeycloakStartupAndKeepsItAppliedAfterRestart() throws Exception {
         assertConsoleBundlesArePackagedInProviderJar(providerJar());
 
