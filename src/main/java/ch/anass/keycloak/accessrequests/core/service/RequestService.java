@@ -45,6 +45,7 @@ import java.util.logging.Logger;
 public final class RequestService {
 
     private static final Logger LOG = Logger.getLogger(RequestService.class.getName());
+    private static final String AUTO_APPROVER_ID = "system:auto-approval";
     private static final AccessRequestNotificationPublisher NO_OP_NOTIFICATION_PUBLISHER = notification -> {
     };
     private static final AccessPackageRepository NO_ACCESS_PACKAGES = new AccessPackageRepository() {
@@ -264,6 +265,10 @@ public final class RequestService {
                 AccessRequest persisted = accessRequestRepository.createIfNoPending(request)
                         .orElseThrow(() -> new RequestAlreadyPendingException(entitlementId));
                 AccessRequestEvent event = AccessRequestEvent.created(persisted, requesterId, occurredAt);
+                if (entitlement.autoApproveLowRisk()) {
+                    eventPublisher.publish(event);
+                    return completeApproval(persisted, entitlement, AUTO_APPROVER_ID, null);
+                }
                 publish(event, persisted, entitlement);
                 return persisted;
             });
@@ -301,37 +306,43 @@ public final class RequestService {
             Entitlement entitlement = requireCurrentEntitlementForUpdate(realmId, request.entitlementId());
             authorizeDecision(realmId, request, approverId);
             requireBoundPackage(entitlement);
-            AccessRequest candidate = request.copy();
-            Instant decidedAt = Instant.now(clock);
-            candidate.approve(approverId, decisionComment, decidedAt);
-            requireRepresentableExpiry(candidate, decidedAt);
-            AccessRequest approved = updateOrThrow(candidate, request.version());
-            AccessRequestEvent approvalEvent = AccessRequestEvent.approved(
-                    approved, approverId, decidedAt, decisionComment);
-            publish(approvalEvent, approved, entitlement);
-            publish(AccessRequestEvent.provisioningStarted(approved, approverId, decidedAt), approved, entitlement);
-
-            AccessPackage accessPackage = accessPackages.findByEntitlementId(realmId, entitlement.id()).orElse(null);
-            ProvisioningResult result = provision(approved.id(), realmId, approved.requesterId(), entitlement,
-                    accessPackage);
-            AccessRequest completed = approved.copy();
-            Instant completedAt = Instant.now(clock);
-            if (result.isSuccessful()) {
-                completed.markProvisioningSucceeded(completedAt);
-            } else {
-                completed.markProvisioningFailed(completedAt);
-            }
-            AccessRequest persisted = updateOrThrow(completed, approved.version());
-            if (result.isSuccessful()) {
-                persistProvisionedGrant(persisted, entitlement, result.grantOrigin(), completedAt, accessPackage);
-            }
-            AccessRequestEvent provisioningEvent = result.isSuccessful()
-                    ? AccessRequestEvent.provisioningSucceeded(persisted, approverId, completedAt)
-                    : AccessRequestEvent.provisioningFailed(
-                            persisted, approverId, completedAt, result.failureReason(), result.failureCode());
-            publish(provisioningEvent, persisted, entitlement);
-            return persisted;
+            return completeApproval(request, entitlement, approverId, decisionComment);
         });
+    }
+
+    private AccessRequest completeApproval(AccessRequest request, Entitlement entitlement,
+            String approverId, String decisionComment) {
+        AccessRequest candidate = request.copy();
+        Instant decidedAt = Instant.now(clock);
+        candidate.approve(approverId, decisionComment, decidedAt);
+        requireRepresentableExpiry(candidate, decidedAt);
+        AccessRequest approved = updateOrThrow(candidate, request.version());
+        AccessRequestEvent approvalEvent = AccessRequestEvent.approved(
+                approved, approverId, decidedAt, decisionComment);
+        publish(approvalEvent, approved, entitlement);
+        publish(AccessRequestEvent.provisioningStarted(approved, approverId, decidedAt), approved, entitlement);
+
+        AccessPackage accessPackage = accessPackages.findByEntitlementId(request.realmId(), entitlement.id())
+                .orElse(null);
+        ProvisioningResult result = provision(approved.id(), request.realmId(), approved.requesterId(), entitlement,
+                accessPackage);
+        AccessRequest completed = approved.copy();
+        Instant completedAt = Instant.now(clock);
+        if (result.isSuccessful()) {
+            completed.markProvisioningSucceeded(completedAt);
+        } else {
+            completed.markProvisioningFailed(completedAt);
+        }
+        AccessRequest persisted = updateOrThrow(completed, approved.version());
+        if (result.isSuccessful()) {
+            persistProvisionedGrant(persisted, entitlement, result.grantOrigin(), completedAt, accessPackage);
+        }
+        AccessRequestEvent provisioningEvent = result.isSuccessful()
+                ? AccessRequestEvent.provisioningSucceeded(persisted, approverId, completedAt)
+                : AccessRequestEvent.provisioningFailed(
+                        persisted, approverId, completedAt, result.failureReason(), result.failureCode());
+        publish(provisioningEvent, persisted, entitlement);
+        return persisted;
     }
 
     public AccessRequest retryProvisioning(String realmId, String requestId, String actorId) {

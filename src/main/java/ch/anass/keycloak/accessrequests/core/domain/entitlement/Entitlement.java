@@ -16,6 +16,7 @@ public final class Entitlement {
     private final DurationPolicy durationPolicy;
     private final boolean requestable;
     private final boolean exclusiveJit;
+    private final boolean autoApproveLowRisk;
     private final Instant createdAt;
     private final Instant updatedAt;
     private final long version;
@@ -32,6 +33,7 @@ public final class Entitlement {
             DurationPolicy durationPolicy,
             boolean requestable,
             boolean exclusiveJit,
+            boolean autoApproveLowRisk,
             Instant createdAt,
             Instant updatedAt,
             long version) {
@@ -46,6 +48,10 @@ public final class Entitlement {
         this.durationPolicy = Objects.requireNonNull(durationPolicy, "durationPolicy must not be null");
         this.requestable = requestable;
         this.exclusiveJit = exclusiveJit;
+        if (autoApproveLowRisk && riskLevel != RiskLevel.LOW) {
+            throw new IllegalArgumentException("Auto-approval is only available for LOW risk");
+        }
+        this.autoApproveLowRisk = autoApproveLowRisk;
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
         if (updatedAt.isBefore(createdAt)) {
@@ -92,6 +98,7 @@ public final class Entitlement {
                 riskLevel,
                 approverRoleId,
                 durationPolicy,
+                false,
                 false,
                 false,
                 createdAt,
@@ -143,6 +150,7 @@ public final class Entitlement {
                 durationPolicy,
                 requestable,
                 false,
+                false,
                 createdAt,
                 updatedAt,
                 version);
@@ -163,8 +171,18 @@ public final class Entitlement {
             Instant createdAt,
             Instant updatedAt,
             long version) {
+        return rehydrate(id, realmId, resourceType, resourceId, displayName, description,
+                riskLevel, approverRoleId, durationPolicy, requestable, exclusiveJit, false,
+                createdAt, updatedAt, version);
+    }
+
+    public static Entitlement rehydrate(
+            String id, String realmId, ResourceType resourceType, String resourceId,
+            String displayName, String description, RiskLevel riskLevel, String approverRoleId,
+            DurationPolicy durationPolicy, boolean requestable, boolean exclusiveJit,
+            boolean autoApproveLowRisk, Instant createdAt, Instant updatedAt, long version) {
         return new Entitlement(id, realmId, resourceType, resourceId, displayName, description,
-                riskLevel, approverRoleId, durationPolicy, requestable, exclusiveJit,
+                riskLevel, approverRoleId, durationPolicy, requestable, exclusiveJit, autoApproveLowRisk,
                 createdAt, updatedAt, version);
     }
 
@@ -212,6 +230,10 @@ public final class Entitlement {
         return exclusiveJit;
     }
 
+    public boolean autoApproveLowRisk() {
+        return autoApproveLowRisk;
+    }
+
     public Instant createdAt() {
         return createdAt;
     }
@@ -249,6 +271,17 @@ public final class Entitlement {
         return copy(requestable, exclusiveJit, timestamp, version);
     }
 
+    public Entitlement withAutoApproval(boolean enabled, Instant occurredAt) {
+        Instant timestamp = requireLifecycleTimestamp(occurredAt);
+        if (enabled && riskLevel != RiskLevel.LOW) {
+            throw new IllegalArgumentException("Auto-approval is only available for LOW risk");
+        }
+        if (autoApproveLowRisk == enabled) {
+            return this;
+        }
+        return copy(requestable, exclusiveJit, enabled, timestamp, version);
+    }
+
     public Entitlement updateDetails(
             String displayName,
             String description,
@@ -280,6 +313,7 @@ public final class Entitlement {
                 durationPolicy,
                 requestable,
                 exclusiveJit,
+                autoApproveLowRisk && riskLevel == RiskLevel.LOW,
                 createdAt,
                 timestamp,
                 version);
@@ -294,6 +328,11 @@ public final class Entitlement {
     }
 
     private Entitlement copy(boolean requestable, boolean exclusiveJit, Instant updatedAt, long version) {
+        return copy(requestable, exclusiveJit, autoApproveLowRisk, updatedAt, version);
+    }
+
+    private Entitlement copy(boolean requestable, boolean exclusiveJit, boolean autoApproveLowRisk,
+            Instant updatedAt, long version) {
         return new Entitlement(
                 id,
                 realmId,
@@ -306,6 +345,7 @@ public final class Entitlement {
                 durationPolicy,
                 requestable,
                 exclusiveJit,
+                autoApproveLowRisk,
                 createdAt,
                 updatedAt,
                 version);

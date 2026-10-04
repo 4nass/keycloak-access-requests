@@ -235,6 +235,22 @@ class RequestServiceTest {
     }
 
     @Test
+    void autoApprovalRollsBackTheSubmissionIfTheGroupProviderThrowsAfterMutation() {
+        entitlements.add(packageEntitlement().withAutoApproval(true, Instant.EPOCH.plusSeconds(1)));
+        RequestService jitService = packageService((realmId, requesterId, accessPackage) -> {
+            throw new IllegalStateException("Group provider failed after joining");
+        }, new AtomicInteger());
+
+        assertThrows(IllegalStateException.class, () -> jitService.create(
+                "realm-1", "requester-1", "entitlement-1", "Temporary access is needed."));
+
+        assertTrue(transaction.wasRolledBack());
+        assertFalse(requests.hasSavedRequests());
+        assertTrue(savedGrants.isEmpty());
+        assertTrue(events.published().isEmpty());
+    }
+
+    @Test
     void autoApprovalNeverBypassesTheBoundPackageRequirement() {
         entitlements.add(financeEntitlement().withAutoApproval(true, Instant.EPOCH.plusSeconds(1)));
         AtomicInteger directGrants = new AtomicInteger();

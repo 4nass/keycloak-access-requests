@@ -72,6 +72,20 @@ class EntitlementCatalogLifecycleTest {
     }
 
     @Test
+    void rehydrationPreservesExplicitLowRiskAutoApproval() {
+        Entitlement restored = Entitlement.rehydrate(
+                "entitlement-1", "realm-1", ResourceType.GROUP, "jit-group-1",
+                "Finance Reader", "Read-only access.", RiskLevel.LOW,
+                "finance-access-approver", DurationPolicy.defaultsFor(RiskLevel.LOW),
+                true, false, true, CREATED_AT, UPDATED_AT, 4);
+
+        assertTrue(restored.autoApproveLowRisk());
+        assertEquals(4, restored.version());
+        assertEquals(UPDATED_AT, restored.updatedAt());
+        assertTrue(restored.withVersion(5).autoApproveLowRisk());
+    }
+
+    @Test
     void newEntitlementPreservesItsCatalogMetadata() {
         Entitlement entitlement = unpublishedEntitlement();
 
