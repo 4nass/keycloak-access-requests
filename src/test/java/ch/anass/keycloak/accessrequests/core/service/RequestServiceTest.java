@@ -52,10 +52,13 @@ import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RequestServiceTest {
+
+    private static final String AUTO_APPROVER_ID = "system:auto-approval";
 
     private final InMemoryEntitlementRepository entitlements = new InMemoryEntitlementRepository();
     private final InMemoryAccessRequestRepository requests = new InMemoryAccessRequestRepository();
@@ -121,6 +124,130 @@ class RequestServiceTest {
         assertEquals(0, directGrants.get());
         assertEquals("jit-group-1", savedGrants.get(request.id()).deliveryGroupId());
         assertEquals(1, grantAuthorizationAttempts.get());
+    }
+
+    @Test
+    void lowRiskAloneDoesNotApproveAPackageRequest() {
+        entitlements.add(packageEntitlement());
+        AtomicInteger groupJoins = new AtomicInteger();
+        RequestService jitService = packageService((realmId, requesterId, accessPackage) -> {
+            groupJoins.incrementAndGet();
+            return ProvisioningResult.granted();
+        }, new AtomicInteger());
+
+        AccessRequest created = jitService.create("realm-1", "requester-1", "entitlement-1",
+                "Temporary access is needed for this project.");
+
+        assertEquals(DecisionStatus.PENDING, created.decisionStatus());
+        assertEquals(ProvisioningStatus.NOT_STARTED, created.provisioningStatus());
+        assertEquals(0, groupJoins.get());
+        assertTrue(savedGrants.isEmpty());
+        assertEquals(List.of(AccessRequestEventType.REQUEST_CREATED),
+                events.published().stream().map(AccessRequestEvent::type).toList());
+    }
+
+    @Test
+    void disablingLowRiskAutoApprovalRestoresManualReview() {
+        entitlements.add(packageEntitlement()
+                .withAutoApproval(true, Instant.EPOCH.plusSeconds(1))
+                .withAutoApproval(false, Instant.EPOCH.plusSeconds(2)));
+        AtomicInteger groupJoins = new AtomicInteger();
+        RequestService jitService = packageService((realmId, requesterId, accessPackage) -> {
+            groupJoins.incrementAndGet();
+            return ProvisioningResult.granted();
+        }, new AtomicInteger());
+
+        AccessRequest created = jitService.create("realm-1", "requester-1", "entitlement-1",
+                "Temporary access is needed for this project.");
+
+        assertEquals(DecisionStatus.PENDING, created.decisionStatus());
+        assertEquals(0, groupJoins.get());
+        assertTrue(savedGrants.isEmpty());
+    }
+
+    @Test
+    void enablingAutoApprovalDoesNotRetroactivelyDecidePendingRequests() {
+        entitlements.add(packageEntitlement());
+        RequestService jitService = packageService((realmId, requesterId, accessPackage) ->
+                ProvisioningResult.granted(), new AtomicInteger());
+        AccessRequest pending = jitService.create("realm-1", "requester-1", "entitlement-1",
+                "Temporary access is needed for this project.");
+
+        entitlements.add(packageEntitlement().withAutoApproval(true, Instant.EPOCH.plusSeconds(1)));
+
+        assertEquals(DecisionStatus.PENDING,
+                requests.findById("realm-1", pending.id()).orElseThrow().decisionStatus());
+        assertTrue(savedGrants.isEmpty());
+        assertEquals(List.of(AccessRequestEventType.REQUEST_CREATED),
+                events.published().stream().map(AccessRequestEvent::type).toList());
+    }
+
+    @Test
+    void explicitlyConfiguredLowRiskPackageIsApprovedProvisionedAndAuditedOnSubmission() {
+        entitlements.add(packageEntitlement().withAutoApproval(true, Instant.EPOCH.plusSeconds(1)));
+        AtomicInteger groupJoins = new AtomicInteger();
+        AtomicInteger directGrants = new AtomicInteger();
+        RequestService jitService = packageService((realmId, requesterId, accessPackage) -> {
+            groupJoins.incrementAndGet();
+            return ProvisioningResult.granted();
+        }, directGrants);
+
+        AccessRequest completed = jitService.create("realm-1", "requester-1", "entitlement-1",
+                "Temporary access is needed for this project.");
+
+        assertEquals(DecisionStatus.APPROVED, completed.decisionStatus());
+        assertEquals(ProvisioningStatus.SUCCEEDED, completed.provisioningStatus());
+        assertEquals(AUTO_APPROVER_ID, completed.approverId());
+        assertNotEquals(completed.requesterId(), completed.approverId());
+        assertEquals(1, groupJoins.get());
+        assertEquals(0, directGrants.get());
+        assertEquals("jit-group-1", savedGrants.get(completed.id()).deliveryGroupId());
+        assertEquals(1, grantAuthorizationAttempts.get());
+        assertEquals(List.of(AccessRequestEventType.REQUEST_CREATED, AccessRequestEventType.REQUEST_APPROVED,
+                        AccessRequestEventType.PROVISIONING_STARTED, AccessRequestEventType.PROVISIONING_SUCCEEDED),
+                events.published().stream().map(AccessRequestEvent::type).toList());
+        assertEquals(AUTO_APPROVER_ID, events.published().get(1).actorId());
+        assertEquals(AUTO_APPROVER_ID, events.published().get(2).actorId());
+        assertEquals(AUTO_APPROVER_ID, events.published().get(3).actorId());
+        assertEquals(List.of(AccessRequestNotificationType.REQUEST_APPROVED),
+                notifications.published().stream().map(AccessRequestNotification::type).toList());
+        assertEquals("requester-1", notifications.published().get(0).recipientId());
+    }
+
+    @Test
+    void autoApprovalFailureRemainsApprovedButDoesNotCreateAGrant() {
+        entitlements.add(packageEntitlement().withAutoApproval(true, Instant.EPOCH.plusSeconds(1)));
+        RequestService jitService = packageService((realmId, requesterId, accessPackage) ->
+                ProvisioningResult.failed("The package group is unavailable."), new AtomicInteger());
+
+        AccessRequest completed = jitService.create("realm-1", "requester-1", "entitlement-1",
+                "Temporary access is needed for this project.");
+
+        assertEquals(DecisionStatus.APPROVED, completed.decisionStatus());
+        assertEquals(ProvisioningStatus.FAILED, completed.provisioningStatus());
+        assertEquals(AUTO_APPROVER_ID, completed.approverId());
+        assertTrue(savedGrants.isEmpty());
+        assertEquals(0, grantAuthorizationAttempts.get());
+        assertEquals(List.of(AccessRequestEventType.REQUEST_CREATED, AccessRequestEventType.REQUEST_APPROVED,
+                        AccessRequestEventType.PROVISIONING_STARTED, AccessRequestEventType.PROVISIONING_FAILED),
+                events.published().stream().map(AccessRequestEvent::type).toList());
+        assertEquals(AUTO_APPROVER_ID, events.published().get(3).actorId());
+    }
+
+    @Test
+    void autoApprovalNeverBypassesTheBoundPackageRequirement() {
+        entitlements.add(financeEntitlement().withAutoApproval(true, Instant.EPOCH.plusSeconds(1)));
+        AtomicInteger directGrants = new AtomicInteger();
+        RequestService jitService = packageService((realmId, requesterId, accessPackage) ->
+                ProvisioningResult.granted(), directGrants);
+
+        assertThrows(AccessPackageRequiredException.class, () -> jitService.create(
+                "realm-1", "requester-1", "entitlement-1", "Temporary access is needed."));
+
+        assertFalse(requests.hasSavedRequests());
+        assertTrue(savedGrants.isEmpty());
+        assertEquals(0, directGrants.get());
+        assertTrue(events.published().isEmpty());
     }
 
     @Test

@@ -27,9 +27,48 @@ class EntitlementCatalogLifecycleTest {
         Entitlement entitlement = unpublishedEntitlement();
 
         assertFalse(entitlement.requestable());
+        assertFalse(entitlement.autoApproveLowRisk());
         assertEquals(CREATED_AT, entitlement.createdAt());
         assertEquals(CREATED_AT, entitlement.updatedAt());
         assertEquals(0, entitlement.version());
+    }
+
+    @Test
+    void lowRiskAutoApprovalMustBeEnabledExplicitlyAndCanBeDisabled() {
+        Entitlement original = unpublishedEntitlement();
+
+        Entitlement enabled = original.withAutoApproval(true, UPDATED_AT);
+        Entitlement disabled = enabled.withAutoApproval(false, UNPUBLISHED_AT);
+
+        assertFalse(original.autoApproveLowRisk());
+        assertTrue(enabled.autoApproveLowRisk());
+        assertTrue(enabled.publish(UNPUBLISHED_AT).autoApproveLowRisk());
+        assertTrue(enabled.withVersion(3).autoApproveLowRisk());
+        assertFalse(disabled.autoApproveLowRisk());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = RiskLevel.class, names = {"MEDIUM", "HIGH", "CRITICAL"})
+    void onlyLowRiskEntitlementsCanEnableAutoApproval(RiskLevel riskLevel) {
+        Entitlement entitlement = unpublishedEntitlement().updateDetails(
+                "Sensitive access", "Requires human review.", riskLevel,
+                "finance-access-approver", UPDATED_AT);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> entitlement.withAutoApproval(true, UNPUBLISHED_AT));
+        assertFalse(entitlement.autoApproveLowRisk());
+    }
+
+    @Test
+    void raisingRiskCannotKeepAPreviouslyEnabledAutoApprovalPolicy() {
+        Entitlement enabled = unpublishedEntitlement().withAutoApproval(true, UPDATED_AT);
+
+        Entitlement raised = enabled.updateDetails(
+                "Sensitive access", "Requires human review.", RiskLevel.HIGH,
+                "finance-access-approver", UNPUBLISHED_AT);
+
+        assertFalse(raised.autoApproveLowRisk());
+        assertTrue(enabled.autoApproveLowRisk());
     }
 
     @Test
