@@ -65,6 +65,9 @@ public class EntitlementAuditEventEntity {
     @Column(name = "REQUESTABLE", nullable = false)
     private boolean requestable;
 
+    @Column(name = "AUTO_APPROVE_LOW_RISK", nullable = false)
+    private boolean autoApproveLowRisk;
+
     @Column(name = "DEFAULT_DURATION_SECONDS", nullable = false)
     private long defaultDurationSeconds;
 
@@ -94,6 +97,7 @@ public class EntitlementAuditEventEntity {
         this.riskLevel = event.riskLevel();
         this.approverRoleId = event.approverRoleId();
         this.requestable = event.requestable();
+        this.autoApproveLowRisk = event.autoApproveLowRisk();
         this.defaultDurationSeconds = event.durationPolicy().defaultDuration().toSeconds();
         this.maxDurationSeconds = event.durationPolicy().maxDuration().toSeconds();
         this.allowPermanent = event.durationPolicy().allowPermanent();

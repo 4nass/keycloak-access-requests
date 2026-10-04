@@ -108,6 +108,7 @@ public final class JpaEntitlementRepository implements EntitlementRepository {
                                entity.riskLevel = :riskLevel,
                                entity.approverRoleId = :approverRoleId,
                                entity.requestable = :requestable,
+                               entity.autoApproveLowRisk = :autoApproveLowRisk,
                                entity.defaultDurationSeconds = :defaultDurationSeconds,
                                entity.maxDurationSeconds = :maxDurationSeconds,
                                entity.allowPermanent = :allowPermanent,
@@ -122,6 +123,7 @@ public final class JpaEntitlementRepository implements EntitlementRepository {
                 .setParameter("riskLevel", entitlement.riskLevel())
                 .setParameter("approverRoleId", entitlement.approverRoleId())
                 .setParameter("requestable", entitlement.requestable())
+                .setParameter("autoApproveLowRisk", entitlement.autoApproveLowRisk())
                 .setParameter("defaultDurationSeconds", entitlement.durationPolicy().defaultDuration().toSeconds())
                 .setParameter("maxDurationSeconds", entitlement.durationPolicy().maxDuration().toSeconds())
                 .setParameter("allowPermanent", entitlement.durationPolicy().allowPermanent())
