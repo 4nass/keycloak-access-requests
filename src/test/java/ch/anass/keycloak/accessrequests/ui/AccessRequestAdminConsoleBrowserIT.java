@@ -256,17 +256,15 @@ class AccessRequestAdminConsoleBrowserIT {
                 waitFor(driver).until(ExpectedConditions.urlContains("/master/access-requests/events"));
                 waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
                         "//a[contains(@href, '/access-requests/requests/" + requestId + "')]")));
-                if (AccessRequestBrowserScreenshots.enabled()) {
-                    String openRequesterId = createEnabledUser(keycloak, adminToken,
-                            "gallery-open-requester", "gallery-password", "Robin", "Requester");
-                    String closedRequesterId = createEnabledUser(keycloak, adminToken,
-                            "gallery-closed-requester", "gallery-password", "Sam", "Requester");
-                    AccessRequestBrowserGalleryFixture.Incidents incidents =
-                            AccessRequestBrowserGalleryFixture.seed(postgres, requestId,
-                                    openRequesterId, closedRequesterId, approverId, manager.approverRoleId());
-                    capturePopulatedAdminPages(keycloak, driver, adminToken, incidents,
-                            requestId, requesterId);
-                }
+                String openRequesterId = createEnabledUser(keycloak, adminToken,
+                        "gallery-open-requester", "gallery-password", "Robin", "Requester");
+                String closedRequesterId = createEnabledUser(keycloak, adminToken,
+                        "gallery-closed-requester", "gallery-password", "Sam", "Requester");
+                AccessRequestBrowserGalleryFixture.Incidents incidents =
+                        AccessRequestBrowserGalleryFixture.seed(postgres, requestId,
+                                openRequesterId, closedRequesterId, approverId, manager.approverRoleId());
+                verifyPopulatedAdminPages(keycloak, driver, adminToken, incidents,
+                        requestId, requesterId);
                 assertNoJavaScriptErrors(driver);
             } finally {
                 driver.quit();
@@ -773,7 +771,7 @@ class AccessRequestAdminConsoleBrowserIT {
         }
     }
 
-    private void capturePopulatedAdminPages(KeycloakContainer keycloak, WebDriver driver,
+    private void verifyPopulatedAdminPages(KeycloakContainer keycloak, WebDriver driver,
             String adminToken, AccessRequestBrowserGalleryFixture.Incidents incidents,
             String grantedRequestId, String requesterId)
             throws Exception {
@@ -828,15 +826,18 @@ class AccessRequestAdminConsoleBrowserIT {
                         + "/groups/" + incidents.deliveryGroupId(), adminToken)
                         .DELETE().build(), HttpResponse.BodyHandlers.discarding());
         assertEquals(204, membershipRemoved.statusCode());
-        HttpResponse<String> resolved = HTTP_CLIENT.send(
-                adminRequest(keycloak, base + "grants/" + grantedRequestId + "/revocation/resolve", adminToken)
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(
-                                "{\"reason\":\"Package membership removed by an administrator.\"}"))
-                        .build(), HttpResponse.BodyHandlers.ofString());
-        assertEquals(200, resolved.statusCode(), resolved.body());
-        driver.navigate().refresh();
-        assertPageHeading(driver, "Revocation failures");
+        new Select(driver.findElement(By.id("revocation-failure-status"))).selectByValue("OPEN");
+        // PatternFly DataListAction does not render its required id prop; locate the row button instead.
+        waitFor(driver).until(ExpectedConditions.elementToBeClickable(By.xpath(
+                "//*[@id='revocation-failure-" + grantedRequestId
+                        + "']/ancestor::li//button[normalize-space()='Confirm removal']"))).click();
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.id("revocation-resolution-reason")))
+                .sendKeys("Package membership removed by an administrator.");
+        driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Confirm removal']")).click();
+        waitFor(driver).until(ExpectedConditions.invisibilityOfElementLocated(
+                By.id("revocation-failure-" + grantedRequestId)));
+        assertApiRequestStatus(driver, "/access-requests/admin/grants/" + grantedRequestId
+                + "/revocation/resolve", 200);
         new Select(driver.findElement(By.id("revocation-failure-status"))).selectByValue("RESOLVED");
         waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
                 By.id("revocation-failure-" + grantedRequestId)));

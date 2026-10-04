@@ -2,7 +2,7 @@ name: Build and tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'feat/entitlement-duration-policy' ]
     paths:
       - 'src/**'
       - 'themes/access-requests-ui/**'

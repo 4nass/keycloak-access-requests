@@ -17,8 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Populates the disposable browser-test database with operational states that cannot be reached
- * reliably during a screenshot run (exhausted email retries and a deferred revocation failure).
- * The packaged provider still serves every screenshot through its real admin endpoints.
+ * reliably during a browser run (exhausted email retries and a deferred revocation failure).
+ * The packaged provider serves every assertion and optional screenshot through its real admin endpoints.
  */
 final class AccessRequestBrowserGalleryFixture {
 
