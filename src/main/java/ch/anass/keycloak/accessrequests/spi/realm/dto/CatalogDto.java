@@ -40,7 +40,7 @@ public final class CatalogDto {
     public record EntitlementCreation(
             ResourceType resourceType, String resourceId, String displayName, String description,
             RiskLevel riskLevel, String approverRoleId, Long defaultDurationSeconds,
-            Long maxDurationSeconds, Boolean allowPermanent) {
+            Long maxDurationSeconds, Boolean allowPermanent, Boolean requestable) {
     }
 
     public record AccessPackageCreation(

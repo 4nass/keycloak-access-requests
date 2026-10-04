@@ -100,13 +100,13 @@ class EntitlementCatalogAdministrationEndpointTest {
         assertArrayEquals(
                 new String[]{
                         "resourceType", "resourceId", "displayName", "description", "riskLevel", "approverRoleId",
-                        "defaultDurationSeconds", "maxDurationSeconds", "allowPermanent"},
+                        "defaultDurationSeconds", "maxDurationSeconds", "allowPermanent", "requestable"},
                 Arrays.stream(creation.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));
         assertArrayEquals(
                 new Class<?>[]{ResourceType.class, String.class, String.class, String.class, RiskLevel.class,
-                        String.class, Long.class, Long.class, Boolean.class},
+                        String.class, Long.class, Long.class, Boolean.class, Boolean.class},
                 Arrays.stream(creation.getRecordComponents())
                         .map(RecordComponent::getType)
                         .toArray(Class<?>[]::new));

@@ -26,7 +26,12 @@ public final class JpaAccessGrantRepository implements AccessGrantRevocationRepo
 
     @Override
     public void create(AccessGrant grant) {
-        entityManager.persist(AccessGrantEntity.from(Objects.requireNonNull(grant, "grant must not be null")));
+        Objects.requireNonNull(grant, "grant must not be null");
+        if (grant.origin() == GrantOrigin.CREATED_BY_EXTENSION && grant.expiresAt() != null
+                && grant.deliveryGroupId() == null) {
+            throw new IllegalArgumentException("A new temporary grant requires an access package");
+        }
+        entityManager.persist(AccessGrantEntity.from(grant));
     }
 
     @Override

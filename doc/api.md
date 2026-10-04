@@ -150,9 +150,9 @@ An empty or one-character `search` does not enumerate the realm; without `select
 }
 ```
 
-The selected resource must exist and match `resourceType`. The approver role must exist in the same realm. The duration values are configurable per entitlement; omitting them on creation applies the risk-level defaults and `allowPermanent=false`. Creation always produces a draft with `requestable=false` and returns `201 Created`. A duplicate resource in the same realm returns `409 Conflict`.
+The selected resource must exist and match `resourceType`. The approver role must exist in the same realm. The duration values are configurable per entitlement; omitting them on creation applies the risk-level defaults and `allowPermanent=false`. Creation always produces a draft with `requestable=false` and returns `201 Created`. Explicit `requestable=true` is rejected with `409 ACCESS_PACKAGE_REQUIRED` rather than silently ignored. A duplicate resource in the same realm returns `409 Conflict`.
 
-Direct role and group drafts cannot be made requestable. Temporary access is delivered only through a bound access package, so that expiry can remove the extension-owned group membership without touching rights managed elsewhere. Create a package with `POST /admin/access-packages` for new requestable access. A direct draft sent to `PUT` with `requestable=true` returns `409 ACCESS_PACKAGE_REQUIRED`.
+Direct role and group drafts cannot be made requestable. Temporary access is delivered only through a bound access package, so that expiry can remove the extension-owned group membership without touching rights managed elsewhere. New temporary grants without a delivery group are rejected at persistence, and missing grant authorization fails the provisioning transaction. Create a package with `POST /admin/access-packages` for new requestable access. A direct draft sent to `PUT` with `requestable=true` returns `409 ACCESS_PACKAGE_REQUIRED`.
 
 ### Access packages
 

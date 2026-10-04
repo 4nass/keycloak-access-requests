@@ -92,6 +92,10 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
     public Response createEntitlement(EntitlementCreation submission) {
         AccessRequestManager manager = requireAccessRequestManager();
         EntitlementCreation validatedSubmission = requireEntitlementCreation(submission);
+        if (Boolean.TRUE.equals(validatedSubmission.requestable())) {
+            return error(Response.Status.CONFLICT, "ACCESS_PACKAGE_REQUIRED",
+                    "Only a bound access package can be made requestable", null);
+        }
         validateKeycloakReferences(manager.realm(), validatedSubmission);
         Entitlement created = Entitlement.create(
                 UUID.randomUUID().toString(),

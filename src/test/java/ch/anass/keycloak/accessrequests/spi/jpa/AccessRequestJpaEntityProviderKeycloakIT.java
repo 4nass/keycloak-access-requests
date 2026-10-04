@@ -1339,6 +1339,19 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertKeycloakReferenceIsListed(server, managerToken, "GROUP", "CATALOG-GROUP-TARGET", groupId);
         assertBoundedReferenceLookupAndSelectedId(server, managerToken, targetRoleId);
         String description = "Read-only access to the catalog-managed finance report.";
+        HttpResponse<String> rejectedDirectPublication = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(entitlementEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("""
+                                {"resourceType":"REALM_ROLE","resourceId":"%s",
+                                 "displayName":"Direct temporary role","description":"Direct grants cannot expire safely.",
+                                 "riskLevel":"LOW","approverRoleId":"%s","requestable":true}
+                                """.formatted(targetRoleId, approverRoleId)))
+                        .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, rejectedDirectPublication.statusCode(), rejectedDirectPublication.body());
+        assertError(rejectedDirectPublication.body(), "ACCESS_PACKAGE_REQUIRED", null);
+
         HttpResponse<String> creationResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementEndpoint)
                         .header("Authorization", "Bearer " + managerToken)
@@ -2367,6 +2380,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(409, directGroupRequest.statusCode());
         assertError(directGroupRequest.body(), "ACCESS_PACKAGE_REQUIRED", null);
         assertNoGroupMembership(server, adminToken, requesterId, groupId);
+        assertNoGrantForEntitlement(groupEntitlementId);
 
         String sourceRoleId = createRealmRole(server, adminToken, "missing-package-role-" + UUID.randomUUID());
         PublishedPackage missingRolePackage = createPublishedPackage(
@@ -2676,6 +2690,19 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         }
     }
 
+    private void assertNoGrantForEntitlement(String entitlementId) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var statement = connection.prepareStatement(
+                     "select count(*) from AR_ACCESS_GRANT where ENTITLEMENT_ID = ?")) {
+            statement.setString(1, entitlementId);
+            try (ResultSet result = statement.executeQuery()) {
+                assertTrue(result.next());
+                assertEquals(0, result.getLong(1), "An unbound entitlement must not produce a grant.");
+            }
+        }
+    }
+
     private void assertProvisioningRetryEndpoint(
             URI accessRequestsEndpoint,
             String managerToken,
@@ -2949,6 +2976,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(409, directRoleRequest.statusCode());
         assertError(directRoleRequest.body(), "ACCESS_PACKAGE_REQUIRED", null);
+        assertRealmRoleNotAssigned(server, adminToken, subjectOf(accessToken), directRoleId);
+        assertNoGrantForEntitlement(directEntitlementId);
 
         String roleName = "already-granted-" + UUID.randomUUID();
         String roleId = createRealmRoleAndAssignToUser(server, adminToken, subjectOf(accessToken), roleName);

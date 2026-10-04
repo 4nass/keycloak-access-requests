@@ -32,10 +32,8 @@ public final class AccessGrantAuthorizationService implements AccessGrantAuthori
         Objects.requireNonNull(realmId, "realmId must not be null");
         Objects.requireNonNull(requestId, "requestId must not be null");
         transaction.execute(() -> {
-            AccessGrant grant = grants.findByRequestIdForUpdate(realmId, requestId).orElse(null);
-            if (grant == null) {
-                return null;
-            }
+            AccessGrant grant = grants.findByRequestIdForUpdate(realmId, requestId)
+                    .orElseThrow(() -> new IllegalStateException("Grant is unavailable for revocation authorization"));
             if (!realmId.equals(grant.realmId()) || !requestId.equals(grant.requestId())) {
                 throw new IllegalStateException("Grant repository returned a grant outside the requested scope");
             }

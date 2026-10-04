@@ -91,12 +91,23 @@ class JpaAccessGrantRepositoryTest {
         AccessGrant temporary = new AccessGrant("request-temporary", "realm-1", "user-1", "entitlement-1",
                 ResourceType.REALM_ROLE, "role-1", GrantOrigin.CREATED_BY_EXTENSION,
                 recordedAt, recordedAt.plus(Duration.ofHours(4)),
-                GrantRevocationState.UNVERIFIED, 0);
+                GrantRevocationState.UNVERIFIED, 0, "jit-group-1");
 
         inTransaction(() -> repository.create(temporary));
         entityManager.clear();
 
         assertEquals(temporary, repository.findByRequestId("realm-1", "request-temporary").orElseThrow());
+    }
+
+    @Test
+    void refusesToPersistANewTemporaryGrantWithoutAnAccessPackage() {
+        Instant recordedAt = Instant.parse("2026-09-01T10:15:30Z");
+        AccessGrant direct = new AccessGrant("request-direct", "realm-1", "user-1", "entitlement-1",
+                ResourceType.REALM_ROLE, "role-1", GrantOrigin.CREATED_BY_EXTENSION,
+                recordedAt, recordedAt.plus(Duration.ofHours(4)), GrantRevocationState.UNVERIFIED, 0);
+
+        assertThrows(IllegalArgumentException.class, () -> inTransaction(() -> repository.create(direct)));
+        assertTrue(repository.findByRequestId("realm-1", "request-direct").isEmpty());
     }
 
     @Test
@@ -194,9 +205,12 @@ class JpaAccessGrantRepositoryTest {
                 ResourceType.REALM_ROLE, "source-role", GrantOrigin.PREEXISTING, exact.recordedAt(),
                 null, GrantRevocationState.UNVERIFIED, 0, "jit-group-1");
         AccessGrant permanent = withExpiry(packageGrant("permanent", GrantRevocationState.UNVERIFIED), null);
-        AccessGrant direct = temporaryGrant("direct-role", GrantRevocationState.AUTHORIZED);
+        AccessGrant direct = new AccessGrant("direct-role", "realm-1", "user-1", "entitlement-1",
+                ResourceType.REALM_ROLE, "jit-role-1", GrantOrigin.CREATED_BY_EXTENSION,
+                exact.recordedAt(), exact.expiresAt(), GrantRevocationState.AUTHORIZED, 0);
         inTransaction(() -> List.of(early, exact, otherRealm, future, unverified, invalidated, revoked,
-                preexisting, permanent, direct).forEach(repository::create));
+                preexisting, permanent).forEach(repository::create));
+        inTransaction(() -> entityManager.persist(AccessGrantEntity.from(direct)));
         entityManager.clear();
 
         assertEquals(List.of("due-early", "due-exact", "due-other-realm"),
@@ -405,7 +419,8 @@ class JpaAccessGrantRepositoryTest {
         Instant recordedAt = Instant.parse("2026-09-01T10:15:30Z");
         AccessGrant expiring = new AccessGrant("request-4", "realm-1", "user-1", "entitlement-1",
                 ResourceType.REALM_ROLE, "role-1", GrantOrigin.CREATED_BY_EXTENSION,
-                recordedAt, recordedAt.plus(Duration.ofHours(4)), GrantRevocationState.UNVERIFIED, 0);
+                recordedAt, recordedAt.plus(Duration.ofHours(4)), GrantRevocationState.UNVERIFIED, 0,
+                "jit-group-1");
         inTransaction(() -> repository.create(expiring));
         entityManager.clear();
 
@@ -618,13 +633,13 @@ class JpaAccessGrantRepositoryTest {
         Instant recordedAt = Instant.parse("2026-09-01T10:15:30Z");
         return new AccessGrant(requestId, "realm-1", "user-1", "entitlement-1", ResourceType.REALM_ROLE,
                 "jit-role-1", GrantOrigin.CREATED_BY_EXTENSION, recordedAt, recordedAt.plus(Duration.ofHours(4)),
-                state, 0);
+                state, 0, "jit-group-1");
     }
 
     private static AccessGrant asRevoked(AccessGrant grant) {
         return new AccessGrant(grant.requestId(), grant.realmId(), grant.requesterId(), grant.entitlementId(),
                 grant.resourceType(), grant.resourceId(), grant.origin(), grant.recordedAt(), grant.expiresAt(),
-                GrantRevocationState.REVOKED, grant.version());
+                GrantRevocationState.REVOKED, grant.version(), grant.deliveryGroupId());
     }
 
     private static void await(CountDownLatch latch) {

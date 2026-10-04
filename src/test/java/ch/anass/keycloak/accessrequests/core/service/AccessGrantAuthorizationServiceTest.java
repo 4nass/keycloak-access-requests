@@ -67,11 +67,23 @@ class AccessGrantAuthorizationServiceTest {
     void crossRealmLookupNeverAuthorizesTheGrant() {
         Fixture fixture = new Fixture(true, true);
 
-        fixture.service().authorize("other-realm", "request-1");
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service().authorize("other-realm", "request-1"));
 
         assertFalse(fixture.grants.locked);
         assertEquals(0, fixture.grants.writes);
         assertEquals(GrantRevocationState.UNVERIFIED, fixture.grants.current.revocationState());
+    }
+
+    @Test
+    void missingGrantCannotSilentlyPassAuthorization() {
+        Fixture fixture = new Fixture(false, true, true);
+        fixture.grants.current = null;
+
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service().authorize("realm-1", "request-1"));
+        assertTrue(fixture.transactionEntered);
+        assertEquals(0, fixture.grants.writes);
     }
 
     @Test
@@ -209,7 +221,7 @@ class AccessGrantAuthorizationServiceTest {
 
         @Override
         public Optional<AccessGrant> findByRequestId(String realmId, String requestId) {
-            return current.realmId().equals(realmId) && current.requestId().equals(requestId)
+            return current != null && current.realmId().equals(realmId) && current.requestId().equals(requestId)
                     ? Optional.of(current) : Optional.empty();
         }
 
