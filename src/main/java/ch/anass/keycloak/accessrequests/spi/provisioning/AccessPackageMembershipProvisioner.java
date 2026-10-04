@@ -33,6 +33,7 @@ public final class AccessPackageMembershipProvisioner implements AccessPackagePr
             return ProvisioningResult.failed(ProvisioningFailureCode.REALM_MISMATCH,
                     "The package does not belong to the current realm.");
         }
+        boolean membershipChangeStarted = false;
         try {
             UserModel user = session.users().getUserById(realm, requesterId);
             if (user == null) {
@@ -51,12 +52,18 @@ public final class AccessPackageMembershipProvisioner implements AccessPackagePr
             if (user.isMemberOf(group)) {
                 return ProvisioningResult.alreadyPresent();
             }
+            membershipChangeStarted = true;
             user.joinGroup(group);
             return ProvisioningResult.granted();
         } catch (RuntimeException exception) {
             LOG.log(Level.SEVERE, "Unexpected package membership failure [realmId=" + realmId
                     + ", requesterId=" + requesterId + ", entitlementId=" + accessPackage.entitlementId() + "]",
                     exception);
+            if (membershipChangeStarted) {
+                // A provider may mutate membership before throwing. Propagate so Keycloak rolls back
+                // the membership, request state and grant in the same transaction.
+                throw exception;
+            }
             return ProvisioningResult.failed(ProvisioningFailureCode.UNEXPECTED_FAILURE,
                     "The package membership could not be provisioned.");
         }

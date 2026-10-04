@@ -19,6 +19,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AccessPackageMembershipProvisionerTest {
 
@@ -44,6 +46,17 @@ class AccessPackageMembershipProvisionerTest {
 
         assertEquals(GrantOrigin.PREEXISTING, result.grantOrigin());
         assertEquals(0, fixture.joins);
+    }
+
+    @Test
+    void propagatesAnExceptionThrownAfterJoiningSoTheTransactionCanRollBack() {
+        Fixture fixture = new Fixture();
+        fixture.throwAfterJoin = true;
+
+        assertThrows(IllegalStateException.class,
+                () -> fixture.membership().grant("realm-1", "user-1", fixture.accessPackage()));
+        assertEquals(1, fixture.joins);
+        assertTrue(fixture.alreadyMember, "The fake provider must mutate before throwing");
     }
 
     @Test
@@ -101,6 +114,7 @@ class AccessPackageMembershipProvisionerTest {
         private boolean alreadyMember;
         private boolean roleAlreadyEffective;
         private boolean nestedGroup;
+        private boolean throwAfterJoin;
         private String groupName = "AR_PKG_REPORTING";
         private int joins;
         private int directRoleGrants;
@@ -130,6 +144,10 @@ class AccessPackageMembershipProvisionerTest {
                 case "hasRole" -> roleAlreadyEffective;
                 case "joinGroup" -> {
                     joins++;
+                    alreadyMember = true;
+                    if (throwAfterJoin) {
+                        throw new IllegalStateException("Provider failed after changing membership");
+                    }
                     yield null;
                 }
                 case "grantRole" -> {

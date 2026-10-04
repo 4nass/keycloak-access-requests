@@ -381,8 +381,7 @@ public final class RequestService {
             Instant completedAt, AccessPackage accessPackage) {
         AccessGrant grant = AccessGrant.from(request, entitlement, origin, completedAt, accessPackage);
         accessGrantRepository.create(grant);
-        if (accessPackage != null && grant.origin() == GrantOrigin.CREATED_BY_EXTENSION
-                && grant.expiresAt() != null) {
+        if (accessPackage != null && grant.origin() == GrantOrigin.CREATED_BY_EXTENSION) {
             grantAuthorizer.authorize(grant.realmId(), grant.requestId());
         }
     }
@@ -497,8 +496,9 @@ public final class RequestService {
             } catch (RuntimeException exception) {
                 LOG.log(Level.SEVERE, "Unexpected access package provisioning failure [requestId=" + requestId
                         + ", realmId=" + realmId + ", entitlementId=" + entitlement.id() + "]", exception);
-                return ProvisioningResult.failed(ProvisioningFailureCode.UNEXPECTED_FAILURE,
-                        "The access package provisioner failed.");
+                // The provider may have changed membership before throwing. Never commit the
+                // request as FAILED without a grant while that membership could still be present.
+                throw exception;
             }
         }
         for (EntitlementProvisioner provisioner : provisioners) {

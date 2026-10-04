@@ -149,6 +149,28 @@ class RequestServiceTest {
     }
 
     @Test
+    void packageProviderFailureAfterMembershipMutationRollsBackApprovalInsteadOfPersistingFailedState() {
+        entitlements.add(packageEntitlement());
+        AtomicInteger joinAttempts = new AtomicInteger();
+        RequestService jitService = packageService((realmId, requesterId, accessPackage) -> {
+            joinAttempts.incrementAndGet();
+            throw new IllegalStateException("Group provider failed after joining");
+        }, new AtomicInteger());
+        AccessRequest pending = jitService.create("realm-1", "requester-1", "entitlement-1",
+                "Temporary access is needed for this project.");
+        int auditBeforeApproval = events.published().size();
+
+        assertThrows(IllegalStateException.class,
+                () -> jitService.approve("realm-1", pending.id(), "approver-1", "Approved."));
+
+        assertEquals(1, joinAttempts.get());
+        assertTrue(transaction.wasRolledBack());
+        assertEquals(DecisionStatus.PENDING, requests.findById("realm-1", pending.id()).orElseThrow().decisionStatus());
+        assertTrue(savedGrants.isEmpty());
+        assertEquals(auditBeforeApproval, events.published().size());
+    }
+
+    @Test
     void existingJitGroupMembershipDoesNotBecomeAnExtensionOwnedTemporaryGrant() {
         entitlements.add(packageEntitlement());
         RequestService jitService = packageService((realmId, requesterId, accessPackage) ->
