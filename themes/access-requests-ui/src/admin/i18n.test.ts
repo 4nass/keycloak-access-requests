@@ -236,6 +236,8 @@ const expectedMessageKeys = [
     "accessRequestsAdminRiskLevelLow",
     "accessRequestsAdminRiskLevelMedium",
     "accessRequestsAdminSave",
+    "accessRequestsAdminAutoApprove",
+    "accessRequestsAdminAutoApproveHelp",
     "accessRequestsAdminSearchApproverRoles",
     "accessRequestsAdminSearchApproverRolesPlaceholder",
     "accessRequestsAdminSearchResources",

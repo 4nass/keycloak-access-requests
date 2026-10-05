@@ -23,6 +23,7 @@ const entitlement = {
     approverRoleId: "finance-approvers",
     approverRoleName: "Finance Approvers",
     allowPermanent: false,
+    autoApprove: false,
     createdAt: "2026-09-04T10:00:00Z",
     defaultDurationSeconds: 2_592_000,
     description: "Read-only finance access",
@@ -149,6 +150,7 @@ describe("EntitlementCatalogPage", () => {
         await waitFor(() => expect(api.update).toHaveBeenCalledWith("finance-reader", {
             approverRoleId: "finance-approvers",
             allowPermanent: false,
+            autoApprove: false,
             defaultDurationSeconds: 2_592_000,
             description: "Read-only finance access",
             displayName: "Finance Reader",
@@ -170,6 +172,90 @@ describe("EntitlementCatalogPage", () => {
         expect(screen.getByRole("dialog", { name: "accessRequestsAdminPackageCreate" })).toBeVisible();
         expect(screen.queryByRole("combobox", { name: "accessRequestsAdminSelectResource" })).not.toBeInTheDocument();
         expect(api.create).not.toHaveBeenCalled();
+    });
+
+    it("offers auto-approval only for LOW-risk package creation and clears it when risk changes", async () => {
+        const user = userEvent.setup();
+        render(<EntitlementCatalogPage />);
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminPackageCreate" }));
+
+        const autoApprove = screen.getByRole("checkbox", { name: "accessRequestsAdminAutoApprove" });
+        expect(autoApprove).not.toBeChecked();
+        await user.click(autoApprove);
+        expect(autoApprove).toBeChecked();
+        await user.selectOptions(screen.getByRole("combobox", { name: "accessRequestsAdminRiskLevel" }), "MEDIUM");
+        expect(autoApprove).not.toBeChecked();
+        expect(autoApprove).toBeDisabled();
+        await user.selectOptions(screen.getByRole("combobox", { name: "accessRequestsAdminRiskLevel" }), "LOW");
+        expect(autoApprove).toBeEnabled();
+        expect(autoApprove).not.toBeChecked();
+    });
+
+    it("sends enabled auto-approval when creating a LOW-risk package", async () => {
+        const user = userEvent.setup();
+        api.createAccessPackage.mockResolvedValue({ ...entitlement, resourceType: "GROUP", autoApprove: true });
+        render(<EntitlementCatalogPage />);
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminPackageCreate" }));
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminDisplayName" }), "Temporary access");
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminDescription" }), "Temporary package");
+        await user.click(screen.getByRole("checkbox", { name: "accessRequestsAdminAutoApprove" }));
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminSearchApproverRoles" }), "finance");
+        await waitFor(() => expect(screen.getByRole("combobox", { name: "accessRequestsAdminSelectApproverRole" }))
+            .toHaveTextContent("Finance Approvers"));
+        await user.selectOptions(screen.getByRole("combobox", { name: "accessRequestsAdminSelectApproverRole" }), "finance-approvers");
+        await user.type(screen.getByRole("textbox", { name: "accessRequestsAdminPackageSearchRoles" }), "finance");
+        await waitFor(() => expect(screen.getByRole("combobox", { name: "accessRequestsAdminPackageSelectRole" }))
+            .toHaveTextContent("Finance Reader"));
+        await user.selectOptions(screen.getByRole("combobox", { name: "accessRequestsAdminPackageSelectRole" }), "finance-reader-role");
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminPackageAddRole" }));
+        await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "accessRequestsAdminPackageCreate" }));
+
+        await waitFor(() => expect(api.createAccessPackage).toHaveBeenCalledWith(expect.objectContaining({
+            autoApprove: true, riskLevel: "LOW"
+        })));
+    });
+
+    it("edits auto-approval and clears it when risk rises above LOW", async () => {
+        const user = userEvent.setup();
+        api.list.mockResolvedValue({ items: [{ ...entitlement, autoApprove: true }], page: 0, size: 20, total: 1 });
+        render(<EntitlementCatalogPage />);
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminEditEntitlement" }));
+        const autoApprove = screen.getByRole("checkbox", { name: "accessRequestsAdminAutoApprove" });
+        expect(autoApprove).toBeChecked();
+        await user.selectOptions(screen.getByRole("combobox", { name: "accessRequestsAdminRiskLevel" }), "HIGH");
+        expect(autoApprove).not.toBeChecked();
+        expect(autoApprove).toBeDisabled();
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminSave" }));
+        await waitFor(() => expect(api.update).toHaveBeenCalledWith("finance-reader", expect.objectContaining({
+            autoApprove: false, riskLevel: "HIGH"
+        })));
+    });
+
+    it("enables auto-approval on an existing LOW-risk package", async () => {
+        const user = userEvent.setup();
+        api.list.mockResolvedValue({
+            items: [{ ...entitlement, resourceType: "GROUP", autoApprove: false }], page: 0, size: 20, total: 1
+        });
+        render(<EntitlementCatalogPage />);
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminEditEntitlement" }));
+        await user.click(screen.getByRole("checkbox", { name: "accessRequestsAdminAutoApprove" }));
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminSave" }));
+        await waitFor(() => expect(api.update).toHaveBeenCalledWith("finance-reader", expect.objectContaining({
+            autoApprove: true, riskLevel: "LOW"
+        })));
+    });
+
+    it("shows enabled auto-approval in the catalog", async () => {
+        api.list.mockResolvedValue({
+            items: [{ ...entitlement, autoApprove: true }], page: 0, size: 20, total: 1
+        });
+        render(<EntitlementCatalogPage />);
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        expect(screen.getByText("accessRequestsAdminAutoApprove")).toBeVisible();
     });
 
     it("creates a closed access package and shows its roles without exposing the delivery group", async () => {

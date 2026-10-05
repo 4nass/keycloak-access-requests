@@ -12,6 +12,7 @@ export type Entitlement = {
     defaultDurationSeconds: number;
     maxDurationSeconds: number;
     allowPermanent: boolean;
+    autoApprove: boolean;
     createdAt: string;
     updatedAt: string;
     version: number;
@@ -104,7 +105,7 @@ export type EntitlementCreation = Pick<
 export type EntitlementUpdate = Pick<
     Entitlement,
     "displayName" | "description" | "riskLevel" | "approverRoleId" | "requestable" | "version"
-    | "defaultDurationSeconds" | "maxDurationSeconds" | "allowPermanent"
+    | "defaultDurationSeconds" | "maxDurationSeconds" | "allowPermanent" | "autoApprove"
 >;
 
 export type AccessPackageRole = {
@@ -115,7 +116,7 @@ export type AccessPackageRole = {
 export type AccessPackageCreation = Pick<
     Entitlement,
     "displayName" | "description" | "riskLevel" | "approverRoleId"
-    | "defaultDurationSeconds" | "maxDurationSeconds" | "allowPermanent"
+    | "defaultDurationSeconds" | "maxDurationSeconds" | "allowPermanent" | "autoApprove"
 > & { roleMappings: AccessPackageRole[] };
 
 export type AccessPackageDetails = {

@@ -30,6 +30,7 @@ function request(fetchMock: ReturnType<typeof vi.fn>) {
 const entitlement = {
     approverRoleId: "role-finance-approvers",
     allowPermanent: false,
+    autoApprove: false,
     createdAt: "2026-09-04T10:00:00Z",
     defaultDurationSeconds: 2_592_000,
     description: "Read-only finance access",
@@ -215,9 +216,10 @@ describe("Entitlements administration API client", () => {
             .mockResolvedValueOnce(jsonResponse(details));
         const api = createApi(fetchMock);
         const submission = {
-            displayName: "Reporting package", description: "Temporary reporting access", riskLevel: "MEDIUM" as const,
+            displayName: "Reporting package", description: "Temporary reporting access", riskLevel: "LOW" as const,
             approverRoleId: "approver-1", defaultDurationSeconds: 604800, maxDurationSeconds: 2592000,
             allowPermanent: false,
+            autoApprove: true,
             roleMappings: [{ type: "REALM_ROLE" as const, roleId: "role-1" }]
         };
 
@@ -473,6 +475,7 @@ describe("Entitlements administration API client", () => {
         const submission = {
             approverRoleId: entitlement.approverRoleId,
             allowPermanent: true,
+            autoApprove: true,
             defaultDurationSeconds: 1_209_600,
             description: entitlement.description,
             displayName: entitlement.displayName,

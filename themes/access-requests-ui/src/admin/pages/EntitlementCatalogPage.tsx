@@ -62,6 +62,7 @@ type FormValues = {
     maxDurationAmount: string;
     maxDurationUnit: DurationUnit;
     allowPermanent: boolean;
+    autoApprove: boolean;
 };
 
 type DialogState = {
@@ -119,6 +120,7 @@ export function EntitlementCatalogPage() {
         setForm({
             approverRoleId: entitlement.approverRoleId,
             allowPermanent: entitlement.allowPermanent,
+            autoApprove: entitlement.autoApprove,
             defaultDurationAmount: durationInput(entitlement.defaultDurationSeconds).amount,
             defaultDurationUnit: durationInput(entitlement.defaultDurationSeconds).unit,
             description: entitlement.description,
@@ -162,6 +164,7 @@ export function EntitlementCatalogPage() {
             await api.update(dialog.entitlement.id, {
                 approverRoleId: form.approverRoleId,
                 allowPermanent: form.allowPermanent,
+                autoApprove: form.riskLevel === "LOW" && form.autoApprove,
                 defaultDurationSeconds,
                 description: form.description,
                 displayName: form.displayName,
@@ -186,7 +189,10 @@ export function EntitlementCatalogPage() {
     };
 
     const updateRisk = (riskLevel: FormValues["riskLevel"]) => {
-        setForm((current) => current ? { ...current, riskLevel, ...DURATION_PRESETS[riskLevel], allowPermanent: false } : current);
+        setForm((current) => current ? {
+            ...current, riskLevel, ...DURATION_PRESETS[riskLevel], allowPermanent: false,
+            autoApprove: riskLevel === "LOW" && current.autoApprove
+        } : current);
         setDurationError(false);
     };
 
@@ -338,6 +344,7 @@ function EntitlementListItem({ entitlement, onEdit }: { entitlement: Entitlement
                         </Label>
                         <Text component="small">{t(entitlement.allowPermanent
                             ? "accessRequestsAdminPermanentAllowed" : "accessRequestsAdminTemporaryOnly")}</Text>
+                        {entitlement.autoApprove && <Text component="small">{t("accessRequestsAdminAutoApprove")}</Text>}
                     </DataListCell>
                 ]} />
                 <DataListAction aria-labelledby={titleId} id={`entitlement-actions-${entitlement.id}`} aria-label={t("accessRequestsAdminEditEntitlement")}>
@@ -458,6 +465,16 @@ function EntitlementDialog({
                         label={t("accessRequestsAdminAllowPermanent")}
                         onChange={(_event, checked) => onUpdate("allowPermanent", checked)}
                     />
+                </FormGroup>
+                <FormGroup fieldId="entitlement-auto-approve">
+                    <Checkbox
+                        id="entitlement-auto-approve"
+                        isChecked={form.autoApprove}
+                        isDisabled={isSaving || form.riskLevel !== "LOW"}
+                        label={t("accessRequestsAdminAutoApprove")}
+                        onChange={(_event, checked) => onUpdate("autoApprove", checked)}
+                    />
+                    <Text component="small">{t("accessRequestsAdminAutoApproveHelp")}</Text>
                 </FormGroup>
                 <FormGroup fieldId="entitlement-approver-role" isRequired label={t("accessRequestsAdminApproverRole")}>
                     <KeycloakReferenceSelector

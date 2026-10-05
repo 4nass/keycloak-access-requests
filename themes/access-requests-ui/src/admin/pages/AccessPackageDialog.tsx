@@ -32,6 +32,7 @@ export function AccessPackageDialog({ api, onClose, onCreated }: {
     const [maxAmount, setMaxAmount] = useState(DURATION_PRESETS.LOW.maxDurationAmount);
     const [maxUnit, setMaxUnit] = useState<DurationUnit>(DURATION_PRESETS.LOW.maxDurationUnit);
     const [allowPermanent, setAllowPermanent] = useState(false);
+    const [autoApprove, setAutoApprove] = useState(false);
     const [candidateType, setCandidateType] = useState<AccessPackageRole["type"]>("REALM_ROLE");
     const [candidateId, setCandidateId] = useState("");
     const [candidateName, setCandidateName] = useState("");
@@ -48,6 +49,7 @@ export function AccessPackageDialog({ api, onClose, onCreated }: {
         setMaxAmount(preset.maxDurationAmount);
         setMaxUnit(preset.maxDurationUnit);
         setAllowPermanent(false);
+        if (nextRisk !== "LOW") setAutoApprove(false);
         setValidationError(undefined);
     };
 
@@ -92,7 +94,7 @@ export function AccessPackageDialog({ api, onClose, onCreated }: {
         try {
             const created = await api.createAccessPackage({
                 displayName, description, riskLevel, approverRoleId, defaultDurationSeconds,
-                maxDurationSeconds, allowPermanent,
+                maxDurationSeconds, allowPermanent, autoApprove: riskLevel === "LOW" && autoApprove,
                 roleMappings: roles.map(({ type, roleId }) => ({ type, roleId }))
             });
             onCreated(created);
@@ -152,6 +154,13 @@ export function AccessPackageDialog({ api, onClose, onCreated }: {
                 <Checkbox id="access-package-permanent" isChecked={allowPermanent} isDisabled={saving}
                     label={t("accessRequestsAdminAllowPermanent")}
                     onChange={(_event, checked) => setAllowPermanent(checked)} />
+            </FormGroup>
+            <FormGroup fieldId="access-package-auto-approve">
+                <Checkbox id="access-package-auto-approve" isChecked={autoApprove}
+                    isDisabled={saving || riskLevel !== "LOW"}
+                    label={t("accessRequestsAdminAutoApprove")}
+                    onChange={(_event, checked) => setAutoApprove(checked)} />
+                <Text component="small">{t("accessRequestsAdminAutoApproveHelp")}</Text>
             </FormGroup>
             <FormGroup fieldId="access-package-approver" isRequired label={t("accessRequestsAdminApproverRole")}>
                 <KeycloakReferenceSelector api={api} fieldId="access-package-approver" isDisabled={saving}
