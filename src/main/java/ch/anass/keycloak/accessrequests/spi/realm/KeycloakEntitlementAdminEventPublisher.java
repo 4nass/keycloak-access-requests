@@ -45,6 +45,7 @@ public final class KeycloakEntitlementAdminEventPublisher {
                 .detail("defaultDurationSeconds", Long.toString(entitlement.durationPolicy().defaultDuration().toSeconds()))
                 .detail("maxDurationSeconds", Long.toString(entitlement.durationPolicy().maxDuration().toSeconds()))
                 .detail("allowPermanent", Boolean.toString(entitlement.durationPolicy().allowPermanent()))
+                .detail("autoApprove", Boolean.toString(entitlement.autoApprove()))
                 .success();
     }
 }

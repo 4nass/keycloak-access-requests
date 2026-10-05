@@ -36,7 +36,7 @@ class AccessPackageAdministrationEndpointTest {
         assertTrue(payload.isRecord(), "The JSON request must have an explicit immutable shape");
         assertArrayEquals(new String[]{"displayName", "description", "riskLevel", "approverRoleId",
                         "defaultDurationSeconds", "maxDurationSeconds", "allowPermanent", "roleMappings",
-                        "autoApproveLowRisk"},
+                        "autoApprove"},
                 Arrays.stream(payload.getRecordComponents()).map(RecordComponent::getName).toArray(String[]::new));
         assertEquals(java.util.List.class, payload.getRecordComponents()[7].getType());
     }

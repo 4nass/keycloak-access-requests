@@ -27,7 +27,7 @@ class EntitlementCatalogLifecycleTest {
         Entitlement entitlement = unpublishedEntitlement();
 
         assertFalse(entitlement.requestable());
-        assertFalse(entitlement.autoApproveLowRisk());
+        assertFalse(entitlement.autoApprove());
         assertEquals(CREATED_AT, entitlement.createdAt());
         assertEquals(CREATED_AT, entitlement.updatedAt());
         assertEquals(0, entitlement.version());
@@ -40,11 +40,11 @@ class EntitlementCatalogLifecycleTest {
         Entitlement enabled = original.withAutoApproval(true, UPDATED_AT);
         Entitlement disabled = enabled.withAutoApproval(false, UNPUBLISHED_AT);
 
-        assertFalse(original.autoApproveLowRisk());
-        assertTrue(enabled.autoApproveLowRisk());
-        assertTrue(enabled.publish(UNPUBLISHED_AT).autoApproveLowRisk());
-        assertTrue(enabled.withVersion(3).autoApproveLowRisk());
-        assertFalse(disabled.autoApproveLowRisk());
+        assertFalse(original.autoApprove());
+        assertTrue(enabled.autoApprove());
+        assertTrue(enabled.publish(UNPUBLISHED_AT).autoApprove());
+        assertTrue(enabled.withVersion(3).autoApprove());
+        assertFalse(disabled.autoApprove());
     }
 
     @ParameterizedTest
@@ -56,7 +56,7 @@ class EntitlementCatalogLifecycleTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> entitlement.withAutoApproval(true, UNPUBLISHED_AT));
-        assertFalse(entitlement.autoApproveLowRisk());
+        assertFalse(entitlement.autoApprove());
     }
 
     @Test
@@ -67,8 +67,8 @@ class EntitlementCatalogLifecycleTest {
                 "Sensitive access", "Requires human review.", RiskLevel.HIGH,
                 "finance-access-approver", UNPUBLISHED_AT);
 
-        assertFalse(raised.autoApproveLowRisk());
-        assertTrue(enabled.autoApproveLowRisk());
+        assertFalse(raised.autoApprove());
+        assertTrue(enabled.autoApprove());
     }
 
     @Test
@@ -79,10 +79,10 @@ class EntitlementCatalogLifecycleTest {
                 "finance-access-approver", DurationPolicy.defaultsFor(RiskLevel.LOW),
                 true, false, true, CREATED_AT, UPDATED_AT, 4);
 
-        assertTrue(restored.autoApproveLowRisk());
+        assertTrue(restored.autoApprove());
         assertEquals(4, restored.version());
         assertEquals(UPDATED_AT, restored.updatedAt());
-        assertTrue(restored.withVersion(5).autoApproveLowRisk());
+        assertTrue(restored.withVersion(5).autoApprove());
     }
 
     @Test

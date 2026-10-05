@@ -265,7 +265,7 @@ public final class RequestService {
                 AccessRequest persisted = accessRequestRepository.createIfNoPending(request)
                         .orElseThrow(() -> new RequestAlreadyPendingException(entitlementId));
                 AccessRequestEvent event = AccessRequestEvent.created(persisted, requesterId, occurredAt);
-                if (entitlement.autoApproveLowRisk()) {
+                if (entitlement.autoApprove()) {
                     eventPublisher.publish(event);
                     return completeApproval(persisted, entitlement, AUTO_APPROVER_ID, null);
                 }

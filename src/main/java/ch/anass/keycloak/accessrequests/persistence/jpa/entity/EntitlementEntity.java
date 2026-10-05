@@ -60,8 +60,8 @@ public class EntitlementEntity {
     @Column(name = "REQUESTABLE", nullable = false)
     private boolean requestable;
 
-    @Column(name = "AUTO_APPROVE_LOW_RISK", nullable = false)
-    private boolean autoApproveLowRisk;
+    @Column(name = "AUTO_APPROVE", nullable = false)
+    private boolean autoApprove;
 
     @Column(name = "DEFAULT_DURATION_SECONDS", nullable = false)
     private long defaultDurationSeconds;
@@ -103,7 +103,7 @@ public class EntitlementEntity {
         this.riskLevel = entitlement.riskLevel();
         this.approverRoleId = entitlement.approverRoleId();
         this.requestable = entitlement.requestable();
-        this.autoApproveLowRisk = entitlement.autoApproveLowRisk();
+        this.autoApprove = entitlement.autoApprove();
         this.defaultDurationSeconds = entitlement.durationPolicy().defaultDuration().toSeconds();
         this.maxDurationSeconds = entitlement.durationPolicy().maxDuration().toSeconds();
         this.allowPermanent = entitlement.durationPolicy().allowPermanent();
@@ -125,7 +125,7 @@ public class EntitlementEntity {
                         Duration.ofSeconds(defaultDurationSeconds), Duration.ofSeconds(maxDurationSeconds), allowPermanent),
                 requestable,
                 false,
-                autoApproveLowRisk,
+                autoApprove,
                 Instant.ofEpochMilli(createdTimestamp),
                 Instant.ofEpochMilli(updatedTimestamp),
                 version);

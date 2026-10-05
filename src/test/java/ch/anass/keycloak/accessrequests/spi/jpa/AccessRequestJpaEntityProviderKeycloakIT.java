@@ -106,7 +106,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                      "roleMappings":[{"type":"REALM_ROLE","roleId":"%s"}]%s}
                     """;
             String defaultBody = packageBody.formatted(approverRoleId, roleId, "");
-            String enabledBody = packageBody.formatted(approverRoleId, roleId, ",\"autoApproveLowRisk\":true");
+            String enabledBody = packageBody.formatted(approverRoleId, roleId, ",\"autoApprove\":true");
 
             assertEquals(401, client.send(HttpRequest.newBuilder(packages)
                             .header("Content-Type", "application/json")
@@ -141,8 +141,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                             .POST(HttpRequest.BodyPublishers.ofString(defaultBody)).build(),
                     HttpResponse.BodyHandlers.ofString());
             assertEquals(201, defaultPolicy.statusCode(), defaultPolicy.body());
-            assertTrue(json.readTree(defaultPolicy.body()).has("autoApproveLowRisk"));
-            assertFalse(json.readTree(defaultPolicy.body()).path("autoApproveLowRisk").asBoolean());
+            assertTrue(json.readTree(defaultPolicy.body()).has("autoApprove"));
+            assertFalse(json.readTree(defaultPolicy.body()).path("autoApprove").asBoolean());
 
             HttpResponse<String> created = client.send(HttpRequest.newBuilder(packages)
                             .header("Authorization", "Bearer " + adminToken)
@@ -151,7 +151,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                     HttpResponse.BodyHandlers.ofString());
             assertEquals(201, created.statusCode(), created.body());
             JsonNode draft = json.readTree(created.body());
-            assertTrue(draft.path("autoApproveLowRisk").asBoolean(), created.body());
+            assertTrue(draft.path("autoApprove").asBoolean(), created.body());
             assertFalse(draft.path("requestable").asBoolean(), "Creation must not publish the package implicitly");
             String entitlementId = draft.path("id").asText();
             String groupId = draft.path("resourceId").asText();
@@ -161,12 +161,26 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                             .header("Authorization", "Bearer " + adminToken).GET().build(),
                     HttpResponse.BodyHandlers.ofString());
             assertEquals(200, reloaded.statusCode());
-            assertTrue(json.readTree(reloaded.body()).path("autoApproveLowRisk").asBoolean());
-            HttpResponse<String> listed = client.send(HttpRequest.newBuilder(entitlements)
-                            .header("Authorization", "Bearer " + adminToken).GET().build(),
-                    HttpResponse.BodyHandlers.ofString());
-            assertEquals(200, listed.statusCode());
-            assertTrue(listed.body().contains("\"autoApproveLowRisk\":true"));
+            assertTrue(json.readTree(reloaded.body()).path("autoApprove").asBoolean());
+            boolean foundInAdminList = false;
+            for (int page = 0; !foundInAdminList; page++) {
+                HttpResponse<String> listed = client.send(HttpRequest.newBuilder(
+                                URI.create(entitlements + "?page=" + page + "&size=100"))
+                                .header("Authorization", "Bearer " + adminToken).GET().build(),
+                        HttpResponse.BodyHandlers.ofString());
+                assertEquals(200, listed.statusCode(), listed.body());
+                JsonNode adminPage = json.readTree(listed.body());
+                for (JsonNode item : adminPage.path("items")) {
+                    if (entitlementId.equals(item.path("id").asText())) {
+                        assertTrue(item.path("autoApprove").asBoolean());
+                        foundInAdminList = true;
+                    }
+                }
+                if (!foundInAdminList && (long) (page + 1) * 100 >= adminPage.path("total").asLong()) {
+                    break;
+                }
+            }
+            assertTrue(foundInAdminList, "The policy must appear on the entitlement's admin list page");
 
             String updateBody = """
                     {"displayName":"Temporary reporting access","description":"Reporting package for a project.",
@@ -179,14 +193,14 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                                     updateBody.formatted("LOW", approverRoleId, 0, ""))).build(),
                     HttpResponse.BodyHandlers.ofString());
             assertEquals(200, published.statusCode(), published.body());
-            assertTrue(json.readTree(published.body()).path("autoApproveLowRisk").asBoolean(),
+            assertTrue(json.readTree(published.body()).path("autoApprove").asBoolean(),
                     "Omitting the optional policy on update must preserve its current value");
 
             HttpResponse<String> stale = client.send(HttpRequest.newBuilder(entitlement)
                             .header("Authorization", "Bearer " + adminToken)
                             .header("Content-Type", "application/json")
                             .PUT(HttpRequest.BodyPublishers.ofString(updateBody.formatted(
-                                    "LOW", approverRoleId, 0, ",\"autoApproveLowRisk\":false"))).build(),
+                                    "LOW", approverRoleId, 0, ",\"autoApprove\":false"))).build(),
                     HttpResponse.BodyHandlers.ofString());
             assertEquals(409, stale.statusCode(), stale.body());
 
@@ -194,7 +208,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                             .header("Authorization", "Bearer " + adminToken)
                             .header("Content-Type", "application/json")
                             .PUT(HttpRequest.BodyPublishers.ofString(updateBody.formatted(
-                                    "HIGH", approverRoleId, 1, ",\"autoApproveLowRisk\":true"))).build(),
+                                    "HIGH", approverRoleId, 1, ",\"autoApprove\":true"))).build(),
                     HttpResponse.BodyHandlers.ofString());
             assertEquals(400, invalidUpdate.statusCode(), invalidUpdate.body());
 
@@ -218,10 +232,10 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                             .header("Authorization", "Bearer " + adminToken)
                             .header("Content-Type", "application/json")
                             .PUT(HttpRequest.BodyPublishers.ofString(updateBody.formatted(
-                                    "LOW", approverRoleId, 1, ",\"autoApproveLowRisk\":false"))).build(),
+                                    "LOW", approverRoleId, 1, ",\"autoApprove\":false"))).build(),
                     HttpResponse.BodyHandlers.ofString());
             assertEquals(200, disabled.statusCode(), disabled.body());
-            assertFalse(json.readTree(disabled.body()).path("autoApproveLowRisk").asBoolean());
+            assertFalse(json.readTree(disabled.body()).path("autoApprove").asBoolean());
             String requesterTwo = "manual-approval-requester-" + UUID.randomUUID();
             createEnabledUser(server, adminToken, requesterTwo, "requester-password");
             String requesterTwoToken = accessToken(server, clientId, requesterTwo, "requester-password");
@@ -244,7 +258,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             try (Connection connection = DriverManager.getConnection(
                     POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
                  PreparedStatement history = connection.prepareStatement("""
-                         select AUTO_APPROVE_LOW_RISK from AR_ENTITLEMENT_HISTORY
+                         select AUTO_APPROVE from AR_ENTITLEMENT_HISTORY
                           where ENTITLEMENT_ID = ? order by VERSION
                          """)) {
                 history.setString(1, entitlementId);
@@ -502,7 +516,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                   from information_schema.columns
                  where table_schema = 'public'
                    and table_name = ?
-                   and column_name = 'auto_approve_low_risk'
+                   and column_name = 'auto_approve'
                 """)) {
             query.setString(1, table);
             try (ResultSet column = query.executeQuery()) {

@@ -166,6 +166,10 @@ catalog policy (`riskLevel`, approvers, duration, `allowPermanent`, and `request
 records an individual user's resulting access. The administrator must inspect the package and
 publish its entitlement separately.
 
+`autoApprove` is optional on package creation and defaults to `false`. Setting it to
+`true` is accepted only when `riskLevel` is `LOW`; otherwise the API returns `400`. Creation
+still leaves the package unpublished. Admin entitlement responses include the stored policy.
+
 `GET /admin/access-packages/{packageId}` returns the group ID/name, `groupExists`,
 `configurationValid`, and each bound role's type, ID, name, and `missing` flag. It returns 404 for
 an entitlement without an access-package binding. Publishing an unbound entitlement or an invalid package through the
@@ -178,21 +182,28 @@ unpublishing remains possible.
 {
   "displayName": "Finance reporting",
   "description": "Read access to finance reporting.",
-  "riskLevel": "MEDIUM",
+  "riskLevel": "LOW",
   "approverRoleId": "c91e7a3f-2e0f-4e87-b0f7-6bb74c431bd2",
   "requestable": true,
-  "defaultDurationSeconds": 604800,
-  "maxDurationSeconds": 2592000,
+  "defaultDurationSeconds": 2592000,
+  "maxDurationSeconds": 7776000,
   "allowPermanent": false,
+  "autoApprove": true,
   "version": 3
 }
 ```
 
 The resource type and resource ID are intentionally absent: the target resource is immutable. The client must send the version returned by the most recent read. Duration values must be positive whole seconds with default no greater than maximum. A concurrent modification returns `409 Conflict`; reload the entitlement before retrying. Setting `requestable=false` is the supported soft-disable operation.
 
+`autoApprove=true` enables immediate approval and provisioning for new requests to a
+published `LOW`-risk package. Omitting the field on update preserves the current policy, except
+that changing the risk away from `LOW` clears it. Explicit `false` restores manual review.
+Requesting `true` for any other risk returns `400`; existing requests are not decided retroactively.
+
 Successful catalog creates and updates also emit Keycloak Admin Events with resource type
 `ACCESS_REQUEST_ENTITLEMENT` and resource path `access-requests/entitlements/{id}`. The event
-details contain the new `requestable`, `riskLevel`, `approverRoleId`, and duration-policy values, but not the full
+details contain the new `requestable`, `riskLevel`, `approverRoleId`, duration-policy, and
+`autoApprove` values, but not the full
 entitlement representation. A soft-disable is an `UPDATE` event, not `DELETE`. Keycloak stores
 these events only when Admin Events are enabled for the realm; the extension's own catalog
 history is persisted regardless of that setting.

@@ -110,7 +110,7 @@
             <column name="REQUESTABLE" type="BOOLEAN">
                 <constraints nullable="false"/>
             </column>
-            <column name="AUTO_APPROVE_LOW_RISK" type="BOOLEAN" defaultValueBoolean="false">
+            <column name="AUTO_APPROVE" type="BOOLEAN" defaultValueBoolean="false">
                 <constraints nullable="false"/>
             </column>
             <column name="CREATED_TIMESTAMP" type="BIGINT">
@@ -228,7 +228,7 @@
             <column name="REQUESTABLE" type="BOOLEAN">
                 <constraints nullable="false"/>
             </column>
-            <column name="AUTO_APPROVE_LOW_RISK" type="BOOLEAN" defaultValueBoolean="false">
+            <column name="AUTO_APPROVE" type="BOOLEAN" defaultValueBoolean="false">
                 <constraints nullable="false"/>
             </column>
             <column name="VERSION" type="BIGINT">

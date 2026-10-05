@@ -46,7 +46,7 @@ public final class CatalogDto {
     public record AccessPackageCreation(
             String displayName, String description, RiskLevel riskLevel, String approverRoleId,
             Long defaultDurationSeconds, Long maxDurationSeconds, Boolean allowPermanent,
-            List<AccessPackageRole> roleMappings) {
+            List<AccessPackageRole> roleMappings, Boolean autoApprove) {
     }
 
     public record AccessPackageRole(ResourceType type, String roleId) {
@@ -63,7 +63,7 @@ public final class CatalogDto {
     public record EntitlementUpdate(
             String displayName, String description, RiskLevel riskLevel, String approverRoleId,
             Boolean requestable, Long version, Long defaultDurationSeconds,
-            Long maxDurationSeconds, Boolean allowPermanent) {
+            Long maxDurationSeconds, Boolean allowPermanent, Boolean autoApprove) {
     }
 
     public record EntitlementResponse(
@@ -71,7 +71,7 @@ public final class CatalogDto {
             String description, RiskLevel riskLevel, String approverRoleId, boolean requestable,
             String createdAt, String updatedAt, long version,
             long defaultDurationSeconds, long maxDurationSeconds, boolean allowPermanent,
-            String resourceName, String approverRoleName) {
+            String resourceName, String approverRoleName, boolean autoApprove) {
         public static EntitlementResponse from(Entitlement entitlement,
                 String resourceName, String approverRoleName) {
             return new EntitlementResponse(entitlement.id(), entitlement.resourceType(),
@@ -80,7 +80,8 @@ public final class CatalogDto {
                     entitlement.createdAt().toString(), entitlement.updatedAt().toString(),
                     entitlement.version(), entitlement.durationPolicy().defaultDuration().toSeconds(),
                     entitlement.durationPolicy().maxDuration().toSeconds(),
-                    entitlement.durationPolicy().allowPermanent(), resourceName, approverRoleName);
+                    entitlement.durationPolicy().allowPermanent(), resourceName, approverRoleName,
+                    entitlement.autoApprove());
         }
     }
 

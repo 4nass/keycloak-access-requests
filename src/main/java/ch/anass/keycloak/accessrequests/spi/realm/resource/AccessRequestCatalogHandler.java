@@ -143,10 +143,12 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
                 validateApproverRole(manager.realm(), validated.approverRoleId());
                 AccessPackage accessPackage = accessPackageGroupFactory(manager.realm())
                         .create(entitlementId, manager.realm().getId(), mappings);
+                Instant createdAt = Instant.now();
                 Entitlement created = Entitlement.create(entitlementId, manager.realm().getId(),
                         ResourceType.GROUP, accessPackage.groupId(), validated.displayName(),
                         validated.description(), validated.riskLevel(), validated.approverRoleId(),
-                        durationPolicy, Instant.now());
+                        durationPolicy, createdAt)
+                        .withAutoApproval(Boolean.TRUE.equals(validated.autoApprove()), createdAt);
                 Entitlement saved = entitlementRepository().create(created);
                 accessPackageRepository().create(accessPackage);
                 entitlementAuditEventPublisher().publish(
@@ -221,6 +223,9 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
                     validatedSubmission.approverRoleId(),
                     durationPolicy,
                     updatedAt);
+            if (validatedSubmission.autoApprove() != null) {
+                updated = updated.withAutoApproval(validatedSubmission.autoApprove(), updatedAt);
+            }
             updated = validatedSubmission.requestable()
                     ? updated.publish(updatedAt)
                     : updated.unpublish(updatedAt);
@@ -291,6 +296,7 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
                         || role.type() == ResourceType.GROUP || isBlank(role.roleId()))) {
             throw new BadRequestException("access package metadata and 1 to 100 realm or client roles must be provided");
         }
+        requireLowRiskAutoApproval(submission.autoApprove(), submission.riskLevel());
         return submission;
     }
 
@@ -350,7 +356,14 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
             throw new BadRequestException(
                     "displayName, description, riskLevel, approverRoleId, requestable, and a non-negative version must be provided");
         }
+        requireLowRiskAutoApproval(submission.autoApprove(), submission.riskLevel());
         return submission;
+    }
+
+    private static void requireLowRiskAutoApproval(Boolean enabled, RiskLevel riskLevel) {
+        if (Boolean.TRUE.equals(enabled) && riskLevel != RiskLevel.LOW) {
+            throw new BadRequestException("autoApprove requires LOW risk");
+        }
     }
 
     private void validateKeycloakReferences(RealmModel realm, EntitlementCreation submission) {

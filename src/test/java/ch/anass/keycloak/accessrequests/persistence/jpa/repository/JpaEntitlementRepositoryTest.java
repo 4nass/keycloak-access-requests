@@ -160,9 +160,9 @@ class JpaEntitlementRepositoryTest {
         entityManager.clear();
 
         Entitlement restored = repository.findById("realm-1", draft.id()).orElseThrow();
-        assertFalse(restored.autoApproveLowRisk());
+        assertFalse(restored.autoApprove());
         assertEquals(Boolean.FALSE, entityManager.createNativeQuery("""
-                        select AUTO_APPROVE_LOW_RISK from AR_ENTITLEMENT where ID = :id
+                        select AUTO_APPROVE from AR_ENTITLEMENT where ID = :id
                         """)
                 .setParameter("id", draft.id())
                 .getSingleResult());
@@ -177,14 +177,14 @@ class JpaEntitlementRepositoryTest {
         persist(enabled);
         entityManager.clear();
 
-        assertTrue(repository.findById("realm-1", enabled.id()).orElseThrow().autoApproveLowRisk());
+        assertTrue(repository.findById("realm-1", enabled.id()).orElseThrow().autoApprove());
         assertTrue(EntityTransactionSupport.call(entityManager,
                 () -> repository.findByIdForUpdate("realm-1", enabled.id()).orElseThrow())
-                .autoApproveLowRisk());
+                .autoApprove());
         assertTrue(repository.findAll(new EntitlementQuery("realm-1", 0, 20))
-                .items().getFirst().autoApproveLowRisk());
+                .items().getFirst().autoApprove());
         assertTrue(repository.findRequestable(new CatalogQuery("realm-1", null, null, null, 0, 20))
-                .items().getFirst().autoApproveLowRisk());
+                .items().getFirst().autoApprove());
     }
 
     @Test
@@ -197,21 +197,21 @@ class JpaEntitlementRepositoryTest {
         Entitlement enabled = initial.withAutoApproval(true, CREATED_AT.plusSeconds(1));
         Entitlement updated = EntityTransactionSupport.call(entityManager,
                 () -> repository.updateIfVersionMatches(enabled, initial.version()).orElseThrow());
-        assertTrue(updated.autoApproveLowRisk());
+        assertTrue(updated.autoApprove());
         assertEquals(initial.version() + 1, updated.version());
 
         EntityTransactionSupport.execute(entityManager,
                 () -> assertTrue(repository.updateIfVersionMatches(initial, initial.version()).isEmpty()));
-        assertTrue(repository.findById("realm-1", initial.id()).orElseThrow().autoApproveLowRisk());
+        assertTrue(repository.findById("realm-1", initial.id()).orElseThrow().autoApprove());
 
         Entitlement disabled = updated.withAutoApproval(false, CREATED_AT.plusSeconds(2));
         Entitlement saved = EntityTransactionSupport.call(entityManager,
                 () -> repository.updateIfVersionMatches(disabled, updated.version()).orElseThrow());
         entityManager.clear();
-        assertFalse(saved.autoApproveLowRisk());
-        assertFalse(repository.findById("realm-1", initial.id()).orElseThrow().autoApproveLowRisk());
+        assertFalse(saved.autoApprove());
+        assertFalse(repository.findById("realm-1", initial.id()).orElseThrow().autoApprove());
         assertEquals(Boolean.FALSE, entityManager.createNativeQuery("""
-                        select AUTO_APPROVE_LOW_RISK from AR_ENTITLEMENT where ID = :id
+                        select AUTO_APPROVE from AR_ENTITLEMENT where ID = :id
                         """)
                 .setParameter("id", initial.id())
                 .getSingleResult());
@@ -227,16 +227,16 @@ class JpaEntitlementRepositoryTest {
 
         Entitlement mediumRisk = enabled.updateDetails(enabled.displayName(), enabled.description(),
                 RiskLevel.MEDIUM, enabled.approverRoleId(), enabled.durationPolicy(), CREATED_AT.plusSeconds(2));
-        assertFalse(mediumRisk.autoApproveLowRisk());
+        assertFalse(mediumRisk.autoApprove());
         EntityTransactionSupport.execute(entityManager,
                 () -> repository.updateIfVersionMatches(mediumRisk, enabled.version()).orElseThrow());
         entityManager.clear();
 
         Entitlement restored = repository.findById("realm-1", enabled.id()).orElseThrow();
         assertEquals(RiskLevel.MEDIUM, restored.riskLevel());
-        assertFalse(restored.autoApproveLowRisk());
+        assertFalse(restored.autoApprove());
         assertEquals(Boolean.FALSE, entityManager.createNativeQuery("""
-                        select AUTO_APPROVE_LOW_RISK from AR_ENTITLEMENT where ID = :id
+                        select AUTO_APPROVE from AR_ENTITLEMENT where ID = :id
                         """)
                 .setParameter("id", enabled.id())
                 .getSingleResult());
@@ -257,7 +257,7 @@ class JpaEntitlementRepositoryTest {
         entityManager.clear();
 
         List<?> snapshots = entityManager.createNativeQuery("""
-                        select AUTO_APPROVE_LOW_RISK from AR_ENTITLEMENT_HISTORY
+                        select AUTO_APPROVE from AR_ENTITLEMENT_HISTORY
                          where ENTITLEMENT_ID = :id order by VERSION
                         """)
                 .setParameter("id", enabled.id())
