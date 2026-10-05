@@ -272,6 +272,113 @@ class AccessRequestAdminConsoleBrowserIT {
         }
     }
 
+    @Test
+    void autoApprovesALowRiskPackageConfiguredInAdminConsoleAndGrantsItFromAccountConsole() throws Exception {
+        try (PostgreSQLContainer postgres = new PostgreSQLContainer(
+                DockerImageName.parse(POSTGRESQL_CONTAINER).asCompatibleSubstituteFor("postgres"))
+                .withDatabaseName("keycloak")
+                .withUsername("keycloak")
+                .withPassword("keycloak")
+                .withNetwork(NETWORK)
+                .withNetworkAliases("postgres");
+             KeycloakContainer keycloak = keycloakWithPostgres();
+             GenericContainer<?> chrome = chrome()) {
+            postgres.start();
+            keycloak.start();
+            configureAdminCliTokenBehavior(keycloak);
+            AdminConsoleFixture manager = configureAdminConsole(keycloak, false);
+            String adminToken = manager.globalAdminToken();
+            String requestClientId = createRequestTestClient(keycloak, adminToken);
+            enableAccountConsoleForAccessRequests(keycloak, adminToken);
+            String requesterUsername = "auto-approved-requester";
+            String requesterPassword = "browser-requester-password";
+            String requesterId = createEnabledUser(keycloak, adminToken,
+                    requesterUsername, requesterPassword, "Jordan", "Requester");
+            String packageName = "Temporary reporting access";
+            assertRoleNotGranted(keycloak, adminToken, requesterId, manager.managedTargetRoleId());
+
+            chrome.start();
+            RemoteWebDriver driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
+            try {
+                configureDriver(driver);
+                logInToAdminConsole(keycloak, driver, manager.managerUsername(), manager.managerPassword());
+                openAccessRequests(driver);
+                createAndPublishAccessPackage(driver, manager, packageName, false, true);
+                assertNoJavaScriptErrors(driver);
+            } finally {
+                driver.quit();
+            }
+            String entitlementId = entitlementId(keycloak, adminToken, packageName);
+            HttpResponse<String> catalog = HTTP_CLIENT.send(
+                    adminRequest(keycloak, "/realms/master/access-requests/admin/entitlements/" + entitlementId,
+                            adminToken).GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, catalog.statusCode(), catalog.body());
+            assertTrue(JSON.readTree(catalog.body()).path("autoApprove").asBoolean(),
+                    "The Admin Console must persist the automatic approval policy.");
+
+            String justification = "Need temporary access to reporting.";
+            driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
+            try {
+                configureDriver(driver);
+                logInToAccountConsole(keycloak, driver, requesterUsername, requesterPassword, "request-access");
+                WebElement row = waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                        By.id("requestable-entitlement-" + entitlementId)));
+                row.findElement(By.xpath(".//button[normalize-space()='Request access']")).click();
+                driver.findElement(By.id("access-request-justification")).sendKeys(justification);
+                driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Submit request']")).click();
+                driver.navigate().to(accountConsoleUri() + "my-requests");
+                WebElement requestRow = waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                        By.xpath("//li[contains(@id, 'access-request-') and .//strong[normalize-space()="
+                                + xpathLiteral(packageName) + "]]")));
+                waitFor(driver).until(ignored -> requestRow.getText().contains("Approved")
+                        && requestRow.getText().contains("Succeeded"));
+                assertNoJavaScriptErrors(driver);
+            } finally {
+                driver.quit();
+            }
+
+            String requesterToken = accessToken(keycloak, requestClientId, requesterUsername, requesterPassword);
+            HttpResponse<String> mine = HTTP_CLIENT.send(
+                    adminRequest(keycloak, "/realms/master/access-requests/mine", requesterToken)
+                            .GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, mine.statusCode(), mine.body());
+            JsonNode requests = JSON.readTree(mine.body());
+            assertEquals(1, requests.path("total").asInt());
+            JsonNode request = requests.path("items").get(0);
+            String requestId = request.path("id").asText();
+            assertEquals(entitlementId, request.path("entitlementId").asText());
+            assertEquals("APPROVED", request.path("decisionStatus").asText());
+            assertEquals("SUCCEEDED", request.path("provisioningStatus").asText());
+            assertRoleGranted(keycloak, adminToken, requesterId, manager.managedTargetRoleId());
+            JsonNode token = JSON.readTree(Base64.getUrlDecoder().decode(requesterToken.split("\\.")[1]));
+            assertTrue(token.path("realm_access").path("roles").valueStream()
+                    .anyMatch(role -> manager.managedTargetRoleName().equals(role.asText())),
+                    "A fresh access token must contain the role granted by the access package.");
+
+            HttpResponse<String> audit = HTTP_CLIENT.send(
+                    adminRequest(keycloak, "/realms/master/access-requests/admin/requests/" + requestId,
+                            adminToken).GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, audit.statusCode(), audit.body());
+            JsonNode details = JSON.readTree(audit.body());
+            assertEquals(justification, details.path("justification").asText());
+            assertEquals("CREATED_BY_EXTENSION", details.path("grant").path("origin").asText());
+            assertEquals("AUTHORIZED", details.path("grant").path("revocationState").asText());
+            assertTrue(details.path("grant").path("expiresAt").isTextual(),
+                    "The automatically provisioned temporary grant must have an expiry.");
+            JsonNode history = details.path("history");
+            assertEquals(4, history.size());
+            assertEquals("REQUEST_CREATED", history.get(0).path("type").asText());
+            assertEquals(requesterId, history.get(0).path("actorId").asText());
+            assertEquals("REQUEST_APPROVED", history.get(1).path("type").asText());
+            assertEquals("PROVISIONING_STARTED", history.get(2).path("type").asText());
+            assertEquals("PROVISIONING_SUCCEEDED", history.get(3).path("type").asText());
+            for (int index = 1; index < history.size(); index++) {
+                assertEquals("system:auto-approval", history.get(index).path("actorId").asText());
+            }
+            assertCompletedRequestPersistedInPostgres(postgres, requestId);
+        }
+    }
+
     private void enableAccountConsoleForAccessRequests(KeycloakContainer keycloak, String adminToken) throws Exception {
         HttpResponse<Void> theme = HTTP_CLIENT.send(
                 adminRequest(keycloak, "/admin/realms/master", adminToken)
@@ -1380,12 +1487,24 @@ class AccessRequestAdminConsoleBrowserIT {
 
     private void createAndPublishAccessPackage(WebDriver driver, AdminConsoleFixture fixture, String displayName,
             boolean captureCreation) throws Exception {
+        createAndPublishAccessPackage(driver, fixture, displayName, captureCreation, false);
+    }
+
+    private void createAndPublishAccessPackage(WebDriver driver, AdminConsoleFixture fixture, String displayName,
+            boolean captureCreation, boolean autoApprove) throws Exception {
         WebDriverWait wait = waitFor(driver);
         wait.until(ExpectedConditions.elementToBeClickable(
                 By.xpath("//button[normalize-space()='Create access package']"))).click();
         driver.findElement(By.id("access-package-display-name")).sendKeys(displayName);
         driver.findElement(By.id("access-package-description"))
                 .sendKeys("Created through the deployed Administration Console.");
+        WebElement autoApprovalPolicy = driver.findElement(By.id("access-package-auto-approve"));
+        assertFalse(autoApprovalPolicy.isSelected(), "Automatic approval must default to disabled.");
+        if (autoApprove) {
+            assertTrue(autoApprovalPolicy.isEnabled(), "LOW-risk packages must offer automatic approval.");
+            autoApprovalPolicy.click();
+            assertTrue(autoApprovalPolicy.isSelected());
+        }
         driver.findElement(By.id("access-package-approver-search")).sendKeys(fixture.approverRoleName());
         wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(
                 "#access-package-approver option[value='" + fixture.approverRoleId() + "']")));
