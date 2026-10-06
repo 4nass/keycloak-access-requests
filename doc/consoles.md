@@ -25,8 +25,8 @@ The navigation is not an authorization mechanism. The API remains responsible fo
 ## Admin Console
 
 The Admin Console owns entitlement configuration. **Configure → Access requests** is a single
-navigation entry with **Catalog**, **Events**, **Email notifications**, **Provisioning failures**,
-and **Revocation failures** tabs. Tabs appear only when the manager has the corresponding server-side capability.
+navigation entry with **Catalog**, **Approval assurance**, **Events**, **Email notifications**,
+**Provisioning failures**, and **Revocation failures** tabs. Tabs appear only when the manager has the corresponding server-side capability. **Approval assurance** is restricted to realm administrators because changing it can weaken approval security.
 The Events tab keeps requester and event actor separate. Managers search people by name or username,
 while the API filters by their stable IDs before pagination; an automatic expiration can also be
 selected as an actor.

@@ -12,7 +12,7 @@ function CurrentLocation() {
     return <output>{useLocation().pathname}</output>;
 }
 
-function renderTabs(active: "catalog" | "events" | "notifications" | "provisioning" | "revocations") {
+function renderTabs(active: "catalog" | "assurance" | "events" | "notifications" | "provisioning" | "revocations") {
     return render(<MemoryRouter initialEntries={["/master/access-requests/events"]}>
         <Routes><Route path="/master/access-requests/*" element={<>
             <AccessRequestsAdminTabs active={active} />
@@ -26,15 +26,18 @@ describe("Access requests Admin tabs", () => {
         api.capabilities.mockReset();
     });
 
-    it("shows five realm-scoped tabs and navigates without a full page reload", async () => {
+    it("shows realm-scoped tabs, including policy settings only for realm admins", async () => {
         api.capabilities.mockResolvedValue({
-            canManageCatalog: true, canManageNotifications: true, canManageProvisioningFailures: true
+            canManageCatalog: true, canManageNotifications: true, canManageProvisioningFailures: true,
+            canManageAssurancePolicy: true
         });
         renderTabs("events");
 
         expect(await screen.findByRole("tab", { name: "accessRequestsAdminCatalogTab" }))
             .toHaveAttribute("href", "/master/access-requests");
         expect(screen.getByRole("tab", { name: "accessRequestsAdminEvents" })).toHaveAttribute("aria-selected", "true");
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminAssurancePolicy" }))
+            .toHaveAttribute("href", "/master/access-requests/assurance-policy");
         expect(screen.getByRole("tab", { name: "accessRequestsAdminNotificationDelivery" }))
             .toHaveAttribute("href", "/master/access-requests/notification-deliveries");
         expect(screen.getByRole("tab", { name: "accessRequestsAdminFailedProvisioning" }))
@@ -42,7 +45,8 @@ describe("Access requests Admin tabs", () => {
         expect(screen.getByRole("tab", { name: "accessRequestsAdminRevocationFailures" }))
             .toHaveAttribute("href", "/master/access-requests/revocation-failures");
         expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-            "accessRequestsAdminCatalogTab", "accessRequestsAdminNotificationDelivery",
+            "accessRequestsAdminCatalogTab", "accessRequestsAdminAssurancePolicy",
+            "accessRequestsAdminNotificationDelivery",
             "accessRequestsAdminFailedProvisioning", "accessRequestsAdminRevocationFailures",
             "accessRequestsAdminEvents"
         ]);

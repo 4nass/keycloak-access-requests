@@ -132,6 +132,12 @@ export type AdminCapabilities = {
     canManageCatalog: boolean;
     canManageNotifications: boolean;
     canManageProvisioningFailures: boolean;
+    canManageAssurancePolicy?: boolean;
+};
+
+export type ApprovalAssurancePolicy = {
+    high: { acr: string; loa: number; maxAgeSeconds: number };
+    critical: { acr: string; loa: number; maxAgeSeconds: number };
 };
 
 export type FailedProvisioningRequest = {
@@ -262,6 +268,8 @@ export type KeycloakReferencePage = {
 
 export type EntitlementsAdminApi = {
     capabilities(): Promise<AdminCapabilities>;
+    approvalAssurancePolicy(): Promise<ApprovalAssurancePolicy>;
+    updateApprovalAssurancePolicy(policy: ApprovalAssurancePolicy): Promise<ApprovalAssurancePolicy>;
     list(query?: { page?: number; size?: number }): Promise<EntitlementPage>;
     auditEvents(query?: AdminAuditEventQuery): Promise<AdminAuditEventPage>;
     auditUsers(search: string, signal?: AbortSignal): Promise<{ items: AuditUser[] }>;
@@ -377,6 +385,8 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
 
     return {
         capabilities: () => request("/admin/capabilities"),
+        approvalAssurancePolicy: () => request("/admin/assurance-policy"),
+        updateApprovalAssurancePolicy: (policy) => request("/admin/assurance-policy", json("PUT", policy)),
         list: (query) => request(`/admin/entitlements?${pageQuery(query)}`),
         auditEvents: (query) => request(`/admin/events?${auditQuery(query)}`),
         auditUsers: (search, signal) => request(`/admin/audit-users?search=${encodeURIComponent(search)}`, { signal }),

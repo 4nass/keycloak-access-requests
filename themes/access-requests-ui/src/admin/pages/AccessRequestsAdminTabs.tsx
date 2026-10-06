@@ -6,7 +6,7 @@ import { useInRouterContext, useLocation, useNavigate } from "react-router-dom";
 import type { AdminCapabilities } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
 
-type AdminTab = "catalog" | "events" | "notifications" | "provisioning" | "revocations";
+type AdminTab = "catalog" | "assurance" | "events" | "notifications" | "provisioning" | "revocations";
 
 export function AccessRequestsAdminTabs({ active }: { active: AdminTab }) {
     // The catalog is also rendered in isolated component tests without a router.
@@ -35,6 +35,7 @@ function RoutedTabs({ active }: { active: AdminTab }) {
     const base = markerIndex < 0 ? pathname : pathname.slice(0, markerIndex + marker.length);
     const paths = {
         catalog: base,
+        assurance: `${base}/assurance-policy`,
         events: `${base}/events`,
         notifications: `${base}/notification-deliveries`,
         provisioning: `${base}/provisioning-failures`,
@@ -55,6 +56,8 @@ function RoutedTabs({ active }: { active: AdminTab }) {
         >
             {capabilities.canManageCatalog && <Tab eventKey="catalog" href={paths.catalog}
                 title={<TabTitleText>{t("accessRequestsAdminCatalogTab")}</TabTitleText>} />}
+            {capabilities.canManageAssurancePolicy && <Tab eventKey="assurance" href={paths.assurance}
+                title={<TabTitleText>{t("accessRequestsAdminAssurancePolicy")}</TabTitleText>} />}
             {capabilities.canManageNotifications && <Tab eventKey="notifications" href={paths.notifications}
                 title={<TabTitleText>{t("accessRequestsAdminNotificationDelivery")}</TabTitleText>} />}
             {capabilities.canManageProvisioningFailures && <Tab eventKey="provisioning" href={paths.provisioning}

@@ -10,6 +10,11 @@ const EntitlementCatalogRoute = lazy(async () => {
     return { default: module.EntitlementCatalogRoute };
 });
 
+const ApprovalAssurancePolicyRoute = lazy(async () => {
+    const module = await import("./pages/ApprovalAssurancePolicyRoute");
+    return { default: module.ApprovalAssurancePolicyRoute };
+});
+
 const NotificationDeliveryRoute = lazy(async () => {
     const module = await import("./pages/NotificationDeliveryRoute");
 
@@ -51,6 +56,15 @@ const entitlementCatalogRoute: AdminRoute = {
         // The server capability check is authoritative; the navigation only improves discovery.
         access: "anyone",
         breadcrumb: (translate) => translate("accessRequestsAdminCatalog")
+    }
+};
+
+const approvalAssurancePolicyRoute: AdminRoute = {
+    path: "/:realm/access-requests/assurance-policy",
+    element: <ApprovalAssurancePolicyRoute />,
+    handle: {
+        access: "anyone",
+        breadcrumb: (translate) => translate("accessRequestsAdminAssurancePolicy")
     }
 };
 
@@ -111,7 +125,7 @@ export const routes: RouteObject[] = [
     {
         path: "/",
         element: <AccessRequestsAdminApp />,
-        children: [entitlementCatalogRoute, auditEventsRoute,
+        children: [entitlementCatalogRoute, approvalAssurancePolicyRoute, auditEventsRoute,
             notificationDeliveryRoute, failedProvisioningRoute, revocationFailuresRoute,
             ...standardRoutes, ...notFoundRoute]
     }

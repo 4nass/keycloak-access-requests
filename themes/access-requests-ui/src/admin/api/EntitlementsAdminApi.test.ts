@@ -46,6 +46,21 @@ const entitlement = {
 };
 
 describe("Entitlements administration API client", () => {
+    it("reads and updates the realm approval assurance policy", async () => {
+        const policy = {
+            high: { acr: "strong", loa: 2, maxAgeSeconds: 1800 },
+            critical: { acr: "strong", loa: 2, maxAgeSeconds: 300 }
+        };
+        const fetchMock = vi.fn().mockImplementation(async () => jsonResponse(policy));
+        const api = createApi(fetchMock);
+
+        await expect(api.approvalAssurancePolicy()).resolves.toEqual(policy);
+        await expect(api.updateApprovalAssurancePolicy(policy)).resolves.toEqual(policy);
+        expect(String(fetchMock.mock.calls[0][0])).toContain("/admin/assurance-policy");
+        expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({
+            method: "PUT", body: JSON.stringify(policy)
+        }));
+    });
     it("lists revocation incidents and retries a grant without exposing server diagnostics", async () => {
         const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ items: [], page: 1, size: 10, total: 0 }))
             .mockResolvedValueOnce(jsonResponse({ requestId: "request/1", status: "FAILED",
