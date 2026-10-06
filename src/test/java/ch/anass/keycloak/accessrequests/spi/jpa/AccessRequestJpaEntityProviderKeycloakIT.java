@@ -86,6 +86,99 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     }
 
     @Test
+    void highRiskApprovalFailsClosedUntilRealmStepUpIsActuallyConfigured() throws Exception {
+        try (KeycloakContainer server = keycloak()) {
+            server.start();
+            HttpClient client = HttpClient.newHttpClient();
+            String adminToken = accessToken(server, "admin-cli");
+            String clientId = "assurance-client-" + UUID.randomUUID();
+            createDirectAccessClient(server, adminToken, clientId);
+            addAccessRequestsAudience(server, adminToken, clientId);
+
+            String requester = "assurance-requester-" + UUID.randomUUID();
+            createEnabledUser(server, adminToken, requester, "requester-password");
+            String requesterToken = accessToken(server, clientId, requester, "requester-password");
+            String approver = "assurance-approver-" + UUID.randomUUID();
+            createEnabledUser(server, adminToken, approver, "approver-password");
+            String approverToken = accessToken(server, clientId, approver, "approver-password");
+            String approverRoleId = createRealmRoleAndAssignToUser(server, adminToken, subjectOf(approverToken),
+                    "assurance-approver-role-" + UUID.randomUUID());
+            String sourceRoleId = createRealmRole(server, adminToken, "assurance-source-" + UUID.randomUUID());
+            PublishedPackage accessPackage = createPublishedPackage(
+                    server, adminToken, approverRoleId, "REALM_ROLE", sourceRoleId);
+            String base = "http://%s:%d/realms/master/access-requests"
+                    .formatted(server.getHost(), server.getMappedPort(8080));
+            URI entitlement = URI.create(base + "/admin/entitlements/" + accessPackage.entitlementId());
+            HttpResponse<String> raisedRisk = client.send(HttpRequest.newBuilder(entitlement)
+                    .header("Authorization", "Bearer " + adminToken)
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString("""
+                            {"displayName":"Finance Reader","description":"Read-only access to the Finance Portal.",
+                             "riskLevel":"HIGH","approverRoleId":"%s","requestable":true,"version":1,
+                             "defaultDurationSeconds":28800,"maxDurationSeconds":86400}
+                            """.formatted(approverRoleId))).build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, raisedRisk.statusCode(), raisedRisk.body());
+
+            URI policyEndpoint = URI.create(base + "/admin/assurance-policy");
+            assignRealmManagementRoles(server, adminToken, subjectOf(approverToken), "view-realm");
+            ensureRealmRoleAndAssignToUser(server, adminToken, subjectOf(approverToken),
+                    ACCESS_REQUEST_MANAGER_ROLE);
+            approverToken = accessToken(server, clientId, approver, "approver-password");
+            assertEquals(403, client.send(HttpRequest.newBuilder(policyEndpoint)
+                    .header("Authorization", "Bearer " + approverToken).GET().build(),
+                    HttpResponse.BodyHandlers.discarding()).statusCode());
+            assertEquals(403, client.send(HttpRequest.newBuilder(policyEndpoint)
+                    .header("Authorization", "Bearer " + approverToken)
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString("""
+                            {"high":{"acr":"2","loa":2,"maxAgeSeconds":900},
+                             "critical":{"acr":"2","loa":2,"maxAgeSeconds":120}}
+                            """))
+                    .build(), HttpResponse.BodyHandlers.discarding()).statusCode());
+            HttpResponse<String> invalidPolicy = client.send(HttpRequest.newBuilder(policyEndpoint)
+                    .header("Authorization", "Bearer " + adminToken)
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString("""
+                            {"high":{"acr":"1","loa":1,"maxAgeSeconds":1800},
+                             "critical":{"acr":"2","loa":2,"maxAgeSeconds":300}}
+                            """)).build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(400, invalidPolicy.statusCode(), invalidPolicy.body());
+            HttpResponse<String> policy = client.send(HttpRequest.newBuilder(policyEndpoint)
+                    .header("Authorization", "Bearer " + adminToken).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, policy.statusCode(), policy.body());
+            assertEquals(1800, new ObjectMapper().readTree(policy.body()).path("high").path("maxAgeSeconds").asInt());
+            HttpResponse<String> saved = client.send(HttpRequest.newBuilder(policyEndpoint)
+                    .header("Authorization", "Bearer " + adminToken)
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString("""
+                            {"high":{"acr":"2","loa":2,"maxAgeSeconds":900},
+                             "critical":{"acr":"2","loa":2,"maxAgeSeconds":120}}
+                            """)).build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, saved.statusCode(), saved.body());
+
+            URI requests = URI.create(base + "/requests");
+            HttpResponse<String> created = client.send(requestSubmission(requests, requesterToken,
+                    """
+                    {"entitlementId":"%s","justification":"I need access to complete this assignment."}
+                    """.formatted(accessPackage.entitlementId())), HttpResponse.BodyHandlers.ofString());
+            assertEquals(201, created.statusCode(), created.body());
+            String requestId = responseId(created.body());
+            HttpResponse<String> denied = client.send(requestDecision(
+                    URI.create(base), approverToken, requestId, "approve", "Approved."),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(503, denied.statusCode(), denied.body());
+            assertError(denied.body(), "ASSURANCE_NOT_CONFIGURED", requestId);
+            HttpResponse<String> details = client.send(HttpRequest.newBuilder(URI.create(base + "/mine/" + requestId))
+                    .header("Authorization", "Bearer " + requesterToken).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, details.statusCode(), details.body());
+            assertTrue(details.body().contains("\"decisionStatus\":\"PENDING\""), details.body());
+            assertNoGroupMembership(server, adminToken, subjectOf(requesterToken), accessPackage.groupId());
+        }
+    }
+
+    @Test
     void configuresLowRiskAutoApprovalThroughTheAdminApiAndAppliesItToNewRequests() throws Exception {
         try (KeycloakContainer server = keycloak()) {
             server.start();

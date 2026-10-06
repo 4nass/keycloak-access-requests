@@ -814,6 +814,25 @@ class RequestServiceTest {
     }
 
     @Test
+    void approvalChecksCurrentEntitlementRiskBeforePersistingAnyDecision() {
+        Entitlement highRisk = Entitlement.create("entitlement-1", "realm-1", ResourceType.REALM_ROLE,
+                "finance-reader", "Finance Reader", "Restricted access", RiskLevel.HIGH,
+                "access-request-approver", Instant.EPOCH).publish(Instant.EPOCH);
+        entitlements.add(highRisk);
+        AccessRequest request = service.create("realm-1", "requester-1", "entitlement-1",
+                "Access is needed for the finance project.");
+
+        assertThrows(IllegalStateException.class, () -> service.approve("realm-1", request.id(),
+                "approver-1", "Approved.", risk -> {
+                    assertEquals(RiskLevel.HIGH, risk);
+                    throw new IllegalStateException("Fresh assurance required");
+                }));
+
+        assertEquals(DecisionStatus.PENDING, requests.findById("realm-1", request.id()).orElseThrow().decisionStatus());
+        assertEquals(1, events.published().size());
+    }
+
+    @Test
     void approverCanRejectPendingRequestAndAuditDecision() {
         entitlements.add(financeEntitlement());
         AccessRequest request = service.create(

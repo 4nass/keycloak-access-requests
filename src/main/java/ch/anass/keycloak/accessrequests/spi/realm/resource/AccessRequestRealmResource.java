@@ -2,6 +2,7 @@ package ch.anass.keycloak.accessrequests.spi.realm.resource;
 
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
+import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalAssurancePolicy;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApiDto.AdminCapabilitiesResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.CapabilitiesResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.DecisionSubmission;
@@ -137,6 +138,21 @@ public final class AccessRequestRealmResource {
     @Produces(MediaType.APPLICATION_JSON)
     public AdminCapabilitiesResponse adminCapabilities() {
         return adminHandler.adminCapabilities();
+    }
+
+    @GET
+    @Path("admin/assurance-policy")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response approvalAssurancePolicy() {
+        return adminHandler.approvalAssurancePolicy();
+    }
+
+    @PUT
+    @Path("admin/assurance-policy")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response updateApprovalAssurancePolicy(ApprovalAssurancePolicy policy) {
+        return adminHandler.updateApprovalAssurancePolicy(policy);
     }
 
     @GET

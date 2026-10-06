@@ -49,6 +49,8 @@ class AccessRequestRouteContractTest {
                 "GET mine | consumes=- | produces=application/json | params=query:from,query:page=0,"
                         + "query:resourceType,query:size=20,query:status,query:to",
                 "GET admin/capabilities | consumes=- | produces=application/json | params=-",
+                "GET admin/assurance-policy | consumes=- | produces=application/json | params=-",
+                "PUT admin/assurance-policy | consumes=application/json | produces=application/json | params=body",
                 "GET admin/events | consumes=- | produces=application/json | params=query:actorId,query:from,"
                         + "query:page=0,query:requestId,query:requesterId,query:size=20,query:to,query:type",
                 "GET admin/audit-users | consumes=- | produces=application/json | params=query:search",
@@ -83,8 +85,8 @@ class AccessRequestRouteContractTest {
                         + "params=body,path:requestId",
                 "POST {requestId}/reject | consumes=application/json | produces=application/json | "
                         + "params=body,path:requestId"), routes);
-        assertEquals(31, routes.size());
-        assertEquals(31, Arrays.stream(methods).filter(method -> method.isAnnotationPresent(Path.class)).count());
+        assertEquals(33, routes.size());
+        assertEquals(33, Arrays.stream(methods).filter(method -> method.isAnnotationPresent(Path.class)).count());
     }
 
     private static String route(Method method) {

@@ -86,6 +86,21 @@ Create dedicated roles such as `finance-approver` or `production-approver`, map 
 
 An approver cannot approve their own request, even if they hold the entitlement's approver role. The server enforces this rule; hiding an action in the UI is not the security boundary.
 
+## Configure approval assurance for HIGH and CRITICAL
+
+Access-grant durations remain configurable **per entitlement**. Authentication assurance is a separate **per-realm** policy, editable only by a realm administrator in **Access requests → Approval assurance**. The defaults require ACR `2` / LoA 2, with a maximum age of 30 minutes for HIGH and 5 minutes for CRITICAL. HIGH can be tightened or extended up to 60 minutes; CRITICAL can only be tightened below 5 minutes. Both levels must be at least LoA 2, CRITICAL cannot be lower than HIGH, and CRITICAL cannot have a longer freshness window than HIGH.
+
+Before approving HIGH or CRITICAL requests:
+
+1. Configure the realm's browser authentication flow with a **Condition - Level of Authentication** at the selected LoA and a real MFA step (for example OTP or WebAuthn). Its Keycloak **Max Age** must be greater than zero and no greater than the extension's freshness limit for that risk level. Keycloak's documented `Max Age = 0` mode does not retain a level-specific timestamp; a longer flow Max Age could reuse assurance already stale by the extension's policy. Both configurations return `503 ASSURANCE_NOT_CONFIGURED` rather than sending the approver into a step-up loop. With the default HIGH and CRITICAL policies sharing LoA 2, configure that flow's Max Age to at most **300 seconds**; HIGH will then also require a fresh LoA after 300 seconds. Use separate LoAs if the two levels need distinct effective windows.
+2. If using a named ACR such as `strong`, map it to the selected LoA in **Realm settings → Login → ACR to LoA Mapping**. The extension also supports a numeric ACR matching the LoA (for example `2`). Account Console and any other API client must use compatible effective ACR mappings; a client-specific mapping may override the realm mapping.
+3. Test the browser flow with a real approver: request that ACR, verify that MFA is actually required, and verify that an access token issued afterward contains the expected ACR. Merely naming a level `2` does **not** prove that the flow performs MFA.
+4. Set the corresponding ACR, LoA and freshness limit in **Access requests → Approval assurance**. Changes are recorded as Keycloak Admin Events when Admin Events are enabled for the realm.
+
+The approval endpoint checks the **current**, locked entitlement risk, the token ACR, the authenticated client session LoA and the original LoA timestamp. A higher LoA may satisfy a lower requirement only when the token ACR maps to that higher level and its own timestamp is fresh; the shorter of the entitlement approval limit and the Keycloak flow Max Age applies. A missing or misaligned LoA condition returns `503 ASSURANCE_NOT_CONFIGURED`; an absent or stale proof returns `403 STEP_UP_REQUIRED` with the required ACR. The Account Console requests that ACR **without** `max_age=0`, allowing Keycloak to reuse the still-valid lower level and challenge only for the missing or expired higher level. It does not silently replay the approval: the approver must confirm it again after returning. Rejection does not require step-up.
+
+The extension can validate Keycloak's LoA evidence, but it cannot prove that an arbitrary custom authentication flow actually used two independent factors. Realm administrators must review and test that flow before publishing HIGH or CRITICAL access packages. Without the required flow or evidence, approval fails closed.
+
 ## Localization
 
 The themes include English, French, German, and Spanish messages. To make these selectable:
@@ -109,5 +124,6 @@ Before making the catalog available to users, confirm:
 - API clients receive the `access-requests-api` audience;
 - catalog managers have the smallest necessary Keycloak admin role plus `manage-access-requests`;
 - approver roles have been assigned to the intended users or groups;
+- HIGH/CRITICAL ACR mappings, LoA flow, real MFA and freshness have been tested with an approver;
 - each entitlement targets an existing role or group;
 - only reviewed entitlements have `requestable=true`.

@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.spi.realm.resource;
 
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalAssurancePolicy;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEventType;
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidProvisioningRetryException;
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidProvisioningClosureException;
@@ -22,9 +23,14 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationRe
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationResolutionSubmission;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationSubmission;
 import ch.anass.keycloak.accessrequests.spi.provisioning.AccessPackageGrantRevocationRunner;
+import ch.anass.keycloak.accessrequests.spi.realm.assurance.RealmApprovalAssurancePolicy;
+import ch.anass.keycloak.accessrequests.spi.realm.assurance.ApprovalAssuranceException;
 import jakarta.ws.rs.core.Response;
 import java.time.Instant;
 import org.keycloak.models.UserModel;
+import org.keycloak.events.admin.OperationType;
+import org.keycloak.services.resources.admin.AdminEventBuilder;
+import org.keycloak.services.resources.admin.fgap.AdminPermissions;
 import java.util.stream.Stream;
 
 import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestErrors.error;
@@ -38,8 +44,42 @@ final class AccessRequestAdminHandler extends AccessRequestHandlerSupport {
     }
 
     public AdminCapabilitiesResponse adminCapabilities() {
-        requireAccessRequestManager();
-        return new AdminCapabilitiesResponse(true, true, true);
+        AccessRequestManager manager = requireAccessRequestManager();
+        return new AdminCapabilitiesResponse(true, true, true,
+                AdminPermissions.evaluator(session, manager.realm(), manager.auth()).isRealmAdmin());
+    }
+
+    public Response approvalAssurancePolicy() {
+        AccessRequestManager manager = requireAssurancePolicyManager();
+        try {
+            return Response.ok(new RealmApprovalAssurancePolicy().read(manager.realm())).build();
+        } catch (ApprovalAssuranceException exception) {
+            return error(Response.Status.SERVICE_UNAVAILABLE, "ASSURANCE_POLICY_INVALID", null, null);
+        }
+    }
+
+    public Response updateApprovalAssurancePolicy(ApprovalAssurancePolicy policy) {
+        AccessRequestManager manager = requireAssurancePolicyManager();
+        if (policy == null) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_ASSURANCE_POLICY", null, null);
+        }
+        try {
+            new RealmApprovalAssurancePolicy().write(manager.realm(), policy);
+            new AdminEventBuilder(manager.realm(), manager.auth(), session, session.getContext().getConnection())
+                    .resource("ACCESS_REQUEST_ASSURANCE_POLICY")
+                    .resourcePath("access-requests", "assurance-policy")
+                    .operation(OperationType.UPDATE)
+                    .detail("highAcr", policy.high().acr())
+                    .detail("highLoa", Integer.toString(policy.high().loa()))
+                    .detail("highMaxAgeSeconds", Integer.toString(policy.high().maxAgeSeconds()))
+                    .detail("criticalAcr", policy.critical().acr())
+                    .detail("criticalLoa", Integer.toString(policy.critical().loa()))
+                    .detail("criticalMaxAgeSeconds", Integer.toString(policy.critical().maxAgeSeconds()))
+                    .success();
+            return Response.ok(policy).build();
+        } catch (IllegalArgumentException exception) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_ASSURANCE_POLICY", null, null);
+        }
     }
 
     public Response listAuditEvents(

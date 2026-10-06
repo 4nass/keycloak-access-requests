@@ -53,7 +53,7 @@ abstract class AccessRequestHandlerSupport {
         if (authentication == null || authentication.user() == null) {
             throw new NotAuthorizedException("Bearer");
         }
-        return new AuthenticatedRequest(realm, authentication.user());
+        return new AuthenticatedRequest(realm, authentication.user(), authentication);
     }
 
     protected AccessRequestManager requireAccessRequestManager() {
@@ -70,6 +70,14 @@ abstract class AccessRequestHandlerSupport {
         } finally {
             session.getContext().setRealm(targetRealm);
         }
+    }
+
+    protected AccessRequestManager requireAssurancePolicyManager() {
+        AccessRequestManager manager = requireAccessRequestManager();
+        if (!AdminPermissions.evaluator(session, manager.realm(), manager.auth()).isRealmAdmin()) {
+            throw new ForbiddenException();
+        }
+        return manager;
     }
 
     protected JpaEntitlementRepository entitlementRepository() {
@@ -141,7 +149,8 @@ abstract class AccessRequestHandlerSupport {
         return services.requestDetailsService();
     }
 
-    protected record AuthenticatedRequest(RealmModel realm, UserModel user) {
+    protected record AuthenticatedRequest(RealmModel realm, UserModel user,
+            AuthenticationManager.AuthResult authentication) {
     }
 
     protected record AccessRequestManager(RealmModel realm, UserModel user, AdminAuth auth) {

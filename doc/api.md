@@ -107,11 +107,15 @@ The decision endpoints return `200 OK` with the updated request. Approval return
 
 The server returns `403 Forbidden` when a caller tries to cancel another user's request, approve their own request, or decide without the entitlement's approver role. A stale or completed request returns `409 Conflict`.
 
+HIGH and CRITICAL approval additionally requires the realm's approval-assurance policy. If Keycloak has no matching LoA condition or ACR mapping, or the LoA condition's Max Age is zero or exceeds the policy limit, approval returns `503 ASSURANCE_NOT_CONFIGURED`. When the approver's token or session lacks the required level or its timestamp is stale, approval returns `403 STEP_UP_REQUIRED` with a `requiredAcr` field. A higher LoA is accepted only if the token ACR maps to it and Keycloak has a fresh timestamp for that level. The client requests the required ACR without forcing full reauthentication and asks the approver to confirm the decision again; it must not use a client-supplied LoA as proof. See [realm configuration](configuration.md#configure-approval-assurance-for-high-and-critical).
+
 ## Catalog administration endpoints
 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/admin/capabilities` | Confirm catalog-management access for the current admin |
+| `GET` | `/admin/assurance-policy` | Read the realm's HIGH/CRITICAL approval-assurance policy; realm-admin only |
+| `PUT` | `/admin/assurance-policy` | Update that policy within product safety bounds; realm-admin only |
 | `GET` | `/admin/references` | Search selectable Keycloak roles or groups |
 | `GET` | `/admin/entitlements` | List all entitlement drafts and published entitlements |
 | `POST` | `/admin/entitlements` | Create an API-only direct draft; it cannot be published |

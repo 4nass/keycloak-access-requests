@@ -13,10 +13,15 @@ import ch.anass.keycloak.accessrequests.core.service.RequestNotFoundException;
 import ch.anass.keycloak.accessrequests.core.service.RequestService;
 import ch.anass.keycloak.accessrequests.core.service.InvalidRequestedDurationException;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.CapabilitiesResponse;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.AssuranceErrorResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.DecisionSubmission;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.PendingRequestListResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RequestDto.RequestResponse;
 import jakarta.ws.rs.core.Response;
+import ch.anass.keycloak.accessrequests.spi.realm.assurance.ApprovalAssuranceException;
+import ch.anass.keycloak.accessrequests.spi.realm.assurance.KeycloakApprovalAssuranceVerifier;
+
+import java.time.Clock;
 
 import static ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestErrors.error;
 
@@ -77,13 +82,21 @@ final class AccessRequestApprovalHandler extends AccessRequestHandlerSupport {
                             authenticatedRequest.realm().getId(),
                             requestId,
                             authenticatedRequest.user().getId(),
-                            submission.comment())
+                            submission.comment(),
+                            new KeycloakApprovalAssuranceVerifier(authenticatedRequest.realm(),
+                                    authenticatedRequest.authentication(), Clock.systemUTC()))
                     : requestService.reject(
                             authenticatedRequest.realm().getId(),
                             requestId,
                             authenticatedRequest.user().getId(),
                             submission.comment());
             return Response.ok(RequestResponse.from(decided)).build();
+        } catch (ApprovalAssuranceException exception) {
+            Response.Status status = "STEP_UP_REQUIRED".equals(exception.code())
+                    ? Response.Status.FORBIDDEN : Response.Status.SERVICE_UNAVAILABLE;
+            return Response.status(status)
+                    .entity(new AssuranceErrorResponse(exception.code(), requestId, exception.requiredAcr()))
+                    .build();
         } catch (RequestNotFoundException exception) {
             return error(Response.Status.NOT_FOUND, "REQUEST_NOT_FOUND", exception.getMessage(), requestId);
         } catch (SelfApprovalException exception) {

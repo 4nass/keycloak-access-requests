@@ -21,6 +21,9 @@ public final class ApprovalDto {
     public record CapabilitiesResponse(boolean canApprove) {
     }
 
+    public record AssuranceErrorResponse(String code, String requestId, String requiredAcr) {
+    }
+
     public record PendingRequestListResponse(List<PendingRequestSummaryResponse> items,
             int page, int size, long total) {
         public static PendingRequestListResponse from(ApprovalQueuePage page,

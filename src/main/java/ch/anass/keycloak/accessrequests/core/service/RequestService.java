@@ -25,6 +25,7 @@ import ch.anass.keycloak.accessrequests.core.port.AccessRequestNotificationPubli
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestRepository;
 import ch.anass.keycloak.accessrequests.core.port.AccessRequestTransaction;
 import ch.anass.keycloak.accessrequests.core.port.ApprovalAuthorizer;
+import ch.anass.keycloak.accessrequests.core.port.ApprovalAssuranceVerifier;
 import ch.anass.keycloak.accessrequests.core.port.DuplicatePendingRequestException;
 import ch.anass.keycloak.accessrequests.core.port.EffectiveAccessChecker;
 import ch.anass.keycloak.accessrequests.core.port.EntitlementProvisioner;
@@ -296,15 +297,26 @@ public final class RequestService {
         return accessRequestRepository.findByRequester(query);
     }
 
-    public AccessRequest approve(
+    AccessRequest approve(
             String realmId,
             String requestId,
             String approverId,
             String decisionComment) {
+        return approve(realmId, requestId, approverId, decisionComment, riskLevel -> { });
+    }
+
+    public AccessRequest approve(
+            String realmId,
+            String requestId,
+            String approverId,
+            String decisionComment,
+            ApprovalAssuranceVerifier assuranceVerifier) {
+        Objects.requireNonNull(assuranceVerifier, "assuranceVerifier must not be null");
         return transaction.execute(() -> {
             AccessRequest request = findRequest(realmId, requestId);
             Entitlement entitlement = requireCurrentEntitlementForUpdate(realmId, request.entitlementId());
             authorizeDecision(realmId, request, approverId);
+            assuranceVerifier.verify(entitlement.riskLevel());
             requireBoundPackage(entitlement);
             return completeApproval(request, entitlement, approverId, decisionComment);
         });

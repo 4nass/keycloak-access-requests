@@ -8,7 +8,7 @@ public final class ApiDto {
 
     public record AdminCapabilitiesResponse(
             boolean canManageCatalog, boolean canManageNotifications,
-            boolean canManageProvisioningFailures) {
+            boolean canManageProvisioningFailures, boolean canManageAssurancePolicy) {
     }
 
     public record ErrorResponse(String code, String message, String requestId) {
