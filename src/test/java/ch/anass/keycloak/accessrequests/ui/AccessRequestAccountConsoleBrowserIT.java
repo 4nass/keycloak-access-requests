@@ -1,6 +1,10 @@
 package ch.anass.keycloak.accessrequests.ui;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import dasniko.testcontainers.keycloak.KeycloakContainer;
+import org.keycloak.models.utils.TimeBasedOTP;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.openqa.selenium.By;
@@ -50,6 +54,7 @@ class AccessRequestAccountConsoleBrowserIT {
 
     private static final String ACCESS_REQUESTS_API_AUDIENCE = "access-requests-api";
     private static final String ACCOUNT_CONSOLE_CLIENT_ID = "account-console";
+    private static final String TEST_OTP_SECRET = "DJmQfC73VGFhw7D4QJ8A";
     private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.4";
     private static final String DEFAULT_SELENIUM_CHROME_CONTAINER = "selenium/standalone-chrome:4.45.0-20260606";
     private static final String KEYCLOAK_VERSION = System.getProperty("keycloak.version", DEFAULT_KEYCLOAK_VERSION);
@@ -59,6 +64,7 @@ class AccessRequestAccountConsoleBrowserIT {
             "selenium.chrome.container", DEFAULT_SELENIUM_CHROME_CONTAINER);
     private static final Network NETWORK = Network.newNetwork();
     private static final HttpClient HTTP_CLIENT = insecureHttpClient();
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     @AfterAll
     static void closeNetwork() {
@@ -79,6 +85,80 @@ class AccessRequestAccountConsoleBrowserIT {
 
             verifyAccountConsole(keycloak, false);
             verifyAccountConsole(keycloak, true);
+        }
+    }
+
+    @Test
+    void approvesAHighRiskRequestAfterRealOtpStepUpWithoutRepeatingThePassword() throws Exception {
+        try (KeycloakContainer keycloak = keycloak()) {
+            keycloak.start();
+            configureAdminCliTokenBehavior(keycloak);
+            String adminToken = accessToken(keycloak, "admin-cli");
+            selectAccountTheme(keycloak, adminToken);
+            addAccessRequestsAudience(keycloak, adminToken, ACCOUNT_CONSOLE_CLIENT_ID);
+            addAccessRequestsAudience(keycloak, adminToken, "admin-cli");
+
+            String approverRoleName = "otp-approver-" + UUID.randomUUID();
+            String approverRoleId = createRealmRole(keycloak, adminToken, approverRoleName);
+            String sourceRoleId = createRealmRole(keycloak, adminToken, "otp-source-" + UUID.randomUUID());
+            String approver = "otp-approver-" + UUID.randomUUID();
+            String password = "approver-password";
+            String approverId = createTestUser(keycloak, adminToken, approver, password, true);
+            assignRealmRole(keycloak, adminToken, approverId, approverRoleId, approverRoleName);
+            String requester = "otp-requester-" + UUID.randomUUID();
+            createTestUser(keycloak, adminToken, requester, "requester-password", false);
+            String entitlementId = createHighRiskPackage(keycloak, adminToken, sourceRoleId, approverRoleId);
+            String requesterToken = accessToken(keycloak, "admin-cli", requester, "requester-password");
+            HttpResponse<String> request = HTTP_CLIENT.send(
+                    adminRequest(keycloak, "/realms/master/access-requests/requests", requesterToken)
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString("""
+                                    {"entitlementId":"%s","justification":"Temporary reporting task"}
+                                    """.formatted(entitlementId))).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(201, request.statusCode(), request.body());
+            String requestId = responseId(request.body());
+
+            configureOtpStepUpFlow(keycloak, adminToken);
+            try (GenericContainer<?> chrome = chrome()) {
+                chrome.start();
+                RemoteWebDriver driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
+                try {
+                    driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(30));
+                    logInToAccountConsole(keycloak, driver, approver, password);
+                    assertFalse(driver.getPageSource().contains("name=\"otp\""),
+                            "Initial Account Console login must use LoA 1 without OTP.");
+                    navigateToPendingApproval(driver);
+                    clickApproval(driver);
+                    WebElement verify = waitFor(driver).until(ExpectedConditions.elementToBeClickable(
+                            By.xpath("//button[normalize-space()='Verify identity']")));
+                    assertExpectedStepUpDenied(driver);
+                    AccessRequestBrowserScreenshots.capture(driver, "workflow-approval-step-up-required");
+                    verify.click();
+
+                    WebElement otp = waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.id("otp")));
+                    assertTrue(driver.findElements(By.id("password")).isEmpty(),
+                            "Step-up must ask for OTP, not the password again.");
+                    AccessRequestBrowserScreenshots.capture(driver, "workflow-approval-step-up-otp");
+                    otp.sendKeys(new TimeBasedOTP().generateTOTP(TEST_OTP_SECRET));
+                    driver.findElement(By.id("kc-login")).click();
+
+                    assertPageHeading(driver, "Approvals");
+                    navigateToPendingApproval(driver);
+                    clickApproval(driver);
+                    waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                            By.xpath("//*[contains(text(),'Access request approved')]")));
+                    assertNoJavaScriptErrors(driver);
+                } finally {
+                    driver.quit();
+                }
+            }
+            HttpResponse<String> details = HTTP_CLIENT.send(
+                    adminRequest(keycloak, "/realms/master/access-requests/mine/" + requestId, requesterToken)
+                            .GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, details.statusCode(), details.body());
+            assertEquals("APPROVED", JSON.readTree(details.body()).path("decisionStatus").asText());
+            assertEquals("SUCCEEDED", JSON.readTree(details.body()).path("provisioningStatus").asText());
         }
     }
 
@@ -194,10 +274,15 @@ class AccessRequestAccountConsoleBrowserIT {
     }
 
     private void logInToAccountConsole(KeycloakContainer keycloak, WebDriver driver) {
+        logInToAccountConsole(keycloak, driver, "admin", "admin");
+    }
+
+    private void logInToAccountConsole(KeycloakContainer keycloak, WebDriver driver,
+            String username, String password) {
         driver.navigate().to(accountConsoleUri());
         WebDriverWait wait = waitFor(driver);
         try {
-            wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("username"))).sendKeys("admin");
+            wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("username"))).sendKeys(username);
         } catch (TimeoutException exception) {
             String pageText = driver.findElement(By.tagName("body")).getText();
             throw new AssertionError(
@@ -205,10 +290,24 @@ class AccessRequestAccountConsoleBrowserIT {
                             .formatted(driver.getCurrentUrl(), pageText, browserLog(driver), tail(keycloak.getLogs())),
                     exception);
         }
-        driver.findElement(By.id("password")).sendKeys("admin");
+        driver.findElement(By.id("password")).sendKeys(password);
         driver.findElement(By.id("kc-login")).click();
         wait.until(ExpectedConditions.urlContains("/realms/master/account/"));
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("#app")));
+    }
+
+    private void navigateToPendingApproval(WebDriver driver) {
+        driver.navigate().to(accountConsoleUri() + "approvals");
+        assertPageHeading(driver, "Approvals");
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                By.xpath("//*[normalize-space()='OTP protected access']")));
+    }
+
+    private void clickApproval(WebDriver driver) {
+        waitFor(driver).until(ExpectedConditions.elementToBeClickable(
+                By.xpath("//button[normalize-space()='Approve']"))).click();
+        waitFor(driver).until(ExpectedConditions.elementToBeClickable(
+                By.xpath("//button[normalize-space()='Confirm approval']"))).click();
     }
 
     private void assertThemeMode(WebDriver driver, boolean darkMode) {
@@ -326,6 +425,15 @@ class AccessRequestAccountConsoleBrowserIT {
         assertTrue(severeEntries.isEmpty(), () -> "Browser JavaScript errors: " + severeEntries);
     }
 
+    private void assertExpectedStepUpDenied(WebDriver driver) {
+        List<LogEntry> severeEntries = driver.manage().logs().get(LogType.BROWSER).getAll().stream()
+                .filter(entry -> entry.getLevel().intValue() >= Level.SEVERE.intValue())
+                .toList();
+        assertTrue(severeEntries.stream().allMatch(entry ->
+                        entry.getMessage().contains("/approve") && entry.getMessage().contains("403")),
+                () -> "Only the expected pre-MFA approval denial may appear in the browser log: " + severeEntries);
+    }
+
     private WebDriverWait waitFor(WebDriver driver) {
         return new WebDriverWait(driver, Duration.ofSeconds(30));
     }
@@ -388,6 +496,139 @@ class AccessRequestAccountConsoleBrowserIT {
         assertEquals(200, updated.statusCode());
     }
 
+    private String createHighRiskPackage(KeycloakContainer keycloak, String adminToken,
+            String sourceRoleId, String approverRoleId) throws Exception {
+        HttpResponse<String> created = postAdminJson(keycloak,
+                "/realms/master/access-requests/admin/access-packages", adminToken, """
+                        {"displayName":"OTP protected access","description":"High risk test package",
+                         "riskLevel":"HIGH","approverRoleId":"%s",
+                         "defaultDurationSeconds":28800,"maxDurationSeconds":86400,
+                         "roleMappings":[{"type":"REALM_ROLE","roleId":"%s"}]}
+                        """.formatted(approverRoleId, sourceRoleId));
+        assertEquals(201, created.statusCode(), created.body());
+        String entitlementId = responseId(created.body());
+        HttpResponse<String> published = HTTP_CLIENT.send(adminRequest(keycloak,
+                "/realms/master/access-requests/admin/entitlements/" + entitlementId, adminToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString("""
+                                {"displayName":"OTP protected access","description":"High risk test package",
+                                 "riskLevel":"HIGH","approverRoleId":"%s","requestable":true,"version":0,
+                                 "defaultDurationSeconds":28800,"maxDurationSeconds":86400}
+                                """.formatted(approverRoleId))).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, published.statusCode(), published.body());
+        return entitlementId;
+    }
+
+    private String createTestUser(KeycloakContainer keycloak, String adminToken,
+            String username, String password, boolean withOtp) throws Exception {
+        var credentials = new java.util.ArrayList<Map<String, Object>>();
+        credentials.add(Map.of("type", "password", "value", password, "temporary", false));
+        if (withOtp) {
+            credentials.add(Map.of(
+                    "type", "otp", "userLabel", "Test authenticator",
+                    "secretData", "{\"value\":\"" + TEST_OTP_SECRET + "\"}",
+                    "credentialData", "{\"digits\":6,\"counter\":0,\"period\":30,\"algorithm\":\"HmacSHA1\",\"subType\":\"totp\"}"));
+        }
+        String body = JSON.writeValueAsString(Map.of(
+                "username", username, "enabled", true, "credentials", credentials));
+        HttpResponse<String> created = postAdminJson(keycloak,
+                "/admin/realms/master/users", adminToken, body);
+        assertEquals(201, created.statusCode(), created.body());
+        return findId(keycloak, "/admin/realms/master/users?username=" + username + "&exact=true", adminToken);
+    }
+
+    private void configureOtpStepUpFlow(KeycloakContainer keycloak, String adminToken) throws Exception {
+        String root = "approval-step-up-" + UUID.randomUUID();
+        String authentication = root + "-authentication";
+        String first = root + "-level-1";
+        String second = root + "-level-2";
+        assertEquals(201, postAdminJson(keycloak, "/admin/realms/master/authentication/flows", adminToken,
+                JSON.writeValueAsString(Map.of("alias", root, "providerId", "basic-flow",
+                        "topLevel", true, "builtIn", false))).statusCode());
+        addExecution(keycloak, adminToken, root, "auth-cookie", "ALTERNATIVE");
+        addSubFlow(keycloak, adminToken, root, authentication, "ALTERNATIVE");
+        addSubFlow(keycloak, adminToken, authentication, first, "CONDITIONAL");
+        addCondition(keycloak, adminToken, first, 1, 36000);
+        addExecution(keycloak, adminToken, first, "auth-username-password-form", "REQUIRED");
+        addSubFlow(keycloak, adminToken, authentication, second, "CONDITIONAL");
+        addCondition(keycloak, adminToken, second, 2, 300);
+        addExecution(keycloak, adminToken, second, "auth-otp-form", "REQUIRED");
+
+        HttpResponse<String> bound = HTTP_CLIENT.send(adminRequest(keycloak, "/admin/realms/master", adminToken)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(Map.of("browserFlow", root))))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(204, bound.statusCode(), bound.body());
+        assertEquals(2, execution(keycloak, adminToken, root, "conditional-level-of-authentication")
+                .size(), "The browser flow must include both LoA conditions.");
+    }
+
+    private void addSubFlow(KeycloakContainer keycloak, String adminToken,
+            String parent, String alias, String requirement) throws Exception {
+        String path = "/admin/realms/master/authentication/flows/" + parent + "/executions/flow";
+        HttpResponse<String> added = postAdminJson(keycloak, path, adminToken,
+                JSON.writeValueAsString(Map.of("alias", alias, "type", "basic-flow")));
+        assertEquals(201, added.statusCode(), added.body());
+        setRequirement(keycloak, adminToken, parent, alias, requirement);
+    }
+
+    private void addExecution(KeycloakContainer keycloak, String adminToken,
+            String parent, String provider, String requirement) throws Exception {
+        String path = "/admin/realms/master/authentication/flows/" + parent + "/executions/execution";
+        HttpResponse<String> added = postAdminJson(keycloak, path, adminToken,
+                JSON.writeValueAsString(Map.of("provider", provider)));
+        assertEquals(201, added.statusCode(), added.body());
+        setRequirement(keycloak, adminToken, parent, provider, requirement);
+    }
+
+    private void addCondition(KeycloakContainer keycloak, String adminToken,
+            String parent, int level, int maxAge) throws Exception {
+        String provider = "conditional-level-of-authentication";
+        addExecution(keycloak, adminToken, parent, provider, "REQUIRED");
+        String executionId = execution(keycloak, adminToken, parent, provider).getFirst().path("id").asText();
+        HttpResponse<String> configured = postAdminJson(keycloak,
+                "/admin/realms/master/authentication/executions/" + executionId + "/config", adminToken,
+                JSON.writeValueAsString(Map.of("alias", parent + "-config", "config", Map.of(
+                        "loa-condition-level", Integer.toString(level),
+                        "loa-max-age", Integer.toString(maxAge)))));
+        assertEquals(201, configured.statusCode(), configured.body());
+    }
+
+    private void setRequirement(KeycloakContainer keycloak, String adminToken,
+            String parent, String name, String requirement) throws Exception {
+        ObjectNode entry = (ObjectNode) execution(keycloak, adminToken, parent, name).getFirst().deepCopy();
+        entry.put("requirement", requirement);
+        HttpResponse<String> updated = HTTP_CLIENT.send(adminRequest(keycloak,
+                "/admin/realms/master/authentication/flows/" + parent + "/executions", adminToken)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(entry)))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(204, updated.statusCode(), updated.body());
+    }
+
+    private List<JsonNode> execution(KeycloakContainer keycloak, String adminToken,
+            String parent, String name) throws Exception {
+        HttpResponse<String> response = HTTP_CLIENT.send(adminRequest(keycloak,
+                "/admin/realms/master/authentication/flows/" + parent + "/executions", adminToken)
+                .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), response.body());
+        List<JsonNode> matches = new java.util.ArrayList<>();
+        for (JsonNode entry : JSON.readTree(response.body())) {
+            if (name.equals(entry.path("providerId").asText()) || name.equals(entry.path("displayName").asText())) {
+                matches.add(entry);
+            }
+        }
+        assertFalse(matches.isEmpty(), () -> "No " + name + " execution in " + parent + ": " + response.body());
+        return matches;
+    }
+
+    private HttpResponse<String> postAdminJson(KeycloakContainer keycloak,
+            String path, String adminToken, String body) throws Exception {
+        return HTTP_CLIENT.send(adminRequest(keycloak, path, adminToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+    }
+
     private void addAccessRequestsAudience(KeycloakContainer keycloak, String adminToken, String clientId)
             throws Exception {
         ensureAccessRequestsApiClient(keycloak, adminToken);
@@ -433,7 +674,8 @@ class AccessRequestAccountConsoleBrowserIT {
                                 """))
                         .build(),
                 HttpResponse.BodyHandlers.discarding());
-        assertEquals(201, created.statusCode());
+        assertTrue(created.statusCode() == 201 || created.statusCode() == 409,
+                "The API audience client must be created once or already exist.");
     }
 
     private String clientInternalId(KeycloakContainer keycloak, String adminToken, String clientId) throws Exception {
@@ -473,12 +715,18 @@ class AccessRequestAccountConsoleBrowserIT {
     }
 
     private String accessToken(KeycloakContainer keycloak, String clientId) throws Exception {
+        return accessToken(keycloak, clientId, "admin", "admin");
+    }
+
+    private String accessToken(KeycloakContainer keycloak, String clientId,
+            String username, String password) throws Exception {
         URI tokenEndpoint = serverUri(keycloak, "/realms/master/protocol/openid-connect/token");
         HttpResponse<String> response = HTTP_CLIENT.send(
                 HttpRequest.newBuilder(tokenEndpoint)
                         .header("Content-Type", "application/x-www-form-urlencoded")
                         .POST(HttpRequest.BodyPublishers.ofString(
-                                "grant_type=password&client_id=%s&username=admin&password=admin".formatted(clientId)))
+                                "grant_type=password&client_id=%s&username=%s&password=%s"
+                                        .formatted(clientId, username, password)))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, response.statusCode());

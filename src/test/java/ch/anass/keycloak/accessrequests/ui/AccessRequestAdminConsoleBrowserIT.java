@@ -92,6 +92,8 @@ class AccessRequestAdminConsoleBrowserIT {
 
             verifyCatalogManagement(keycloak, fixture, false, true);
             verifyCatalogManagement(keycloak, fixture, true, false);
+            verifyApprovalAssurancePolicy(keycloak, false);
+            verifyApprovalAssurancePolicy(keycloak, true);
             verifyCatalogAccessDenied(keycloak, fixture);
         }
     }
@@ -332,6 +334,7 @@ class AccessRequestAdminConsoleBrowserIT {
                                 + xpathLiteral(packageName) + "]]")));
                 waitFor(driver).until(ignored -> requestRow.getText().contains("Approved")
                         && requestRow.getText().contains("Succeeded"));
+                AccessRequestBrowserScreenshots.capture(driver, "workflow-my-requests-auto-approved");
                 assertNoJavaScriptErrors(driver);
             } finally {
                 driver.quit();
@@ -873,6 +876,30 @@ class AccessRequestAdminConsoleBrowserIT {
                         darkMode ? "admin-revocation-failures-dark" : "admin-revocation-failures-light");
 
                 assertPackagedAssetsLoaded(driver);
+                assertNoJavaScriptErrors(driver);
+            } finally {
+                driver.quit();
+            }
+        }
+    }
+
+    private void verifyApprovalAssurancePolicy(KeycloakContainer keycloak, boolean darkMode) throws Exception {
+        try (GenericContainer<?> chrome = chrome()) {
+            chrome.start();
+            RemoteWebDriver driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(darkMode));
+            try {
+                configureDriver(driver);
+                driver.manage().window().setSize(new org.openqa.selenium.Dimension(1440, 1100));
+                logInToAdminConsole(keycloak, driver, "admin", "admin");
+                assertThemeMode(driver, darkMode);
+                driver.navigate().to(adminConsoleUri() + "#/master/access-requests/assurance-policy");
+                assertPageHeading(driver, "Approval assurance");
+                waitFor(driver).until(ExpectedConditions.attributeToBe(
+                        By.id("high-age"), "value", "1800"));
+                assertEquals("300", driver.findElement(By.id("critical-age")).getAttribute("value"));
+                assertApiRequestStatus(driver, "/access-requests/admin/assurance-policy", 200);
+                AccessRequestBrowserScreenshots.capture(driver,
+                        darkMode ? "admin-approval-assurance-dark" : "admin-approval-assurance-light");
                 assertNoJavaScriptErrors(driver);
             } finally {
                 driver.quit();
@@ -1523,6 +1550,10 @@ class AccessRequestAdminConsoleBrowserIT {
                     "arguments[0].scrollIntoView({block:'center'})", selectedRoles);
             AccessRequestBrowserScreenshots.capture(driver, "workflow-admin-create-access-package-roles");
             captureDialogAtTop(driver, "workflow-admin-create-access-package");
+        } else if (autoApprove) {
+            ((JavascriptExecutor) driver).executeScript(
+                    "arguments[0].scrollIntoView({block:'center'})", autoApprovalPolicy);
+            AccessRequestBrowserScreenshots.capture(driver, "workflow-admin-auto-approve-access-package");
         }
         driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Create access package']")).click();
 
