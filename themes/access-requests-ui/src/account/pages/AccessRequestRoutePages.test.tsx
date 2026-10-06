@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     },
     createAccessRequestsApi: vi.fn(),
     keycloak: {
+        login: vi.fn(),
         token: "account-console-token",
         updateToken: vi.fn()
     }
@@ -147,6 +148,8 @@ await i18n.init({
                 accessRequestsClearSearch: "Clear search",
                 accessRequestsStatus: "Status",
                 accessRequestsSubmitRequest: "Submit request",
+                accessRequestsStepUpRequired: "Additional verification required",
+                accessRequestsVerifyIdentity: "Verify identity",
                 accessRequestsViewDetails: "View details"
             }
         }
@@ -181,6 +184,7 @@ describe("Access Request Account Console route pages", () => {
         mocks.api.submitRequest.mockResolvedValue(undefined);
         mocks.createAccessRequestsApi.mockReset().mockReturnValue(mocks.api);
         mocks.keycloak.updateToken.mockReset().mockResolvedValue(false);
+        mocks.keycloak.login.mockReset().mockResolvedValue(undefined);
     });
 
     it("loads the catalog with the Account Console token and submits a request", async () => {
@@ -624,6 +628,27 @@ describe("Access Request Account Console route pages", () => {
         await waitFor(() => expect(mocks.api.approve).toHaveBeenCalledWith("request-1", { comment: "Approved." }));
         await waitFor(() => expect(mocks.api.pending).toHaveBeenCalledTimes(2));
         expect(mocks.addAlert).toHaveBeenCalledWith("Access request approved.");
+    });
+
+    it("requests the required ACR without forcing full reauthentication", async () => {
+        const user = userEvent.setup();
+        mocks.api.pending.mockResolvedValue(page([pendingRequest("request-1", "Finance Reader")]));
+        mocks.api.approve.mockRejectedValueOnce(Object.assign(new Error("Step-up required"), {
+            code: "STEP_UP_REQUIRED", requiredAcr: "strong", status: 403
+        }));
+
+        renderRoutePage(<ApprovalsRoutePage />);
+
+        const card = await screen.findByRole("listitem", { name: "Finance Reader requested by anass" });
+        await user.click(within(card).getByRole("button", { name: "Approve" }));
+        const dialog = screen.getByRole("dialog", { name: "Approve Finance Reader" });
+        await user.click(within(dialog).getByRole("button", { name: "Confirm approval" }));
+        await user.click(await within(dialog).findByRole("button", { name: "Verify identity" }));
+
+        await waitFor(() => expect(mocks.keycloak.login).toHaveBeenCalledWith({
+            acrValues: "strong", redirectUri: window.location.href
+        }));
+        expect(mocks.api.approve).toHaveBeenCalledTimes(1);
     });
 
     it("does not expose a requester ID when the user no longer exists", async () => {

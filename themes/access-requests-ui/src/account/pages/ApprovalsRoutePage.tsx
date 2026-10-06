@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { type AccountEnvironment, useEnvironment } from "@keycloak/keycloak-account-ui";
 
 import type { AccessRequestsApi, PendingRequest } from "../api/AccessRequestsApi";
 import { useAccessRequestsApi } from "../api/useAccessRequestsApi";
@@ -14,6 +15,7 @@ import {
 
 export function ApprovalsRoutePage() {
     const api = useAccessRequestsApi();
+    const { keycloak } = useEnvironment<AccountEnvironment>();
     const loadPendingRequests = useCallback(({ page, size }: PageParameters) => api.pending({ page, size }), [api]);
     const { error, loading, refreshError, reload, setPage, setPageSize, value } = usePagedLoader(loadPendingRequests);
 
@@ -28,6 +30,7 @@ export function ApprovalsRoutePage() {
         {refreshError && <RefreshError error={refreshError} onRetry={reload} />}
         <ApprovalsPage
             onApprove={approve(api)}
+            onStepUp={(acr) => keycloak.login({ acrValues: acr, redirectUri: window.location.href })}
             onRefresh={reload}
             onReject={reject(api)}
             pagination={pagination(value, setPage, setPageSize)}

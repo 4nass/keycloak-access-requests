@@ -294,6 +294,17 @@ describe("Access Requests realm API client", () => {
         });
     });
 
+    it("passes only the configured ACR for a server-required step-up", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+            code: "STEP_UP_REQUIRED", requiredAcr: "strong", requestId: "request-1",
+            message: "Internal diagnostic must not be displayed"
+        }, 403));
+
+        await expect((await createApi(fetchMock)).approve("request-1", { comment: "Approved" }))
+            .rejects.toMatchObject({ code: "STEP_UP_REQUIRED", requiredAcr: "strong",
+                message: "The access request API call failed." });
+    });
+
     it("preserves network failures for the page-level alert handling", async () => {
         const networkError = new TypeError("Failed to fetch");
         const fetchMock = vi.fn().mockRejectedValue(networkError);

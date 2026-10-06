@@ -1,6 +1,7 @@
 export type AccessRequestsApiError = Error & {
     code: string;
     requestId?: string;
+    requiredAcr?: string;
     status: number;
 };
 
@@ -16,7 +17,8 @@ type AccessRequestsErrorMessageKey =
     | "accessRequestsErrorNotFound"
     | "accessRequestsErrorUnauthorized"
     | "accessRequestsErrorUnavailable"
-    | "accessRequestsErrorUnexpected";
+    | "accessRequestsErrorUnexpected"
+    | "accessRequestsAssuranceNotConfigured";
 
 export type Page<T> = {
     items: T[];
@@ -103,6 +105,7 @@ export type AccessRequestsApi = {
 type ErrorResponse = {
     code?: string;
     requestId?: string;
+    requiredAcr?: string;
 };
 
 type KeycloakCatalogItem = Omit<CatalogItem, "displayName" | "resourceType"> & {
@@ -199,6 +202,7 @@ async function apiError(response: Response): Promise<AccessRequestsApiError> {
     const error = new Error("The access request API call failed.") as AccessRequestsApiError;
     error.code = body.code ?? `HTTP_${response.status}`;
     error.requestId = body.requestId;
+    error.requiredAcr = body.requiredAcr;
     error.status = response.status;
     return error;
 }
@@ -248,6 +252,8 @@ function errorMessageKey(error: AccessRequestsApiError): AccessRequestsErrorMess
 }
 
 const errorCodeMessageKeys: Record<string, AccessRequestsErrorMessageKey> = {
+    ASSURANCE_NOT_CONFIGURED: "accessRequestsAssuranceNotConfigured",
+    ASSURANCE_POLICY_INVALID: "accessRequestsAssuranceNotConfigured",
     ACCESS_PACKAGE_REQUIRED: "accessRequestsErrorConflict",
     CONCURRENT_ENTITLEMENT_MODIFICATION: "accessRequestsErrorConflict",
     CONCURRENT_MODIFICATION: "accessRequestsErrorConflict",

@@ -84,6 +84,7 @@ describe("Access Request account console pages", () => {
         expect(Object.keys(messages).sort()).toEqual([
             "accessRequestsAccountConsoleLoadError",
             "accessRequestsAccountConsoleLoadErrorDescription",
+            "accessRequestsAssuranceNotConfigured",
             "accessRequestsAlreadyGranted",
             "accessRequestsApprovals",
             "accessRequestsApprovalsDescription",
@@ -185,8 +186,10 @@ describe("Access Request account console pages", () => {
             "accessRequestsSearchCatalogPlaceholder",
             "accessRequestsClearSearch",
             "accessRequestsStatus",
+            "accessRequestsStepUpRequired",
             "accessRequestsSubmitRequest",
             "accessRequestsUserUnavailable",
+            "accessRequestsVerifyIdentity",
             "accessRequestsViewDetails"
         ].sort());
         expect(Object.values(messages).every((message) => !message.includes("''"))).toBe(true);
@@ -942,6 +945,50 @@ describe("Access Request account console pages", () => {
             expect.objectContaining({ message: "Decision unavailable" })
         ));
         expect(screen.getByRole("dialog", { name: "Approve Finance Reader" })).toBeVisible();
+    });
+
+    it("offers step-up without replaying a failed high-risk approval automatically", async () => {
+        const user = userEvent.setup();
+        const approve = vi.fn().mockRejectedValue(Object.assign(new Error("Step-up required"), {
+            code: "STEP_UP_REQUIRED", requiredAcr: "strong", status: 403
+        }));
+        const stepUp = vi.fn().mockResolvedValue(undefined);
+        renderAccessRequestUi(<ApprovalsPage requests={[{
+            id: "request-approval", requester: "Approver", entitlementName: "Restricted access",
+            resourceType: "CLIENT_ROLE", riskLevel: "HIGH", justification: "Needed",
+            requestedAt: "26 Aug 2026"
+        }]} onApprove={approve} onReject={vi.fn()} onStepUp={stepUp} />);
+
+        await user.click(screen.getByRole("button", { name: "Approve" }));
+        await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm approval" }));
+        expect(await within(screen.getByRole("dialog")).findByRole("button", { name: "Verify identity" }))
+            .toBeVisible();
+        await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Verify identity" }));
+
+        expect(stepUp).toHaveBeenCalledWith("strong");
+        expect(approve).toHaveBeenCalledTimes(1);
+        expect(accountAlerts.addError).not.toHaveBeenCalled();
+    });
+
+    it("does not offer an endless step-up when assurance configuration is unavailable", async () => {
+        const user = userEvent.setup();
+        const approve = vi.fn().mockRejectedValue(Object.assign(new Error("Assurance unavailable"), {
+            code: "ASSURANCE_NOT_CONFIGURED", status: 503
+        }));
+        const stepUp = vi.fn();
+        renderAccessRequestUi(<ApprovalsPage requests={[{
+            id: "request-approval", requester: "Approver", entitlementName: "Restricted access",
+            resourceType: "CLIENT_ROLE", riskLevel: "HIGH", justification: "Needed",
+            requestedAt: "26 Aug 2026"
+        }]} onApprove={approve} onReject={vi.fn()} onStepUp={stepUp} />);
+
+        await user.click(screen.getByRole("button", { name: "Approve" }));
+        await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm approval" }));
+
+        await waitFor(() => expect(accountAlerts.addError).toHaveBeenCalledTimes(1));
+        expect(screen.getByRole("dialog")).toBeVisible();
+        expect(screen.queryByRole("button", { name: "Verify identity" })).not.toBeInTheDocument();
+        expect(stepUp).not.toHaveBeenCalled();
     });
 
     it("moves focus into an approval dialog, closes it with Escape, and restores focus to its trigger", async () => {

@@ -22,6 +22,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AccessRequestEmptyState } from "./AccessRequestEmptyState";
+import type { AccessRequestsApiError } from "../api/AccessRequestsApi";
 import { AccessRequestPagination, type AccessRequestPaginationState } from "./AccessRequestPagination";
 import { RiskLevelLabel, formatDateTime, requestedDurationLabel, resourceTypeLabel } from "./AccessRequestPresentation";
 import { useAccessRequestAlerts } from "./useAccessRequestAlerts";
@@ -48,6 +49,7 @@ type ApprovalsPageProps = {
     onApprove: (decision: ApprovalDecision) => void | Promise<void>;
     pagination?: AccessRequestPaginationState;
     onReject: (decision: ApprovalDecision) => void | Promise<void>;
+    onStepUp?: (acr: string) => void | Promise<void>;
     onRefresh?: () => void | Promise<void>;
 };
 
@@ -56,18 +58,20 @@ type PendingDecision = {
     type: "approve" | "reject";
 };
 
-export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagination }: ApprovalsPageProps) {
+export function ApprovalsPage({ requests, onApprove, onReject, onStepUp, onRefresh, pagination }: ApprovalsPageProps) {
     const { i18n, t } = useTranslation();
     const { addAlert, addError } = useAccessRequestAlerts();
     const [pendingDecision, setPendingDecision] = useState<PendingDecision>();
     const [comment, setComment] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [requiredAcr, setRequiredAcr] = useState<string>();
 
     const requesterName = (request: PendingApproval) => request.requester || t("accessRequestsUserUnavailable");
 
     const closeDialog = () => {
         setPendingDecision(undefined);
         setComment("");
+        setRequiredAcr(undefined);
     };
 
     const dismissDialog = () => {
@@ -95,6 +99,13 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagina
                 await onReject(decision);
             }
         } catch (error) {
+            const apiError = error instanceof Error ? error as Partial<AccessRequestsApiError> : undefined;
+            if (pendingDecision.type === "approve" && apiError?.code === "STEP_UP_REQUIRED"
+                    && typeof apiError.requiredAcr === "string" && onStepUp) {
+                setRequiredAcr(apiError.requiredAcr);
+                setIsSubmitting(false);
+                return;
+            }
             addError(error);
             setIsSubmitting(false);
             return;
@@ -225,6 +236,12 @@ export function ApprovalsPage({ requests, onApprove, onReject, onRefresh, pagina
                         {pendingDecision.type === "approve" && pendingDecision.request.resourceType === "GROUP" && (
                             <Alert isInline variant="warning" title={t("accessRequestsPackageApprovalWarning")} />
                         )}
+                        {requiredAcr && <Alert isInline variant="warning"
+                            title={t("accessRequestsStepUpRequired")}
+                            actionLinks={<Button type="button" variant="link"
+                                onClick={() => { void Promise.resolve(onStepUp?.(requiredAcr)).catch(addError); }}>
+                                {t("accessRequestsVerifyIdentity")}
+                            </Button>} />}
                         <p>{t("accessRequestsDuration")}: {requestedDurationLabel(
                             pendingDecision.request.durationSeconds, pendingDecision.request.permanent, t)}</p>
                         <FormGroup fieldId="access-request-decision-comment" label={t("accessRequestsDecisionComment")}>
