@@ -11,6 +11,7 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.EntitlementCrea
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.EntitlementUpdate;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.AccessPackageCreation;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.AccessPackageResponse;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.AccessPackageRoleUpdate;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.NotificationDto.NotificationDeliverySummaryResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ProvisioningDto.ProvisioningClosureSubmission;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationResolutionSubmission;
@@ -18,6 +19,7 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.RevocationDto.RevocationSu
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RequestDto.RequestSubmission;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.OPTIONS;
 import jakarta.ws.rs.Path;
@@ -95,6 +97,15 @@ public final class AccessRequestRealmResource {
         return catalogHandler.getAccessPackage(packageId);
     }
 
+    @PUT
+    @Path("admin/access-packages/{packageId}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response updateAccessPackageRoles(@PathParam("packageId") String packageId,
+            AccessPackageRoleUpdate submission) {
+        return catalogHandler.updateAccessPackageRoles(packageId, submission);
+    }
+
     @GET
     @Path("admin/entitlements/{entitlementId}")
     @Produces(MediaType.APPLICATION_JSON)
@@ -110,6 +121,12 @@ public final class AccessRequestRealmResource {
             @PathParam("entitlementId") String entitlementId,
             EntitlementUpdate submission) {
         return catalogHandler.updateEntitlement(entitlementId, submission);
+    }
+
+    @DELETE
+    @Path("admin/entitlements/{entitlementId}")
+    public Response deactivateEntitlement(@PathParam("entitlementId") String entitlementId) {
+        return catalogHandler.deactivateEntitlement(entitlementId);
     }
 
     @POST

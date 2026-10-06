@@ -5,6 +5,7 @@ import ch.anass.keycloak.accessrequests.persistence.jpa.entity.EntitlementEntity
 import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogPage;
 import ch.anass.keycloak.accessrequests.core.domain.catalog.CatalogQuery;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.AccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementAuditEvent;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementPage;
@@ -263,6 +264,29 @@ class JpaEntitlementRepositoryTest {
                 .setParameter("id", enabled.id())
                 .getResultList();
         assertEquals(List.of(true, false), snapshots);
+    }
+
+    @Test
+    void persistsRoleChangesWithBothMappingSnapshots() throws Exception {
+        Entitlement entitlement = unpublished("role-audit", "realm-1", ResourceType.GROUP,
+                "package-role-audit", "Audited package", "A package with editable roles.", RiskLevel.LOW);
+        EntityTransactionSupport.execute(entityManager, () -> new JpaEntitlementAuditEventPublisher(entityManager)
+                .publish(EntitlementAuditEvent.rolesUpdated(entitlement, "catalog-manager-1",
+                        List.of(new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "old-role")),
+                        List.of(new AccessPackage.RoleMapping(ResourceType.CLIENT_ROLE, "new-role")))));
+        entityManager.clear();
+
+        Object[] snapshots = (Object[]) entityManager.createNativeQuery("""
+                        select ROLE_MAPPINGS_BEFORE, ROLE_MAPPINGS_AFTER from AR_ENTITLEMENT_HISTORY
+                         where ENTITLEMENT_ID = :id
+                        """)
+                .setParameter("id", entitlement.id())
+                .getSingleResult();
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertEquals("REALM_ROLE", json.readTree((String) snapshots[0]).get(0).path("type").asText());
+        assertEquals("old-role", json.readTree((String) snapshots[0]).get(0).path("roleId").asText());
+        assertEquals("CLIENT_ROLE", json.readTree((String) snapshots[1]).get(0).path("type").asText());
+        assertEquals("new-role", json.readTree((String) snapshots[1]).get(0).path("roleId").asText());
     }
 
     @Test

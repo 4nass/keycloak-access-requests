@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.core.domain.entitlement;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -25,6 +26,8 @@ public final class EntitlementAuditEvent {
     private final boolean autoApprove;
     private final DurationPolicy durationPolicy;
     private final long version;
+    private final List<AccessPackage.RoleMapping> roleMappingsBefore;
+    private final List<AccessPackage.RoleMapping> roleMappingsAfter;
 
     private EntitlementAuditEvent(
             String id,
@@ -42,7 +45,9 @@ public final class EntitlementAuditEvent {
             boolean requestable,
             boolean autoApprove,
             DurationPolicy durationPolicy,
-            long version) {
+            long version,
+            List<AccessPackage.RoleMapping> roleMappingsBefore,
+            List<AccessPackage.RoleMapping> roleMappingsAfter) {
         this.id = requireText(id, "id");
         this.entitlementId = requireText(entitlementId, "entitlementId");
         this.realmId = requireText(realmId, "realmId");
@@ -62,6 +67,11 @@ public final class EntitlementAuditEvent {
             throw new IllegalArgumentException("version must not be negative");
         }
         this.version = version;
+        if ((roleMappingsBefore == null) != (roleMappingsAfter == null)) {
+            throw new IllegalArgumentException("role mapping snapshots must be provided together");
+        }
+        this.roleMappingsBefore = roleMappingsBefore == null ? null : List.copyOf(roleMappingsBefore);
+        this.roleMappingsAfter = roleMappingsAfter == null ? null : List.copyOf(roleMappingsAfter);
     }
 
     public static EntitlementAuditEvent created(Entitlement entitlement, String actorId) {
@@ -72,10 +82,26 @@ public final class EntitlementAuditEvent {
         return from(entitlement, EntitlementAuditEventType.ENTITLEMENT_UPDATED, actorId);
     }
 
+    public static EntitlementAuditEvent rolesUpdated(Entitlement entitlement, String actorId,
+            List<AccessPackage.RoleMapping> before, List<AccessPackage.RoleMapping> after) {
+        Objects.requireNonNull(before, "previous role mappings must not be null");
+        Objects.requireNonNull(after, "new role mappings must not be null");
+        return from(entitlement, EntitlementAuditEventType.ENTITLEMENT_UPDATED, actorId, before, after);
+    }
+
     private static EntitlementAuditEvent from(
             Entitlement entitlement,
             EntitlementAuditEventType type,
             String actorId) {
+        return from(entitlement, type, actorId, null, null);
+    }
+
+    private static EntitlementAuditEvent from(
+            Entitlement entitlement,
+            EntitlementAuditEventType type,
+            String actorId,
+            List<AccessPackage.RoleMapping> roleMappingsBefore,
+            List<AccessPackage.RoleMapping> roleMappingsAfter) {
         Objects.requireNonNull(entitlement, "entitlement must not be null");
         return new EntitlementAuditEvent(
                 UUID.randomUUID().toString(),
@@ -93,7 +119,7 @@ public final class EntitlementAuditEvent {
                 entitlement.requestable(),
                 entitlement.autoApprove(),
                 entitlement.durationPolicy(),
-                entitlement.version());
+                entitlement.version(), roleMappingsBefore, roleMappingsAfter);
     }
 
     public String id() {
@@ -158,6 +184,14 @@ public final class EntitlementAuditEvent {
 
     public long version() {
         return version;
+    }
+
+    public List<AccessPackage.RoleMapping> roleMappingsBefore() {
+        return roleMappingsBefore;
+    }
+
+    public List<AccessPackage.RoleMapping> roleMappingsAfter() {
+        return roleMappingsAfter;
     }
 
     private static String requireText(String value, String fieldName) {

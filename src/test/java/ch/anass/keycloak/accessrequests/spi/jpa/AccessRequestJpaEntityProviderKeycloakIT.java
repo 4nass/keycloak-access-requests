@@ -411,6 +411,124 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertConcurrentScheduledPackageGrantRetry();
     }
 
+    @Test
+    void editsOnlyUnusedClosedPackageRolesAndSoftDeletesTheCatalogEntry() throws Exception {
+        try (KeycloakContainer server = keycloak()) {
+            server.start();
+            String adminToken = accessToken(server, "admin-cli");
+            enableNativeAdminEvents(server, adminToken);
+            String approverId = createRealmRole(server, adminToken, "package-edit-approver-" + UUID.randomUUID());
+            String oldRoleId = createRealmRole(server, adminToken, "package-edit-old-" + UUID.randomUUID());
+            String newRoleId = createRealmRole(server, adminToken, "package-edit-new-" + UUID.randomUUID());
+            HttpClient client = HttpClient.newHttpClient();
+            URI packages = URI.create("http://%s:%d/realms/master/access-requests/admin/access-packages"
+                    .formatted(server.getHost(), server.getMappedPort(8080)));
+            HttpResponse<String> created = client.send(HttpRequest.newBuilder(packages)
+                    .header("Authorization", "Bearer " + adminToken)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString("""
+                            {"displayName":"Editable package","description":"An unused access package.",
+                             "riskLevel":"LOW","approverRoleId":"%s","defaultDurationSeconds":2592000,
+                             "maxDurationSeconds":7776000,"allowPermanent":false,
+                             "roleMappings":[{"type":"REALM_ROLE","roleId":"%s"}]}
+                            """.formatted(approverId, oldRoleId))).build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(201, created.statusCode(), created.body());
+            JsonNode draft = new ObjectMapper().readTree(created.body());
+            String packageId = draft.path("id").asText();
+            String groupId = draft.path("resourceId").asText();
+            URI packageEndpoint = URI.create(packages + "/" + packageId);
+            URI entitlementEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/entitlements/%s"
+                    .formatted(server.getHost(), server.getMappedPort(8080), packageId));
+
+            HttpResponse<String> initial = client.send(HttpRequest.newBuilder(packageEndpoint)
+                    .header("Authorization", "Bearer " + adminToken).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, initial.statusCode(), initial.body());
+            assertTrue(new ObjectMapper().readTree(initial.body()).path("roleEditingAllowed").asBoolean());
+            String replacement = """
+                    {"version":0,"roleMappings":[{"type":"REALM_ROLE","roleId":"%s"}]}
+                    """.formatted(newRoleId);
+            assertEquals(401, client.send(HttpRequest.newBuilder(packageEndpoint)
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString(replacement)).build(),
+                    HttpResponse.BodyHandlers.discarding()).statusCode());
+            assertEquals(401, client.send(HttpRequest.newBuilder(entitlementEndpoint)
+                    .DELETE().build(), HttpResponse.BodyHandlers.discarding()).statusCode());
+            HttpResponse<String> changed = client.send(HttpRequest.newBuilder(packageEndpoint)
+                    .header("Authorization", "Bearer " + adminToken)
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString(replacement)).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, changed.statusCode(), changed.body());
+            assertEquals(newRoleId, new ObjectMapper().readTree(changed.body()).path("roleMappings")
+                    .get(0).path("roleId").asText());
+            assertPackageRoleAuditSnapshots(server, adminToken, packageId, oldRoleId, newRoleId);
+            assertEquals(409, client.send(HttpRequest.newBuilder(packageEndpoint)
+                    .header("Authorization", "Bearer " + adminToken)
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString(replacement)).build(),
+                    HttpResponse.BodyHandlers.discarding()).statusCode(), "Stale edits must be rejected");
+            URI roleMappings = URI.create("http://%s:%d/admin/realms/master/groups/%s/role-mappings/realm"
+                    .formatted(server.getHost(), server.getMappedPort(8080), groupId));
+            HttpResponse<String> groupRoles = client.send(HttpRequest.newBuilder(roleMappings)
+                    .header("Authorization", "Bearer " + adminToken).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, groupRoles.statusCode());
+            assertTrue(groupRoles.body().contains(newRoleId));
+            assertFalse(groupRoles.body().contains(oldRoleId));
+
+            HttpResponse<String> published = client.send(HttpRequest.newBuilder(entitlementEndpoint)
+                    .header("Authorization", "Bearer " + adminToken)
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString("""
+                            {"displayName":"Editable package","description":"An unused access package.",
+                             "riskLevel":"LOW","approverRoleId":"%s","defaultDurationSeconds":2592000,
+                             "maxDurationSeconds":7776000,"allowPermanent":false,
+                             "requestable":true,"version":1}
+                            """.formatted(approverId))).build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, published.statusCode(), published.body());
+            assertEquals(409, client.send(HttpRequest.newBuilder(packageEndpoint)
+                    .header("Authorization", "Bearer " + adminToken)
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString(replacement.replace("\"version\":0", "\"version\":2")))
+                    .build(), HttpResponse.BodyHandlers.discarding()).statusCode());
+
+            String requesterClient = "package-edit-requester-client-" + UUID.randomUUID();
+            createDirectAccessClient(server, adminToken, requesterClient);
+            addAccessRequestsAudience(server, adminToken, requesterClient);
+            String requesterName = "package-edit-requester-" + UUID.randomUUID();
+            String requesterPassword = "package-edit-password";
+            createEnabledUser(server, adminToken, requesterName, requesterPassword);
+            String requesterToken = accessToken(server, requesterClient, requesterName, requesterPassword);
+            URI requests = URI.create("http://%s:%d/realms/master/access-requests/requests"
+                    .formatted(server.getHost(), server.getMappedPort(8080)));
+            String requestId = submitTemporaryPackageRequest(requests, requesterToken, packageId);
+            assertFalse(requestId.isBlank());
+
+            for (int attempt = 0; attempt < 2; attempt++) {
+                assertEquals(204, client.send(HttpRequest.newBuilder(entitlementEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .DELETE().build(), HttpResponse.BodyHandlers.discarding()).statusCode());
+            }
+            HttpResponse<String> retained = client.send(HttpRequest.newBuilder(entitlementEndpoint)
+                    .header("Authorization", "Bearer " + adminToken).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, retained.statusCode());
+            assertFalse(new ObjectMapper().readTree(retained.body()).path("requestable").asBoolean());
+            assertEquals(groupId, new ObjectMapper().readTree(retained.body()).path("resourceId").asText());
+            HttpResponse<String> used = client.send(HttpRequest.newBuilder(packageEndpoint)
+                    .header("Authorization", "Bearer " + adminToken).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, used.statusCode());
+            assertFalse(new ObjectMapper().readTree(used.body()).path("roleEditingAllowed").asBoolean());
+            assertEquals(409, client.send(HttpRequest.newBuilder(packageEndpoint)
+                    .header("Authorization", "Bearer " + adminToken)
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString(replacement.replace("\"version\":0", "\"version\":3")))
+                    .build(), HttpResponse.BodyHandlers.discarding()).statusCode());
+        }
+    }
+
     private KeycloakContainer keycloak() {
         Path providerJar = providerJar();
 
@@ -702,6 +820,12 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(submission)).build(),
                 HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, created.statusCode(), created.body());
+        created = client.send(HttpRequest.newBuilder(packagesEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(submission)).build(),
+                HttpResponse.BodyHandlers.ofString());
         assertEquals(201, created.statusCode(), created.body());
         JsonNode entitlement = new ObjectMapper().readTree(created.body());
         String entitlementId = entitlement.path("id").asText();
@@ -725,6 +849,15 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
         URI packageDetailsEndpoint = URI.create("http://%s:%d/realms/master/access-requests/admin/access-packages/%s"
                 .formatted(server.getHost(), server.getMappedPort(8080), entitlementId));
+        assertEquals(403, client.send(HttpRequest.newBuilder(packageDetailsEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString("{\"roleMappings\":[],\"version\":0}"))
+                        .build(), HttpResponse.BodyHandlers.discarding()).statusCode());
+        assertEquals(403, client.send(HttpRequest.newBuilder(entitlementEndpoint)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .method("DELETE", HttpRequest.BodyPublishers.noBody())
+                        .build(), HttpResponse.BodyHandlers.discarding()).statusCode());
         HttpResponse<String> packageDetails = client.send(HttpRequest.newBuilder(packageDetailsEndpoint)
                         .header("Authorization", "Bearer " + managerToken).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
@@ -778,6 +911,12 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .header("Content-Type", "application/json")
                         .PUT(HttpRequest.BodyPublishers.ofString(publish)).build(),
                 HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, rejectedPublish.statusCode(), rejectedPublish.body());
+        rejectedPublish = client.send(HttpRequest.newBuilder(entitlementEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(publish)).build(),
+                HttpResponse.BodyHandlers.ofString());
         assertEquals(409, rejectedPublish.statusCode(), rejectedPublish.body());
         assertError(rejectedPublish.body(), "INVALID_ACCESS_PACKAGE_CONFIGURATION", null);
         assertEquals(204, client.send(HttpRequest.newBuilder(groupRolesEndpoint)
@@ -823,7 +962,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 """.formatted(approverRoleId);
         HttpResponse<String> published = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementEndpoint)
-                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Authorization", "Bearer " + adminToken)
                         .header("Content-Type", "application/json")
                         .PUT(HttpRequest.BodyPublishers.ofString(publish)).build(),
                 HttpResponse.BodyHandlers.ofString());
@@ -1568,6 +1707,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, globalAdministratorCapability.statusCode());
         assertTrue(globalAdministratorCapability.body().contains("\"canManageCatalog\":true"));
+        assertTrue(globalAdministratorCapability.body().contains("\"canViewEvents\":true"));
         assertTrue(globalAdministratorCapability.body().contains("\"canManageNotifications\":true"));
         assertTrue(globalAdministratorCapability.body().contains("\"canManageProvisioningFailures\":true"));
 
@@ -1626,7 +1766,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, delegatedManagerCapability.statusCode());
-        assertTrue(delegatedManagerCapability.body().contains("\"canManageCatalog\":true"));
+        assertTrue(delegatedManagerCapability.body().contains("\"canManageCatalog\":false"));
+        assertTrue(delegatedManagerCapability.body().contains("\"canViewEvents\":true"));
         assertTrue(delegatedManagerCapability.body().contains("\"canManageNotifications\":true"));
         assertTrue(delegatedManagerCapability.body().contains("\"canManageProvisioningFailures\":true"));
         assertNotificationDeliveryAdministration(server, managerToken);
@@ -1651,12 +1792,23 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                                  "riskLevel":"LOW","approverRoleId":"%s","requestable":true}
                                 """.formatted(targetRoleId, approverRoleId)))
                         .build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, rejectedDirectPublication.statusCode(), rejectedDirectPublication.body());
+        rejectedDirectPublication = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(entitlementEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("""
+                                {"resourceType":"REALM_ROLE","resourceId":"%s",
+                                 "displayName":"Direct temporary role","description":"Direct grants cannot expire safely.",
+                                 "riskLevel":"LOW","approverRoleId":"%s","requestable":true}
+                                """.formatted(targetRoleId, approverRoleId)))
+                        .build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(409, rejectedDirectPublication.statusCode(), rejectedDirectPublication.body());
         assertError(rejectedDirectPublication.body(), "ACCESS_PACKAGE_REQUIRED", null);
 
         HttpResponse<String> creationResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementEndpoint)
-                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Authorization", "Bearer " + adminToken)
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString("""
                                 {
@@ -1689,7 +1841,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         URI entitlementByIdEndpoint = URI.create(entitlementEndpoint + "/" + entitlementId);
         HttpResponse<String> rejectedPublication = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementByIdEndpoint)
-                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Authorization", "Bearer " + adminToken)
                         .header("Content-Type", "application/json")
                         .PUT(HttpRequest.BodyPublishers.ofString("""
                                 {
@@ -1711,7 +1863,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
         HttpResponse<String> directGroupDraft = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementEndpoint)
-                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Authorization", "Bearer " + adminToken)
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString("""
                                 {"resourceType":"GROUP","resourceId":"%s","displayName":"Direct group draft",
@@ -1722,7 +1874,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(201, directGroupDraft.statusCode(), directGroupDraft.body());
         HttpResponse<String> rejectedGroupPublication = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(URI.create(entitlementEndpoint + "/" + responseId(directGroupDraft.body())))
-                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Authorization", "Bearer " + adminToken)
                         .header("Content-Type", "application/json")
                         .PUT(HttpRequest.BodyPublishers.ofString("""
                                 {"displayName":"Direct group draft","description":"A direct group must not be published for temporary access.",
@@ -1734,7 +1886,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
         HttpResponse<String> updateResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementByIdEndpoint)
-                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Authorization", "Bearer " + adminToken)
                         .header("Content-Type", "application/json")
                         .PUT(HttpRequest.BodyPublishers.ofString("""
                                 {
@@ -1759,7 +1911,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
         HttpResponse<Void> invalidDurationResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementByIdEndpoint)
-                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Authorization", "Bearer " + adminToken)
                         .header("Content-Type", "application/json")
                         .PUT(HttpRequest.BodyPublishers.ofString("""
                                 {
@@ -1779,7 +1931,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
         HttpResponse<Void> staleUpdateResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementByIdEndpoint)
-                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Authorization", "Bearer " + adminToken)
                         .header("Content-Type", "application/json")
                         .PUT(HttpRequest.BodyPublishers.ofString("""
                                 {
@@ -1794,11 +1946,11 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                         .build(),
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(409, staleUpdateResponse.statusCode());
-        assertEntitlementAuditEvents(entitlementId, subjectOf(managerToken));
+        assertEntitlementAuditEvents(entitlementId, subjectOf(adminToken));
 
         HttpResponse<String> deactivationResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(entitlementByIdEndpoint)
-                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Authorization", "Bearer " + adminToken)
                         .header("Content-Type", "application/json")
                         .PUT(HttpRequest.BodyPublishers.ofString("""
                                 {
@@ -1814,7 +1966,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, deactivationResponse.statusCode());
         assertTrue(deactivationResponse.body().contains("\"requestable\":false"));
-        assertCatalogNativeAdminEvents(server, adminToken, entitlementId, subjectOf(managerToken),
+        assertCatalogNativeAdminEvents(server, adminToken, entitlementId, subjectOf(adminToken),
                 approverRoleId, replacementApproverRoleId);
 
         String otherRealmName = "catalog-other-realm-" + UUID.randomUUID();
@@ -1871,6 +2023,43 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 && "MEDIUM".equals(event.path("details").path("riskLevel").asText())
                 && replacementApproverRoleId.equals(event.path("details").path("approverRoleId").asText()))
                 .count());
+    }
+
+    private void assertPackageRoleAuditSnapshots(GenericContainer<?> server, String adminToken,
+            String packageId, String oldRoleId, String newRoleId) throws Exception {
+        ObjectMapper json = new ObjectMapper();
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             PreparedStatement statement = connection.prepareStatement("""
+                     select ROLE_MAPPINGS_BEFORE, ROLE_MAPPINGS_AFTER from AR_ENTITLEMENT_HISTORY
+                      where ENTITLEMENT_ID = ? and EVENT_TYPE = 'ENTITLEMENT_UPDATED'
+                        and ROLE_MAPPINGS_BEFORE is not null
+                     """)) {
+            statement.setString(1, packageId);
+            try (ResultSet history = statement.executeQuery()) {
+                assertTrue(history.next(), "A package role edit must persist both audit snapshots.");
+                assertEquals(oldRoleId, json.readTree(history.getString(1)).get(0).path("roleId").asText());
+                assertEquals(newRoleId, json.readTree(history.getString(2)).get(0).path("roleId").asText());
+                assertFalse(history.next());
+            }
+        }
+
+        URI eventsEndpoint = URI.create("http://%s:%d/admin/realms/master/admin-events?max=100"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpResponse<String> response = HttpClient.newHttpClient().send(HttpRequest.newBuilder(eventsEndpoint)
+                .header("Authorization", "Bearer " + adminToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), response.body());
+        JsonNode roleUpdate = json.readTree(response.body()).valueStream()
+                .filter(event -> "ACCESS_REQUEST_ENTITLEMENT".equals(event.path("resourceType").asText()))
+                .filter(event -> ("access-requests/entitlements/" + packageId)
+                        .equals(event.path("resourcePath").asText()))
+                .filter(event -> event.path("details").has("packageRoleMappingsBefore"))
+                .findFirst().orElseThrow();
+        assertEquals(oldRoleId, json.readTree(roleUpdate.path("details")
+                .path("packageRoleMappingsBefore").asText()).get(0).path("roleId").asText());
+        assertEquals(newRoleId, json.readTree(roleUpdate.path("details")
+                .path("packageRoleMappingsAfter").asText()).get(0).path("roleId").asText());
     }
 
     private void assertAdministrativeAuditEventSearch(GenericContainer<?> server) throws Exception {

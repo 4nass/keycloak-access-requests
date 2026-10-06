@@ -80,7 +80,7 @@ class NotificationDeliveryAdministrationEndpointTest {
     void advertisesNotificationOperationsAlongsideCatalogManagement() {
         assertArrayEquals(
                 new String[]{"canManageCatalog", "canManageNotifications", "canManageProvisioningFailures",
-                        "canManageAssurancePolicy"},
+                        "canManageAssurancePolicy", "canViewEvents"},
                 Arrays.stream(ApiDto.AdminCapabilitiesResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));

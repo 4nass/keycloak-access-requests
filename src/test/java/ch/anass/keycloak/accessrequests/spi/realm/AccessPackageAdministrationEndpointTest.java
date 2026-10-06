@@ -2,7 +2,9 @@ package ch.anass.keycloak.accessrequests.spi.realm;
 
 import ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestRealmResource;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
@@ -39,5 +41,28 @@ class AccessPackageAdministrationEndpointTest {
                         "autoApprove"},
                 Arrays.stream(payload.getRecordComponents()).map(RecordComponent::getName).toArray(String[]::new));
         assertEquals(java.util.List.class, payload.getRecordComponents()[7].getType());
+    }
+
+    @Test
+    void exposesVersionedRoleReplacementForExistingPackages() {
+        Method endpoint = Arrays.stream(AccessRequestRealmResource.class.getDeclaredMethods())
+                .filter(method -> method.isAnnotationPresent(PUT.class)
+                        && method.isAnnotationPresent(Path.class)
+                        && "admin/access-packages/{packageId}".equals(method.getAnnotation(Path.class).value()))
+                .findFirst().orElseThrow(() -> new AssertionError("package roles need a dedicated update endpoint"));
+        assertEquals(Response.class, endpoint.getReturnType());
+        assertEquals(MediaType.APPLICATION_JSON, endpoint.getAnnotation(Consumes.class).value()[0]);
+        assertArrayEquals(new String[]{"roleMappings", "version"}, Arrays.stream(endpoint.getParameterTypes()[1]
+                .getRecordComponents()).map(RecordComponent::getName).toArray(String[]::new));
+    }
+
+    @Test
+    void exposesIdempotentEntitlementDeactivationWithoutDeletingHistory() {
+        Method endpoint = Arrays.stream(AccessRequestRealmResource.class.getDeclaredMethods())
+                .filter(method -> method.isAnnotationPresent(DELETE.class)
+                        && method.isAnnotationPresent(Path.class)
+                        && "admin/entitlements/{entitlementId}".equals(method.getAnnotation(Path.class).value()))
+                .findFirst().orElseThrow(() -> new AssertionError("entitlements need a soft-delete endpoint"));
+        assertEquals(Response.class, endpoint.getReturnType());
     }
 }

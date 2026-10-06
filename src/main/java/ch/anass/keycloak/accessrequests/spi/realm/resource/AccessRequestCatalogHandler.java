@@ -22,6 +22,7 @@ import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.KeycloakReferen
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.AccessPackageCreation;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.AccessPackageResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.AccessPackageRoleResponse;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.AccessPackageRoleUpdate;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.Response;
@@ -90,7 +91,7 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
     }
 
     public Response createEntitlement(EntitlementCreation submission) {
-        AccessRequestManager manager = requireAccessRequestManager();
+        AccessRequestManager manager = requireRealmAdministrator();
         EntitlementCreation validatedSubmission = requireEntitlementCreation(submission);
         if (Boolean.TRUE.equals(validatedSubmission.requestable())) {
             return error(Response.Status.CONFLICT, "ACCESS_PACKAGE_REQUIRED",
@@ -129,7 +130,7 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
     }
 
     public Response createAccessPackage(AccessPackageCreation submission) {
-        AccessRequestManager manager = requireAccessRequestManager();
+        AccessRequestManager manager = requireRealmAdministrator();
         AccessPackageCreation validated = requireAccessPackageCreation(submission);
         DurationPolicy durationPolicy = creationDurationPolicy(validated.riskLevel(),
                 validated.defaultDurationSeconds(), validated.maxDurationSeconds(), validated.allowPermanent());
@@ -182,9 +183,117 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
             return new AccessPackageRoleResponse(mapping.type(), mapping.roleId(),
                     missing ? null : KeycloakReferenceSearch.roleDisplayName(mapping.type(), role), missing);
         }).toList();
+        boolean configurationValid = isPackageConfigured(group, accessPackage);
+        boolean roleEditingAllowed = configurationValid && !entitlement.requestable()
+                && !requestRepository().hasRequestsForEntitlement(manager.realm().getId(), packageId)
+                && group.getSubGroupsStream().findAny().isEmpty() && !hasGroupMembers(manager.realm(), group);
         return new AccessPackageResponse(packageId, accessPackage.groupId(), accessPackage.groupName(),
                 group != null && accessPackage.groupName().equals(group.getName()),
-                isPackageConfigured(group, accessPackage), roles);
+                configurationValid, roleEditingAllowed, roles);
+    }
+
+    public Response updateAccessPackageRoles(String packageId, AccessPackageRoleUpdate submission) {
+        AccessRequestManager manager = requireRealmAdministrator();
+        if (submission == null || submission.version() == null || submission.version() < 0
+                || !validRoleMappings(submission.roleMappings())) {
+            throw new BadRequestException("version and 1 to 100 distinct realm or client roles are required");
+        }
+        try {
+            return transaction().execute(() -> {
+                Entitlement entitlement = entitlementRepository()
+                        .findByIdForUpdate(manager.realm().getId(), packageId)
+                        .orElseThrow(() -> new NotFoundException("Entitlement not found: " + packageId));
+                if (entitlement.version() != submission.version()) {
+                    return error(Response.Status.CONFLICT, "CONCURRENT_ENTITLEMENT_MODIFICATION",
+                            "The access policy changed", null);
+                }
+                AccessPackage accessPackage = accessPackageRepository()
+                        .findByEntitlementId(manager.realm().getId(), packageId)
+                        .orElseThrow(() -> new NotFoundException("Access package not found: " + packageId));
+                GroupModel group = session.groups().getGroupById(manager.realm(), accessPackage.groupId());
+                if (entitlement.requestable() || entitlement.resourceType() != ResourceType.GROUP
+                        || !entitlement.resourceId().equals(accessPackage.groupId())
+                        || !isPackageConfigured(group, accessPackage)
+                        || group.getSubGroupsStream().findAny().isPresent()) {
+                    return error(Response.Status.CONFLICT, "INVALID_ACCESS_PACKAGE_CONFIGURATION",
+                            "Close requests and restore the package group before editing its roles", null);
+                }
+                if (requestRepository().hasRequestsForEntitlement(manager.realm().getId(), packageId)) {
+                    return error(Response.Status.CONFLICT, "ACCESS_PACKAGE_ALREADY_USED",
+                            "A package with request history cannot change its granted roles", null);
+                }
+                if (hasGroupMembers(manager.realm(), group)) {
+                    return error(Response.Status.CONFLICT, "ACCESS_PACKAGE_HAS_MEMBERS",
+                            "Remove all current package members before editing its roles", null);
+                }
+                List<AccessPackage.RoleMapping> mappings;
+                try {
+                    mappings = submission.roleMappings().stream()
+                            .map(role -> new AccessPackage.RoleMapping(role.type(), role.roleId())).toList();
+                    new AccessPackage(accessPackage.entitlementId(), accessPackage.realmId(), accessPackage.groupId(),
+                            accessPackage.groupName(), mappings);
+                } catch (IllegalArgumentException exception) {
+                    throw new BadRequestException(exception.getMessage(), exception);
+                }
+                List<RoleModel> roles = mappings.stream().map(mapping -> requireRole(manager.realm(),
+                        mapping.roleId(), mapping.type() == ResourceType.CLIENT_ROLE, "roleId")).toList();
+                Set<String> selectedIds = mappings.stream().map(AccessPackage.RoleMapping::roleId)
+                        .collect(java.util.stream.Collectors.toSet());
+                for (AccessPackage.RoleMapping old : accessPackage.roleMappings()) {
+                    if (!selectedIds.contains(old.roleId())) {
+                        group.deleteRoleMapping(manager.realm().getRoleById(old.roleId()));
+                    }
+                }
+                Set<String> previousIds = accessPackage.roleMappings().stream()
+                        .map(AccessPackage.RoleMapping::roleId).collect(java.util.stream.Collectors.toSet());
+                for (RoleModel role : roles) {
+                    if (!previousIds.contains(role.getId())) {
+                        group.grantRole(role);
+                    }
+                }
+                accessPackageRepository().replaceRoleMappings(manager.realm().getId(), packageId, mappings);
+                Entitlement touched = entitlement.updateDetails(entitlement.displayName(), entitlement.description(),
+                        entitlement.riskLevel(), entitlement.approverRoleId(), entitlement.durationPolicy(), Instant.now());
+                Entitlement saved = entitlementRepository().updateIfVersionMatches(touched, entitlement.version())
+                        .orElseThrow(() -> new ConcurrentEntitlementModificationException(packageId));
+                entitlementAuditEventPublisher().publish(EntitlementAuditEvent.rolesUpdated(
+                        saved, manager.user().getId(), accessPackage.roleMappings(), mappings));
+                new KeycloakEntitlementAdminEventPublisher(session, manager.realm(), manager.auth())
+                        .packageRolesUpdated(saved, accessPackage.roleMappings(), mappings);
+                return Response.ok(getAccessPackage(packageId)).build();
+            });
+        } catch (ConcurrentEntitlementModificationException exception) {
+            return error(Response.Status.CONFLICT, "CONCURRENT_ENTITLEMENT_MODIFICATION", exception.getMessage(), null);
+        }
+    }
+
+    public Response deactivateEntitlement(String entitlementId) {
+        AccessRequestManager manager = requireRealmAdministrator();
+        try {
+            return transaction().execute(() -> {
+                Entitlement current = entitlementRepository()
+                        .findByIdForUpdate(manager.realm().getId(), entitlementId)
+                        .orElseThrow(() -> new NotFoundException("Entitlement not found: " + entitlementId));
+                if (current.requestable()) {
+                    persistEntitlementUpdate(current.unpublish(Instant.now()), current.version(), manager);
+                }
+                return Response.noContent().build();
+            });
+        } catch (ConcurrentEntitlementModificationException exception) {
+            return error(Response.Status.CONFLICT, "CONCURRENT_ENTITLEMENT_MODIFICATION", exception.getMessage(), null);
+        }
+    }
+
+    private static boolean validRoleMappings(List<ch.anass.keycloak.accessrequests.spi.realm.dto.CatalogDto.AccessPackageRole> mappings) {
+        return mappings != null && !mappings.isEmpty() && mappings.size() <= 100
+                && mappings.stream().allMatch(role -> role != null && role.type() != null
+                        && role.type() != ResourceType.GROUP && !isBlank(role.roleId()));
+    }
+
+    private boolean hasGroupMembers(RealmModel realm, GroupModel group) {
+        try (var members = session.users().getGroupMembersStream(realm, group, 0, 1)) {
+            return members.findAny().isPresent();
+        }
     }
 
     public Response getEntitlement(String entitlementId) {
@@ -196,7 +305,7 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
     public Response updateEntitlement(
             String entitlementId,
             EntitlementUpdate submission) {
-        AccessRequestManager manager = requireAccessRequestManager();
+        AccessRequestManager manager = requireRealmAdministrator();
         EntitlementUpdate validatedSubmission = requireEntitlementUpdate(submission);
         validateApproverRole(manager.realm(), validatedSubmission.approverRoleId());
         Entitlement current = findEntitlement(manager.realm(), entitlementId);

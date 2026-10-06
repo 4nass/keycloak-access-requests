@@ -3,6 +3,7 @@ package ch.anass.keycloak.accessrequests.core.domain.entitlement;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -54,6 +55,24 @@ class EntitlementAuditEventTest {
         assertEquals("finance-owner", event.approverRoleId());
         assertTrue(event.requestable());
         assertEquals(3, event.version());
+    }
+
+    @Test
+    void roleUpdateCapturesImmutableBeforeAndAfterMappings() {
+        List<AccessPackage.RoleMapping> before = new java.util.ArrayList<>(List.of(
+                new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "old-role")));
+        List<AccessPackage.RoleMapping> after = new java.util.ArrayList<>(List.of(
+                new AccessPackage.RoleMapping(ResourceType.CLIENT_ROLE, "new-role")));
+
+        EntitlementAuditEvent event = EntitlementAuditEvent.rolesUpdated(entitlement(), "catalog-manager-3",
+                before, after);
+        before.clear();
+        after.clear();
+
+        assertEquals(List.of(new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "old-role")),
+                event.roleMappingsBefore());
+        assertEquals(List.of(new AccessPackage.RoleMapping(ResourceType.CLIENT_ROLE, "new-role")),
+                event.roleMappingsAfter());
     }
 
     private static Entitlement entitlement() {

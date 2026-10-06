@@ -42,6 +42,18 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
         this.entityManager = entityManager;
     }
 
+    /** A role change must not reinterpret an existing request or a later provisioning retry. */
+    public boolean hasRequestsForEntitlement(String realmId, String entitlementId) {
+        return !entityManager.createQuery("""
+                        select entity.id from AccessRequestEntity entity
+                         where entity.realmId = :realmId and entity.entitlementId = :entitlementId
+                        """, String.class)
+                .setParameter("realmId", realmId)
+                .setParameter("entitlementId", entitlementId)
+                .setMaxResults(1)
+                .getResultList().isEmpty();
+    }
+
     @Override
     public Optional<AccessRequest> findById(String realmId, String requestId) {
         AccessRequestEntity entity = entityManager.find(AccessRequestEntity.class, requestId);

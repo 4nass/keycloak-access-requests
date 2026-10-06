@@ -8,6 +8,7 @@ import jakarta.persistence.EntityManager;
 
 import java.util.Objects;
 import java.util.Optional;
+import java.util.List;
 
 public final class JpaAccessPackageRepository implements AccessPackageRepository {
 
@@ -35,5 +36,17 @@ public final class JpaAccessPackageRepository implements AccessPackageRepository
         AccessPackageEntity entity = entityManager.find(AccessPackageEntity.class, entitlementId);
         return entity != null && realmId.equals(entity.realmId())
                 ? Optional.of(entity.toDomain()) : Optional.empty();
+    }
+
+    public void replaceRoleMappings(String realmId, String entitlementId,
+            List<AccessPackage.RoleMapping> mappings) {
+        Objects.requireNonNull(realmId, "realmId must not be null");
+        Objects.requireNonNull(entitlementId, "entitlementId must not be null");
+        AccessPackageEntity entity = entityManager.find(AccessPackageEntity.class, entitlementId);
+        if (entity == null || !realmId.equals(entity.realmId())) {
+            throw new IllegalArgumentException("The access package does not exist in this realm");
+        }
+        entity.replaceRoleMappings(mappings);
+        entityManager.flush();
     }
 }

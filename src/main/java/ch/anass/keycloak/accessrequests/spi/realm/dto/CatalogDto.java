@@ -52,9 +52,12 @@ public final class CatalogDto {
     public record AccessPackageRole(ResourceType type, String roleId) {
     }
 
+    public record AccessPackageRoleUpdate(List<AccessPackageRole> roleMappings, Long version) {
+    }
+
     public record AccessPackageResponse(
             String entitlementId, String groupId, String groupName, boolean groupExists, boolean configurationValid,
-            List<AccessPackageRoleResponse> roleMappings) {
+            boolean roleEditingAllowed, List<AccessPackageRoleResponse> roleMappings) {
     }
 
     public record AccessPackageRoleResponse(ResourceType type, String roleId, String name, boolean missing) {

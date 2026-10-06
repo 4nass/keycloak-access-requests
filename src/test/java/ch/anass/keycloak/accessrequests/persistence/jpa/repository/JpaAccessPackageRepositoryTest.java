@@ -69,6 +69,26 @@ class JpaAccessPackageRepositoryTest {
     }
 
     @Test
+    void replacesMappingsWithoutChangingTheOwnedGroupOrCrossingRealms() {
+        persistEntitlement("entitlement-1", "realm-1");
+        AccessPackage original = accessPackage("entitlement-1", "realm-1", "group-1", "AR_PKG_entitlement-1");
+        inTransaction(() -> repository.create(original));
+        List<AccessPackage.RoleMapping> replacement = List.of(
+                new AccessPackage.RoleMapping(ResourceType.CLIENT_ROLE, "another-client-role"));
+
+        inTransaction(() -> repository.replaceRoleMappings("realm-1", "entitlement-1", replacement));
+        entityManager.clear();
+
+        AccessPackage saved = repository.findByEntitlementId("realm-1", "entitlement-1").orElseThrow();
+        assertEquals(original.groupId(), saved.groupId());
+        assertEquals(original.groupName(), saved.groupName());
+        assertEquals(replacement, saved.roleMappings());
+        assertEquals(1L, count("AR_ACCESS_PACKAGE_ROLE"));
+        assertThrows(IllegalArgumentException.class, () -> inTransaction(() -> repository.replaceRoleMappings(
+                "other-realm", "entitlement-1", replacement)));
+    }
+
+    @Test
     void oneEntitlementCannotBeBoundToTwoGroups() {
         persistEntitlement("entitlement-1", "realm-1");
         inTransaction(() -> repository.create(accessPackage("entitlement-1", "realm-1", "group-1",

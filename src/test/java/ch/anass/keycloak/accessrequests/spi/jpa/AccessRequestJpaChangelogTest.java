@@ -112,6 +112,8 @@ class AccessRequestJpaChangelogTest {
                             "DEFAULT_DURATION_SECONDS",
                             "MAX_DURATION_SECONDS",
                             "ALLOW_PERMANENT",
+                            "ROLE_MAPPINGS_BEFORE",
+                            "ROLE_MAPPINGS_AFTER",
                             "VERSION"),
                     columnsOf(connection, "AR_ENTITLEMENT_HISTORY"));
             assertEquals(
@@ -148,6 +150,8 @@ class AccessRequestJpaChangelogTest {
                     .contains("IDX_ACCESS_REQUEST_REQUESTER_CREATED"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
                     .contains("IDX_ACCESS_REQUEST_APPROVAL_QUEUE"));
+            assertEquals(java.util.List.of("REALM_ID", "ENTITLEMENT_ID"),
+                    indexColumnsOf(connection, "AR_ACCESS_REQUEST", "IDX_ACCESS_REQUEST_REALM_ENTITLEMENT"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST_HISTORY")
                     .contains("IDX_ACCESS_REQUEST_HISTORY_FAILURE"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST_HISTORY")
@@ -375,6 +379,19 @@ class AccessRequestJpaChangelogTest {
             }
         }
         return indexNames;
+    }
+
+    private java.util.List<String> indexColumnsOf(Connection connection, String tableName, String indexName)
+            throws SQLException {
+        java.util.Map<Short, String> columns = new java.util.TreeMap<>();
+        try (ResultSet indexes = connection.getMetaData().getIndexInfo(null, null, tableName, false, false)) {
+            while (indexes.next()) {
+                if (indexName.equals(indexes.getString("INDEX_NAME"))) {
+                    columns.put(indexes.getShort("ORDINAL_POSITION"), indexes.getString("COLUMN_NAME"));
+                }
+            }
+        }
+        return java.util.List.copyOf(columns.values());
     }
 
     private void insertPendingRequest(Connection connection, String requestId) throws SQLException {

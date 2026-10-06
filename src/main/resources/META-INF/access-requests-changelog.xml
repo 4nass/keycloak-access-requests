@@ -188,6 +188,11 @@
             <column name="ID"/>
         </createIndex>
 
+        <createIndex indexName="IDX_ACCESS_REQUEST_REALM_ENTITLEMENT" tableName="AR_ACCESS_REQUEST">
+            <column name="REALM_ID"/>
+            <column name="ENTITLEMENT_ID"/>
+        </createIndex>
+
         <createTable tableName="AR_ENTITLEMENT_HISTORY">
             <column name="ID" type="VARCHAR(36)">
                 <constraints nullable="false" primaryKey="true" primaryKeyName="PK_ENTITLEMENT_HISTORY"/>
@@ -234,6 +239,8 @@
             <column name="VERSION" type="BIGINT">
                 <constraints nullable="false"/>
             </column>
+            <column name="ROLE_MAPPINGS_BEFORE" type="TEXT"/>
+            <column name="ROLE_MAPPINGS_AFTER" type="TEXT"/>
         </createTable>
 
         <createIndex indexName="IDX_ENTITLEMENT_HISTORY_ENTITLEMENT_TIME" tableName="AR_ENTITLEMENT_HISTORY">

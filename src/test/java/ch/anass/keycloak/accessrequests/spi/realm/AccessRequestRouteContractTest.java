@@ -3,6 +3,7 @@ package ch.anass.keycloak.accessrequests.spi.realm;
 import ch.anass.keycloak.accessrequests.spi.realm.resource.AccessRequestRealmResource;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.OPTIONS;
 import jakarta.ws.rs.POST;
@@ -41,10 +42,13 @@ class AccessRequestRouteContractTest {
                         + "produces=application/json | params=body",
                 "GET admin/access-packages/{packageId} | consumes=- | "
                         + "produces=application/json | params=path:packageId",
+                "PUT admin/access-packages/{packageId} | consumes=application/json | "
+                        + "produces=application/json | params=body,path:packageId",
                 "GET admin/entitlements/{entitlementId} | consumes=- | produces=application/json | "
                         + "params=path:entitlementId",
                 "PUT admin/entitlements/{entitlementId} | consumes=application/json | "
                         + "produces=application/json | params=body,path:entitlementId",
+                "DELETE admin/entitlements/{entitlementId} | consumes=- | produces=- | params=path:entitlementId",
                 "POST requests | consumes=application/json | produces=application/json | params=body",
                 "GET mine | consumes=- | produces=application/json | params=query:from,query:page=0,"
                         + "query:resourceType,query:size=20,query:status,query:to",
@@ -85,8 +89,8 @@ class AccessRequestRouteContractTest {
                         + "params=body,path:requestId",
                 "POST {requestId}/reject | consumes=application/json | produces=application/json | "
                         + "params=body,path:requestId"), routes);
-        assertEquals(33, routes.size());
-        assertEquals(33, Arrays.stream(methods).filter(method -> method.isAnnotationPresent(Path.class)).count());
+        assertEquals(35, routes.size());
+        assertEquals(35, Arrays.stream(methods).filter(method -> method.isAnnotationPresent(Path.class)).count());
     }
 
     private static String route(Method method) {
@@ -97,6 +101,8 @@ class AccessRequestRouteContractTest {
             verb = "POST";
         } else if (method.isAnnotationPresent(PUT.class)) {
             verb = "PUT";
+        } else if (method.isAnnotationPresent(DELETE.class)) {
+            verb = "DELETE";
         } else if (method.isAnnotationPresent(OPTIONS.class)) {
             verb = "OPTIONS";
         } else {

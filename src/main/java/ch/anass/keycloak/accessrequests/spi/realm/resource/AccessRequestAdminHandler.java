@@ -45,8 +45,8 @@ final class AccessRequestAdminHandler extends AccessRequestHandlerSupport {
 
     public AdminCapabilitiesResponse adminCapabilities() {
         AccessRequestManager manager = requireAccessRequestManager();
-        return new AdminCapabilitiesResponse(true, true, true,
-                AdminPermissions.evaluator(session, manager.realm(), manager.auth()).isRealmAdmin());
+        boolean realmAdministrator = AdminPermissions.evaluator(session, manager.realm(), manager.auth()).isRealmAdmin();
+        return new AdminCapabilitiesResponse(realmAdministrator, true, true, realmAdministrator, true);
     }
 
     public Response approvalAssurancePolicy() {

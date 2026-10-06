@@ -1,6 +1,9 @@
 package ch.anass.keycloak.accessrequests.persistence.jpa.entity;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementAuditEvent;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.AccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.EntitlementAuditEventType;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
@@ -15,10 +18,13 @@ import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
 
 import java.sql.Types;
+import java.util.List;
 
 @Entity
 @Table(name = "AR_ENTITLEMENT_HISTORY")
 public class EntitlementAuditEventEntity {
+
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     @Id
     @Column(name = "ID", nullable = false, length = 36)
@@ -80,6 +86,16 @@ public class EntitlementAuditEventEntity {
     @Column(name = "VERSION", nullable = false)
     private long version;
 
+    @Basic(fetch = FetchType.LAZY)
+    @JdbcTypeCode(Types.LONGVARCHAR)
+    @Column(name = "ROLE_MAPPINGS_BEFORE", columnDefinition = "TEXT")
+    private String roleMappingsBefore;
+
+    @Basic(fetch = FetchType.LAZY)
+    @JdbcTypeCode(Types.LONGVARCHAR)
+    @Column(name = "ROLE_MAPPINGS_AFTER", columnDefinition = "TEXT")
+    private String roleMappingsAfter;
+
     protected EntitlementAuditEventEntity() {
     }
 
@@ -102,5 +118,18 @@ public class EntitlementAuditEventEntity {
         this.maxDurationSeconds = event.durationPolicy().maxDuration().toSeconds();
         this.allowPermanent = event.durationPolicy().allowPermanent();
         this.version = event.version();
+        this.roleMappingsBefore = serializeRoleMappings(event.roleMappingsBefore());
+        this.roleMappingsAfter = serializeRoleMappings(event.roleMappingsAfter());
+    }
+
+    private static String serializeRoleMappings(List<AccessPackage.RoleMapping> roleMappings) {
+        if (roleMappings == null) {
+            return null;
+        }
+        try {
+            return JSON.writeValueAsString(roleMappings);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Could not serialize entitlement role audit snapshot", exception);
+        }
     }
 }

@@ -71,6 +71,12 @@ public class AccessPackageEntity {
         return realmId;
     }
 
+    public void replaceRoleMappings(List<AccessPackage.RoleMapping> mappings) {
+        AccessPackage replacement = new AccessPackage(entitlementId, realmId, groupId, groupName, mappings);
+        roleMappings.clear();
+        roleMappings.addAll(replacement.roleMappings().stream().map(RoleMappingValue::new).toList());
+    }
+
     @Embeddable
     public static class RoleMappingValue {
 

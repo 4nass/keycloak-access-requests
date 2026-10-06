@@ -73,6 +73,10 @@ abstract class AccessRequestHandlerSupport {
     }
 
     protected AccessRequestManager requireAssurancePolicyManager() {
+        return requireRealmAdministrator();
+    }
+
+    protected AccessRequestManager requireRealmAdministrator() {
         AccessRequestManager manager = requireAccessRequestManager();
         if (!AdminPermissions.evaluator(session, manager.realm(), manager.auth()).isRealmAdmin()) {
             throw new ForbiddenException();
