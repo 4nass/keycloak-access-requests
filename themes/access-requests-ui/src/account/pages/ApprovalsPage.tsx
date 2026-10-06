@@ -81,7 +81,7 @@ export function ApprovalsPage({ requests, onApprove, onReject, onStepUp, onRefre
     };
 
     const submit = async () => {
-        if (!pendingDecision || isSubmitting) {
+        if (!pendingDecision || isSubmitting || requiredAcr) {
             return;
         }
 
@@ -225,7 +225,7 @@ export function ApprovalsPage({ requests, onApprove, onReject, onStepUp, onRefre
                             : "accessRequestsRejectEntitlement",
                         { entitlement: pendingDecision.request.entitlementName }
                     )}
-                    variant="small"
+                    variant="medium"
                 >
                     <Form
                         onSubmit={(event) => {
@@ -233,38 +233,85 @@ export function ApprovalsPage({ requests, onApprove, onReject, onStepUp, onRefre
                             void submit();
                         }}
                     >
-                        {pendingDecision.type === "approve" && pendingDecision.request.resourceType === "GROUP" && (
-                            <Alert isInline variant="warning" title={t("accessRequestsPackageApprovalWarning")} />
-                        )}
-                        {requiredAcr && <Alert isInline variant="warning"
-                            title={t("accessRequestsStepUpRequired")}
-                            actionLinks={<Button type="button" variant="link"
-                                onClick={() => { void Promise.resolve(onStepUp?.(requiredAcr)).catch(addError); }}>
-                                {t("accessRequestsVerifyIdentity")}
-                            </Button>} />}
-                        <p>{t("accessRequestsDuration")}: {requestedDurationLabel(
-                            pendingDecision.request.durationSeconds, pendingDecision.request.permanent, t)}</p>
-                        <FormGroup fieldId="access-request-decision-comment" label={t("accessRequestsDecisionComment")}>
-                            <TextArea
-                                aria-label={t("accessRequestsDecisionComment")}
-                                id="access-request-decision-comment"
-                                isDisabled={isSubmitting}
-                                onChange={(_, value) => setComment(value)}
-                                value={comment}
-                            />
-                        </FormGroup>
-                        <ActionGroup>
-                            <Button
-                                isDisabled={isSubmitting}
-                                type="submit"
-                                variant={pendingDecision.type === "approve" ? "primary" : "danger"}
-                            >
-                                {t(
-                                    pendingDecision.type === "approve"
-                                        ? "accessRequestsConfirmApproval"
-                                        : "accessRequestsConfirmRejection"
+                        <DescriptionList isCompact columnModifier={{ default: "1Col", md: "2Col" }}>
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{resourceTypeLabel(pendingDecision.request.resourceType, t)}</DescriptionListTerm>
+                                <DescriptionListDescription>{pendingDecision.request.entitlementName}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{t("accessRequestsRequester")}</DescriptionListTerm>
+                                <DescriptionListDescription>{requesterName(pendingDecision.request)}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{t("accessRequestsRiskLabel")}</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    <RiskLevelLabel riskLevel={pendingDecision.request.riskLevel} t={t} />
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{t("accessRequestsDuration")}</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    {requestedDurationLabel(
+                                        pendingDecision.request.durationSeconds, pendingDecision.request.permanent, t
+                                    )}
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{t("accessRequestsRequestedAt")}</DescriptionListTerm>
+                                <DescriptionListDescription>
+                                    <time dateTime={pendingDecision.request.requestedAt}>
+                                        {formatDateTime(
+                                            pendingDecision.request.requestedAt,
+                                            i18n.resolvedLanguage ?? i18n.language
+                                        )}
+                                    </time>
+                                </DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{t("accessRequestsJustification")}</DescriptionListTerm>
+                                <DescriptionListDescription>{pendingDecision.request.justification}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                        </DescriptionList>
+                        {requiredAcr ? (
+                            <Alert isInline role="alert" variant="warning" title={t("accessRequestsStepUpTitle")}>
+                                <p>{t("accessRequestsStepUpRequired")}</p>
+                                {pendingDecision.request.resourceType === "GROUP" && (
+                                    <p>{t("accessRequestsPackageApprovalWarning")}</p>
                                 )}
-                            </Button>
+                            </Alert>
+                        ) : pendingDecision.type === "approve" && pendingDecision.request.resourceType === "GROUP" && (
+                            <Alert isInline role="alert" variant="warning" title={t("accessRequestsPackageApprovalWarning")} />
+                        )}
+                        {!requiredAcr && (
+                            <FormGroup fieldId="access-request-decision-comment" label={t("accessRequestsDecisionComment")}>
+                                <TextArea
+                                    aria-label={t("accessRequestsDecisionComment")}
+                                    id="access-request-decision-comment"
+                                    isDisabled={isSubmitting}
+                                    onChange={(_, value) => setComment(value)}
+                                    value={comment}
+                                />
+                            </FormGroup>
+                        )}
+                        <ActionGroup>
+                            {requiredAcr ? (
+                                <Button type="button" variant="primary"
+                                    onClick={() => { void Promise.resolve(onStepUp?.(requiredAcr)).catch(addError); }}>
+                                    {t("accessRequestsVerifyIdentity")}
+                                </Button>
+                            ) : (
+                                <Button
+                                    isDisabled={isSubmitting}
+                                    type="submit"
+                                    variant={pendingDecision.type === "approve" ? "primary" : "danger"}
+                                >
+                                    {t(
+                                        pendingDecision.type === "approve"
+                                            ? "accessRequestsConfirmApproval"
+                                            : "accessRequestsConfirmRejection"
+                                    )}
+                                </Button>
+                            )}
                             <Button isDisabled={isSubmitting} type="button" variant="link" onClick={dismissDialog}>
                                 {t("accessRequestsCancel")}
                             </Button>

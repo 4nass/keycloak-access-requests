@@ -167,6 +167,7 @@ describe("Access Request account console pages", () => {
             "accessRequestsRequestCanceled",
             "accessRequestsRequestDetails",
             "accessRequestsRequestedAt",
+            "accessRequestsRequester",
             "accessRequestsRequestedBy",
             "accessRequestsRequestPending",
             "accessRequestsRequestRejected",
@@ -187,6 +188,7 @@ describe("Access Request account console pages", () => {
             "accessRequestsClearSearch",
             "accessRequestsStatus",
             "accessRequestsStepUpRequired",
+            "accessRequestsStepUpTitle",
             "accessRequestsSubmitRequest",
             "accessRequestsUserUnavailable",
             "accessRequestsVerifyIdentity",
@@ -840,7 +842,10 @@ describe("Access Request account console pages", () => {
 
         await user.click(within(pendingRequest).getByRole("button", { name: "Approve" }));
         const approvalDialog = screen.getByRole("dialog", { name: "Approve Finance Reader" });
-        expect(approvalDialog).toHaveTextContent("Requested duration: 8 hours");
+        expect(within(approvalDialog).getByText("8 hours")).toBeVisible();
+        expect(within(approvalDialog).getByText("Anass Chahbouni")).toBeVisible();
+        expect(within(approvalDialog).getByText("I need to reconcile finance data before closing.")).toBeVisible();
+        expect(within(approvalDialog).getByText("High")).toBeVisible();
         await user.type(within(approvalDialog).getByLabelText("Decision comment"), "Approved for month-end close.");
         await user.click(within(approvalDialog).getByRole("button", { name: "Confirm approval" }));
         expect(approve).toHaveBeenCalledWith({
@@ -954,16 +959,27 @@ describe("Access Request account console pages", () => {
         }));
         const stepUp = vi.fn().mockResolvedValue(undefined);
         renderAccessRequestUi(<ApprovalsPage requests={[{
-            id: "request-approval", requester: "Approver", entitlementName: "Restricted access",
-            resourceType: "CLIENT_ROLE", riskLevel: "HIGH", justification: "Needed",
-            requestedAt: "26 Aug 2026"
+            id: "request-approval", requester: "Anass Chahbouni", entitlementName: "Restricted access",
+            resourceType: "GROUP", riskLevel: "HIGH", justification: "Temporary reporting task",
+            requestedAt: "2026-08-26T10:00:00Z", durationSeconds: 8 * 3600
         }]} onApprove={approve} onReject={vi.fn()} onStepUp={stepUp} />);
 
         await user.click(screen.getByRole("button", { name: "Approve" }));
-        await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm approval" }));
-        expect(await within(screen.getByRole("dialog")).findByRole("button", { name: "Verify identity" }))
+        const dialog = screen.getByRole("dialog", { name: "Approve Restricted access" });
+        await user.click(within(dialog).getByRole("button", { name: "Confirm approval" }));
+        expect(await within(dialog).findByRole("button", { name: "Verify identity" }))
             .toBeVisible();
-        await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Verify identity" }));
+        expect(within(dialog).getAllByRole("alert")).toHaveLength(1);
+        expect(within(dialog).getByRole("alert")).toHaveTextContent(messages.accessRequestsStepUpRequired);
+        expect(within(dialog).getByRole("alert")).toHaveTextContent(messages.accessRequestsPackageApprovalWarning);
+        expect(within(dialog).getByText("Anass Chahbouni")).toBeVisible();
+        expect(within(dialog).getByText("Temporary reporting task")).toBeVisible();
+        expect(within(dialog).getByText("High")).toBeVisible();
+        expect(within(dialog).getByText("8 hours")).toBeVisible();
+        expect(within(dialog).getByText("Access package")).toBeVisible();
+        expect(within(dialog).queryByRole("button", { name: "Confirm approval" })).not.toBeInTheDocument();
+        expect(within(dialog).queryByLabelText("Decision comment")).not.toBeInTheDocument();
+        await user.click(within(dialog).getByRole("button", { name: "Verify identity" }));
 
         expect(stepUp).toHaveBeenCalledWith("strong");
         expect(approve).toHaveBeenCalledTimes(1);
