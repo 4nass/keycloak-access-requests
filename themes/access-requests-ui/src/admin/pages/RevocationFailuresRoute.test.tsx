@@ -17,10 +17,10 @@ describe("RevocationFailuresRoute", () => {
         render(<MemoryRouter initialEntries={["/master/access-requests/revocation-failures"]}>
             <RevocationFailuresRoute />
         </MemoryRouter>);
-        expect(await screen.findByRole("heading", { name: "accessRequestsAdminRevocationFailures" })).toBeVisible();
         await waitFor(() => expect(api.revocationFailures).toHaveBeenCalledWith({
             page: 0, size: 20, state: "OPEN"
         }));
+        expect(screen.getByRole("heading", { name: "accessRequestsAdminRevocationFailures" })).toBeVisible();
     });
 
     it("does not load incidents when the server denies access", async () => {

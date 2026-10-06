@@ -1,9 +1,10 @@
-import { Alert, Button, EmptyState, EmptyStateBody, EmptyStateHeader, PageSection, Spinner } from "@patternfly/react-core";
+import { Alert, Button, EmptyState, EmptyStateBody, EmptyStateHeader, Spinner } from "@patternfly/react-core";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { isEntitlementsAdminAuthorizationError, presentEntitlementsAdminError } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
+import { AccessRequestsAdminPageFrame } from "./AccessRequestsAdminPageFrame";
 
 export function AuthorizedAuditPage({ children }: { children: ReactNode }) {
     const { t } = useTranslation();
@@ -17,7 +18,7 @@ export function AuthorizedAuditPage({ children }: { children: ReactNode }) {
         setAllowed(undefined);
         setError(undefined);
         void api.capabilities().then((capabilities) => {
-            if (active) setAllowed(capabilities.canManageCatalog === true);
+            if (active) setAllowed(capabilities.canViewEvents === true);
         }).catch((failure: unknown) => {
             if (!active) return;
             if (isEntitlementsAdminAuthorizationError(failure)) setAllowed(false);
@@ -30,14 +31,14 @@ export function AuthorizedAuditPage({ children }: { children: ReactNode }) {
     if (error) {
         const presentation = presentEntitlementsAdminError(error);
         const message = t(presentation.messageKey);
-        return <PageSection><Alert isInline variant="danger"
+        return <AccessRequestsAdminPageFrame active="events" titleKey="accessRequestsAdminEvents" descriptionKey="accessRequestsAdminEventsDescription"><Alert isInline variant="danger"
             title={presentation.requestId ? `${message} (${presentation.requestId})` : message}
             actionLinks={<Button variant="link" onClick={() => setRetry((value) => value + 1)}>{t("reload")}</Button>}
-        /></PageSection>;
+        /></AccessRequestsAdminPageFrame>;
     }
-    if (allowed === false) return <PageSection><EmptyState>
-        <EmptyStateHeader headingLevel="h1" titleText={t("accessRequestsAdminErrorForbidden")} />
+    if (allowed === false) return <AccessRequestsAdminPageFrame active="events" titleKey="accessRequestsAdminEvents" descriptionKey="accessRequestsAdminEventsDescription"><EmptyState>
+        <EmptyStateHeader headingLevel="h2" titleText={t("accessRequestsAdminErrorForbidden")} />
         <EmptyStateBody>{t("accessRequestsAdminEventsDescription")}</EmptyStateBody>
-    </EmptyState></PageSection>;
-    return <PageSection><EmptyState><Spinner aria-label={t("loading")} /></EmptyState></PageSection>;
+    </EmptyState></AccessRequestsAdminPageFrame>;
+    return <AccessRequestsAdminPageFrame active="events" titleKey="accessRequestsAdminEvents" descriptionKey="accessRequestsAdminEventsDescription"><EmptyState><Spinner aria-label={t("loading")} /></EmptyState></AccessRequestsAdminPageFrame>;
 }

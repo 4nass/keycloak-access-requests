@@ -4,7 +4,6 @@ import {
     EmptyState,
     EmptyStateBody,
     EmptyStateHeader,
-    PageSection,
     Spinner
 } from "@patternfly/react-core";
 import { useEffect, useState } from "react";
@@ -16,6 +15,7 @@ import {
 } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
 import { FailedProvisioningPage } from "./FailedProvisioningPage";
+import { AccessRequestsAdminPageFrame } from "./AccessRequestsAdminPageFrame";
 
 export function FailedProvisioningRoute() {
     const { t } = useTranslation();
@@ -59,27 +59,27 @@ export function FailedProvisioningRoute() {
         const presentation = presentEntitlementsAdminError(error);
         const message = t(presentation.messageKey);
         return (
-            <PageSection>
+            <AccessRequestsAdminPageFrame active="provisioning" titleKey="accessRequestsAdminFailedProvisioning" descriptionKey="accessRequestsAdminFailedProvisioningDescription">
                 <Alert
                     actionLinks={<Button onClick={() => setRetry((value) => value + 1)} variant="link">{t("reload")}</Button>}
                     isInline
                     title={presentation.requestId ? `${message} (${presentation.requestId})` : message}
                     variant="danger"
                 />
-            </PageSection>
+            </AccessRequestsAdminPageFrame>
         );
     }
 
     if (canManage === false) {
         return (
-            <PageSection>
+            <AccessRequestsAdminPageFrame active="provisioning" titleKey="accessRequestsAdminFailedProvisioning" descriptionKey="accessRequestsAdminFailedProvisioningDescription">
                 <EmptyState>
-                    <EmptyStateHeader headingLevel="h1" titleText={t("accessRequestsAdminErrorForbidden")} />
+                    <EmptyStateHeader headingLevel="h2" titleText={t("accessRequestsAdminErrorForbidden")} />
                     <EmptyStateBody>{t("accessRequestsAdminFailedProvisioningDescription")}</EmptyStateBody>
                 </EmptyState>
-            </PageSection>
+            </AccessRequestsAdminPageFrame>
         );
     }
 
-    return <PageSection><EmptyState><Spinner aria-label={t("loading")} /></EmptyState></PageSection>;
+    return <AccessRequestsAdminPageFrame active="provisioning" titleKey="accessRequestsAdminFailedProvisioning" descriptionKey="accessRequestsAdminFailedProvisioningDescription"><EmptyState><Spinner aria-label={t("loading")} /></EmptyState></AccessRequestsAdminPageFrame>;
 }

@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { durationText } from "./pages/catalogDuration";
 
 const adminSourceDirectory = dirname(fileURLToPath(import.meta.url));
 const messageDirectory = resolve(
@@ -51,6 +52,7 @@ const expectedMessageKeys = [
     "accessRequestsAdminSystemActor",
     "accessRequestsAdminUserUnavailable",
     "accessRequestsAdminCatalogDescription",
+    "accessRequestsAdminLastUpdated",
     "accessRequestsAdminCreated",
     "accessRequestsAdminCreateEntitlement",
     "accessRequestsAdminPackageCreate",
@@ -71,11 +73,21 @@ const expectedMessageKeys = [
     "accessRequestsAdminPackageSelectRole",
     "accessRequestsAdminPackageSelectedRoles",
     "accessRequestsAdminPackageRemoveRole",
+    "accessRequestsAdminPackageEditRoles",
+    "accessRequestsAdminPackageEditRolesDescription",
+    "accessRequestsAdminPackageRolesLocked",
+    "accessRequestsAdminPackageRolesUpdated",
+    "accessRequestsAdminRemoveFromCatalog",
+    "accessRequestsAdminRemoveFromCatalogDescription",
+    "accessRequestsAdminRemovedFromCatalog",
     "accessRequestsAdminGroupAccessWarning",
     "accessRequestsAdminDescription",
     "accessRequestsAdminDefaultDuration",
     "accessRequestsAdminDisplayName",
     "accessRequestsAdminDurationUnit",
+    "accessRequestsAdminDurationUnitSecond",
+    "accessRequestsAdminDurationUnitHour",
+    "accessRequestsAdminDurationUnitDay",
     "accessRequestsAdminDurationUnitSeconds",
     "accessRequestsAdminDurationUnitHours",
     "accessRequestsAdminDurationUnitDays",
@@ -266,6 +278,7 @@ const featureSourcePaths = [
     "main.tsx",
     "pages/EntitlementCatalogPage.tsx",
     "pages/AccessPackageDialog.tsx",
+    "pages/DurationField.tsx",
     "pages/AccessPackageDetails.tsx",
     "pages/KeycloakReferenceSelector.tsx",
     "pages/catalogDuration.ts",
@@ -298,6 +311,27 @@ async function referencedAdminMessageKeys() {
 }
 
 describe("Access Request Admin Console translations", () => {
+    it("spells out duration units and uses singular labels for one unit", () => {
+        expect(messages.accessRequestsAdminDurationUnitDays).toBe("days");
+        expect(messages.accessRequestsAdminDurationUnitHours).toBe("hours");
+        expect(messages.accessRequestsAdminDurationUnitSeconds).toBe("seconds");
+        expect(durationText(3_600, (key) => messages[key])).toBe("1 hour");
+        expect(durationText(172_800, (key) => messages[key])).toBe("2 days");
+        expect(durationText(1, (key) => messages[key])).toBe("1 second");
+        const unitLabels: Record<string, string[]> = {
+            fr: ["secondes", "heures", "jours"],
+            de: ["Sekunden", "Stunden", "Tage"],
+            es: ["segundos", "horas", "días"]
+        };
+        translatedMessages.forEach(([locale, translated]) => {
+            expect([
+                translated.accessRequestsAdminDurationUnitSeconds,
+                translated.accessRequestsAdminDurationUnitHours,
+                translated.accessRequestsAdminDurationUnitDays
+            ]).toEqual(unitLabels[locale]);
+        });
+    });
+
     it("ships the complete, non-empty English message bundle", () => {
         expect(Object.keys(messages).sort()).toEqual(expectedMessageKeys.sort());
         expect(Object.values(messages).every((message) => message.trim().length > 0)).toBe(true);

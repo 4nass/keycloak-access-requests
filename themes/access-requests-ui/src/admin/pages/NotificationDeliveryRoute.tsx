@@ -5,7 +5,6 @@ import {
     EmptyState,
     EmptyStateBody,
     EmptyStateHeader,
-    PageSection,
     Spinner
 } from "@patternfly/react-core";
 import { useEffect, useState } from "react";
@@ -17,6 +16,7 @@ import {
 } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
 import { NotificationDeliveryPage } from "./NotificationDeliveryPage";
+import { AccessRequestsAdminPageFrame } from "./AccessRequestsAdminPageFrame";
 
 /**
  * Keeps the server-owned manager authorization in front of operational controls.
@@ -64,32 +64,35 @@ export function NotificationDeliveryRoute() {
         const presentation = presentEntitlementsAdminError(error);
         const message = t(presentation.messageKey);
         return (
-            <PageSection>
+            <AccessRequestsAdminPageFrame active="notifications" titleKey="accessRequestsAdminNotificationDelivery"
+                descriptionKey="accessRequestsAdminNotificationDeliveryDescription">
                 <Alert
-                    actionClose={<Button aria-label={t("close")} onClick={() => setError(undefined)} variant={ButtonVariant.plain} />}
+                    actionClose={<Button aria-label={t("close")} onClick={() => setRetry((value) => value + 1)} variant={ButtonVariant.plain} />}
                     actionLinks={<Button onClick={() => setRetry((value) => value + 1)} variant="link">{t("reload")}</Button>}
                     isInline
                     title={presentation.requestId ? `${message} (${presentation.requestId})` : message}
                     variant="danger"
                 />
-            </PageSection>
+            </AccessRequestsAdminPageFrame>
         );
     }
 
     if (canManage === false) {
         return (
-            <PageSection>
+            <AccessRequestsAdminPageFrame active="notifications" titleKey="accessRequestsAdminNotificationDelivery"
+                descriptionKey="accessRequestsAdminNotificationDeliveryDescription">
                 <EmptyState>
-                    <EmptyStateHeader headingLevel="h1" titleText={t("accessRequestsAdminErrorForbidden")} />
+                    <EmptyStateHeader headingLevel="h2" titleText={t("accessRequestsAdminErrorForbidden")} />
                     <EmptyStateBody>{t("accessRequestsAdminNotificationDeliveryDescription")}</EmptyStateBody>
                 </EmptyState>
-            </PageSection>
+            </AccessRequestsAdminPageFrame>
         );
     }
 
     return (
-        <PageSection>
+        <AccessRequestsAdminPageFrame active="notifications" titleKey="accessRequestsAdminNotificationDelivery"
+            descriptionKey="accessRequestsAdminNotificationDeliveryDescription">
             <EmptyState><Spinner aria-label={t("loading")} /></EmptyState>
-        </PageSection>
+        </AccessRequestsAdminPageFrame>
     );
 }

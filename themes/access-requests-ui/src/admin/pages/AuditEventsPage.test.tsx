@@ -28,7 +28,7 @@ describe("Access request audit page", () => {
         api.revokeGrant.mockReset();
         api.auditEvents.mockReset().mockResolvedValue({ items: [event], page: 0, size: 20, total: 1 });
         api.auditUsers.mockReset().mockResolvedValue({ items: [] });
-        api.capabilities.mockReset().mockResolvedValue({ canManageCatalog: true });
+        api.capabilities.mockReset().mockResolvedValue({ canViewEvents: true });
     });
 
     it("filters, paginates and links to the realm-scoped request detail", async () => {
@@ -193,8 +193,8 @@ describe("Access request audit page", () => {
         expect(screen.queryByText("secret backend failure")).not.toBeInTheDocument();
     });
 
-    it("does not fetch history when the server denies catalog management", async () => {
-        api.capabilities.mockResolvedValue({ canManageCatalog: false });
+    it("does not fetch history when the server denies event access", async () => {
+        api.capabilities.mockResolvedValue({ canViewEvents: false });
         renderPage(<AuditEventsRoute />);
 
         expect(await screen.findByRole("heading", { name: "accessRequestsAdminErrorForbidden" })).toBeVisible();
@@ -204,7 +204,7 @@ describe("Access request audit page", () => {
 
 describe("Administrative request detail", () => {
     beforeEach(() => {
-        api.capabilities.mockReset().mockResolvedValue({ canManageCatalog: true });
+        api.capabilities.mockReset().mockResolvedValue({ canViewEvents: true });
     });
 
     it("renders request history without raw event metadata", async () => {

@@ -179,13 +179,15 @@ export function RevocationFailuresPage() {
                                     <Title headingLevel="h3" id={titleId} size="md">{item.entitlementName
                                         ?? item.resourceName ?? t("accessRequestsAdminNotAvailable")}</Title>
                                     <Link to={`${requestDetailsBase}/${encodeURIComponent(item.requestId)}`}>
-                                        {t("accessRequestsAdminEventsViewRequest")}: {item.requestId}
+                                        {t("accessRequestsAdminEventsViewRequest")}
                                     </Link>
                                 </DataListCell>,
                                 <DataListCell key="details" width={3}><DescriptionList isCompact isHorizontal>
                                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningRequester")}</DescriptionListTerm>
                                         <DescriptionListDescription>{item.requesterName
                                             ?? t("accessRequestsAdminUserUnavailable")}</DescriptionListDescription></DescriptionListGroup>
+                                    <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminEventsRequest")}</DescriptionListTerm>
+                                        <DescriptionListDescription><Text component="small">{item.requestId}</Text></DescriptionListDescription></DescriptionListGroup>
                                     <DescriptionListGroup><DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningEntitlement")}</DescriptionListTerm>
                                         <DescriptionListDescription>{item.entitlementName
                                             ?? t("accessRequestsAdminNotAvailable")}</DescriptionListDescription></DescriptionListGroup>
@@ -243,7 +245,8 @@ export function RevocationFailuresPage() {
             ]}>
             {retryMessage && <Alert isInline variant="danger" title={retryMessage} />}
             <Alert isInline variant="warning" title={t("accessRequestsAdminRevocationRetryWarning")} />
-            <TextContent><Text component="small">{retryTarget.requestId}</Text></TextContent>
+            <TextContent><Text component="p">{retryTarget.entitlementName ?? retryTarget.resourceName ?? t("accessRequestsAdminNotAvailable")} — {retryTarget.requesterName ?? t("accessRequestsAdminUserUnavailable")}</Text>
+                <Text component="small">{t("accessRequestsAdminEventsRequest")}: {retryTarget.requestId}</Text></TextContent>
         </Modal>}
         {resolveTarget && <Modal isOpen variant={ModalVariant.small}
             title={t("accessRequestsAdminRevocationConfirmRemoved")}

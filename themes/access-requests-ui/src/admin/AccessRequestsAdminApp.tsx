@@ -16,10 +16,12 @@ import {
     Spinner
 } from "@patternfly/react-core";
 import { Suspense, type PropsWithChildren, useEffect } from "react";
-import { Outlet, useMatches } from "react-router-dom";
+import { Outlet, useLocation, useMatches } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import { AccessRequestsAdminPageNav } from "./AccessRequestsAdminPageNav";
+import { AccessRequestsAdminPageFrame } from "./pages/AccessRequestsAdminPageFrame";
+import type { AdminTab } from "./pages/AccessRequestsAdminTabs";
 
 type RouteAccess = Parameters<ReturnType<typeof useAccess>["hasAccess"]>[number];
 const MAIN_PAGE_CONTENT_ID = "kc-main-content-page-container";
@@ -27,6 +29,16 @@ const MAIN_PAGE_CONTENT_ID = "kc-main-content-page-container";
 type RouteHandle = {
     access: RouteAccess | RouteAccess[];
 };
+
+const accessRequestPages: { path: string; active: AdminTab; titleKey: string; descriptionKey: string }[] = [
+    { path: "/assurance-policy", active: "assurance", titleKey: "accessRequestsAdminAssurancePolicy", descriptionKey: "accessRequestsAdminAssuranceDescription" },
+    { path: "/notification-deliveries", active: "notifications", titleKey: "accessRequestsAdminNotificationDelivery", descriptionKey: "accessRequestsAdminNotificationDeliveryDescription" },
+    { path: "/provisioning-failures", active: "provisioning", titleKey: "accessRequestsAdminFailedProvisioning", descriptionKey: "accessRequestsAdminFailedProvisioningDescription" },
+    { path: "/revocation-failures", active: "revocations", titleKey: "accessRequestsAdminRevocationFailures", descriptionKey: "accessRequestsAdminRevocationFailuresDescription" },
+    { path: "/events", active: "events", titleKey: "accessRequestsAdminEvents", descriptionKey: "accessRequestsAdminEventsDescription" },
+    { path: "/requests/", active: "events", titleKey: "accessRequestsAdminEvents", descriptionKey: "accessRequestsAdminEventsDescription" },
+    { path: "", active: "catalog", titleKey: "accessRequestsAdminCatalogTab", descriptionKey: "accessRequestsAdminCatalogDescription" }
+];
 
 /**
  * Owns the Admin Console shell so Access requests navigation stays within the supported React theme API.
@@ -81,6 +93,17 @@ function TemporaryAdminBanner() {
 
 function AdminLoading() {
     const { t } = useTranslation();
+    const { pathname } = useLocation();
+    const marker = "/access-requests";
+    const index = pathname.indexOf(marker);
+    if (index >= 0) {
+        const suffix = pathname.slice(index + marker.length);
+        const page = accessRequestPages.find(({ path }) => suffix.startsWith(path));
+        if (page) {
+            return <AccessRequestsAdminPageFrame active={page.active} titleKey={page.titleKey}
+                descriptionKey={page.descriptionKey}><Spinner aria-label={t("loading")} /></AccessRequestsAdminPageFrame>;
+        }
+    }
 
     return (
         <PageSection>

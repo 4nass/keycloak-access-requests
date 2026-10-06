@@ -322,7 +322,8 @@ export function FailedProvisioningPage() {
                     <Alert className="pf-v5-u-mb-lg" isInline title={t(failureCodeKey(retryTarget.failureCode))} variant="warning" />
                     <TextContent>
                         <Text component="p">{t("accessRequestsAdminFailedProvisioningRetryDescription")}</Text>
-                        <Text component="small">{retryTarget.id}</Text>
+                        <Text component="p">{retryTarget.entitlementName ?? retryTarget.resourceName} — {retryTarget.requesterName ?? t("accessRequestsAdminUserUnavailable")}</Text>
+                        <Text component="small">{t("accessRequestsAdminEventsRequest")}: {retryTarget.id}</Text>
                     </TextContent>
                 </Modal>
             )}
@@ -350,7 +351,8 @@ export function FailedProvisioningPage() {
                     {closeMessage && <Alert className="pf-v5-u-mb-lg" isInline title={closeMessage} variant="danger" />}
                     <TextContent>
                         <Text component="p">{t("accessRequestsAdminFailedProvisioningCloseDescription")}</Text>
-                        <Text component="small">{closeTarget.id}</Text>
+                        <Text component="p">{closeTarget.entitlementName ?? closeTarget.resourceName} — {closeTarget.requesterName ?? t("accessRequestsAdminUserUnavailable")}</Text>
+                        <Text component="small">{t("accessRequestsAdminEventsRequest")}: {closeTarget.id}</Text>
                     </TextContent>
                     <Form className="pf-v5-u-mt-md" onSubmit={(event) => { event.preventDefault(); void closeFailure(); }}>
                         <FormGroup
@@ -392,13 +394,16 @@ function FailedProvisioningItem({
                 <DataListItemCells dataListCells={[
                     <DataListCell key="resource" width={3}>
                         <Title headingLevel="h3" id={titleId} size="md">{request.resourceName}</Title>
-                        <Text component="small">{request.id}</Text>
                     </DataListCell>,
                     <DataListCell key="metadata" width={3}>
                         <DescriptionList isCompact isHorizontal>
                             <DescriptionListGroup>
                                 <DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningRequester")}</DescriptionListTerm>
                                 <DescriptionListDescription>{request.requesterName ?? t("accessRequestsAdminUserUnavailable")}</DescriptionListDescription>
+                            </DescriptionListGroup>
+                            <DescriptionListGroup>
+                                <DescriptionListTerm>{t("accessRequestsAdminEventsRequest")}</DescriptionListTerm>
+                                <DescriptionListDescription><Text component="small">{request.id}</Text></DescriptionListDescription>
                             </DescriptionListGroup>
                             <DescriptionListGroup>
                                 <DescriptionListTerm>{t("accessRequestsAdminFailedProvisioningEntitlement")}</DescriptionListTerm>
@@ -414,7 +419,7 @@ function FailedProvisioningItem({
                                 <DescriptionListDescription>{t(resourceTypeKey(request.resourceType))}</DescriptionListDescription>
                             </DescriptionListGroup>
                             <DescriptionListGroup>
-                                <DescriptionListTerm>{t("accessRequestsAdminUpdated")}</DescriptionListTerm>
+                                <DescriptionListTerm>{t("accessRequestsAdminLastUpdated")}</DescriptionListTerm>
                                 <DescriptionListDescription>{formatDate(request.updatedAt, i18n.language, t)}</DescriptionListDescription>
                             </DescriptionListGroup>
                             <DescriptionListGroup>

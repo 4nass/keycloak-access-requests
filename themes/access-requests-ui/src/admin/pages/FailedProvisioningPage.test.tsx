@@ -43,6 +43,8 @@ await i18n.init({
                 accessRequestsAdminFailedProvisioningEmpty: "No failed provisioning requests.",
                 accessRequestsAdminFailedProvisioningEntitlement: "Entitlement",
                 accessRequestsAdminFailedProvisioningRequester: "Requester",
+                accessRequestsAdminEventsRequest: "Request ID",
+                accessRequestsAdminLastUpdated: "Last updated",
                 accessRequestsAdminFailedProvisioningResource: "Resource",
                 accessRequestsAdminFailedProvisioningRetry: "Retry provisioning",
                 accessRequestsAdminFailedProvisioningRetryDescription: "Retry granting the approved entitlement.",
@@ -123,6 +125,9 @@ describe("FailedProvisioningPage", () => {
         expect(screen.getByText("Alex Reader")).toBeInTheDocument();
         expect(screen.getByText("Finance Reader access")).toBeInTheDocument();
         expect(screen.getByText("request-1")).toBeInTheDocument();
+        expect(screen.getByText("Request ID")).toBeVisible();
+        expect(screen.getByText("Last updated")).toBeVisible();
+        expect(screen.queryByText("Access policy updated.")).not.toBeInTheDocument();
         expect(screen.getByLabelText("Status")).toHaveValue("OPEN");
         expect(screen.getByText("Open")).toBeInTheDocument();
         expect(screen.queryByRole("tab", { name: "Closed failures" })).not.toBeInTheDocument();
@@ -139,6 +144,8 @@ describe("FailedProvisioningPage", () => {
 
         const dialog = await screen.findByRole("dialog", { name: "Retry provisioning" });
         expect(within(dialog).getByText("The original resource is missing.")).toBeInTheDocument();
+        expect(within(dialog).getByText("Finance Reader access — Alex Reader")).toBeVisible();
+        expect(within(dialog).getByText("Request ID: request-1")).toBeVisible();
         expect(within(dialog).queryByText(/internal detail|stack trace/i)).not.toBeInTheDocument();
     });
 

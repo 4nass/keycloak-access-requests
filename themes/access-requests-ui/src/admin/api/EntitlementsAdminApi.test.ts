@@ -182,13 +182,17 @@ describe("Entitlements administration API client", () => {
         const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
             canManageCatalog: true,
             canManageNotifications: true,
-            canManageProvisioningFailures: true
+            canManageProvisioningFailures: true,
+            canManageAssurancePolicy: true,
+            canViewEvents: true
         }));
 
         await expect(createApi(fetchMock).capabilities()).resolves.toEqual({
             canManageCatalog: true,
             canManageNotifications: true,
-            canManageProvisioningFailures: true
+            canManageProvisioningFailures: true,
+            canManageAssurancePolicy: true,
+            canViewEvents: true
         });
         expect(request(fetchMock)).toEqual({
             url: "https://keycloak.example/realms/finance/access-requests/admin/capabilities",
@@ -256,6 +260,27 @@ describe("Entitlements administration API client", () => {
 
         const forbidden = createApi(vi.fn().mockResolvedValue(jsonResponse({ code: "FORBIDDEN" }, 403)));
         await expect(forbidden.getAccessPackage("group-1")).rejects.toMatchObject({ status: 403 });
+    });
+
+    it("replaces package roles with a version check and deactivates an entitlement without a request body", async () => {
+        const roles = [{ type: "CLIENT_ROLE" as const, roleId: "role-2" }];
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(jsonResponse({ roleMappings: roles }))
+            .mockResolvedValueOnce(new Response(null, { status: 204 }));
+        const api = createApi(fetchMock);
+
+        await expect(api.updateAccessPackageRoles("package/1", 4, roles)).resolves.toMatchObject({ roleMappings: roles });
+        expect(fetchMock.mock.calls[0][0]).toBe(
+            "https://keycloak.example/realms/finance/access-requests/admin/access-packages/package%2F1"
+        );
+        expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({
+            method: "PUT", body: JSON.stringify({ roleMappings: roles, version: 4 })
+        }));
+        await expect(api.deactivate("package/1")).resolves.toBeUndefined();
+        expect(fetchMock.mock.calls[1][0]).toBe(
+            "https://keycloak.example/realms/finance/access-requests/admin/entitlements/package%2F1"
+        );
+        expect(fetchMock.mock.calls[1][1]).toEqual(expect.objectContaining({ method: "DELETE" }));
     });
 
     it("loads failed notification deliveries and their operational summary", async () => {
@@ -419,7 +444,7 @@ describe("Entitlements administration API client", () => {
         });
     });
 
-    it("loads Keycloak-managed references through the delegated catalog API", async () => {
+    it("loads Keycloak-managed references through the administrative read API", async () => {
         const reference = {
             description: "Reviews finance access requests",
             id: "role-finance-approvers",

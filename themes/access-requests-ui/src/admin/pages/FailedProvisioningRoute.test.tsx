@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
@@ -23,9 +24,9 @@ describe("FailedProvisioningRoute", () => {
     it("renders the operational page only after the server grants its capability", async () => {
         render(<FailedProvisioningRoute />);
 
-        expect(await screen.findByRole("heading", { name: "accessRequestsAdminFailedProvisioning" })).toBeVisible();
-        expect(api.capabilities).toHaveBeenCalledOnce();
         await waitFor(() => expect(api.failedProvisioningRequests).toHaveBeenCalledWith({ page: 0, size: 20, state: "OPEN" }));
+        expect(screen.getByRole("heading", { name: "accessRequestsAdminFailedProvisioning" })).toBeVisible();
+        expect(api.capabilities).toHaveBeenCalledOnce();
     });
 
     it("fails closed when the server denies provisioning-failure management", async () => {
@@ -34,6 +35,22 @@ describe("FailedProvisioningRoute", () => {
         render(<FailedProvisioningRoute />);
 
         expect(await screen.findByRole("heading", { name: "accessRequestsAdminErrorForbidden" })).toBeVisible();
+        expect(api.failedProvisioningRequests).not.toHaveBeenCalled();
+    });
+
+    it("keeps the native heading and a non-actionable tab during capability loading and denial", async () => {
+        let finish!: (value: { canManageProvisioningFailures: boolean }) => void;
+        api.capabilities.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+        render(<MemoryRouter initialEntries={["/master/access-requests/provisioning-failures"]}>
+            <FailedProvisioningRoute />
+        </MemoryRouter>);
+
+        expect(screen.getByRole("heading", { level: 1, name: "accessRequestsAdminFailedProvisioning" })).toBeVisible();
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminFailedProvisioning" })).toBeDisabled();
+        await act(async () => finish({ canManageProvisioningFailures: false }));
+        expect(await screen.findByRole("heading", { name: "accessRequestsAdminErrorForbidden" })).toBeVisible();
+        expect(screen.getByRole("heading", { level: 1, name: "accessRequestsAdminFailedProvisioning" })).toBeVisible();
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminFailedProvisioning" })).toBeDisabled();
         expect(api.failedProvisioningRequests).not.toHaveBeenCalled();
     });
 

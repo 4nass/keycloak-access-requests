@@ -44,6 +44,7 @@ export function AccessRequestsAdminPageNav() {
     const navigate = useNavigate();
     const [capabilities, setCapabilities] = useState({
         canManageCatalog: false,
+        canViewEvents: false,
         canManageNotifications: false,
         canManageProvisioningFailures: false
     });
@@ -61,6 +62,7 @@ export function AccessRequestsAdminPageNav() {
                 if (active) {
                     setCapabilities({
                         canManageCatalog: false,
+                        canViewEvents: false,
                         canManageNotifications: false,
                         canManageProvisioningFailures: false
                     });
@@ -119,7 +121,7 @@ export function AccessRequestsAdminPageNav() {
                             <KeycloakNavItem path="/events" title={t("events")} />
                         </NavGroup>
                     )}
-                    {(showConfigure || capabilities.canManageCatalog || capabilities.canManageNotifications
+                    {(showConfigure || capabilities.canManageCatalog || capabilities.canViewEvents || capabilities.canManageNotifications
                         || capabilities.canManageProvisioningFailures) && (
                         <NavGroup aria-label={t("configure")} title={t("configure")}>
                             {showConfigure && (
@@ -134,13 +136,15 @@ export function AccessRequestsAdminPageNav() {
                                     {showWorkflows && <KeycloakNavItem path="/workflows" title={t("workflows")} />}
                                 </>
                             )}
-                            {(capabilities.canManageCatalog || capabilities.canManageNotifications
+                            {(capabilities.canManageCatalog || capabilities.canViewEvents || capabilities.canManageNotifications
                                 || capabilities.canManageProvisioningFailures) && (
                                 <AccessRequestsNavItem path={capabilities.canManageCatalog
                                     ? "/access-requests"
                                     : capabilities.canManageNotifications
                                         ? "/access-requests/notification-deliveries"
-                                        : "/access-requests/provisioning-failures"} />
+                                        : capabilities.canManageProvisioningFailures
+                                            ? "/access-requests/provisioning-failures"
+                                            : "/access-requests/events"} />
                             )}
                         </NavGroup>
                     )}

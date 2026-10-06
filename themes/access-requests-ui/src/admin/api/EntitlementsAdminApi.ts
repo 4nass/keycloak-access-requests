@@ -125,11 +125,13 @@ export type AccessPackageDetails = {
     groupName: string;
     groupExists: boolean;
     configurationValid: boolean;
+    roleEditingAllowed: boolean;
     roleMappings: (AccessPackageRole & { name: string | null; missing: boolean })[];
 };
 
 export type AdminCapabilities = {
     canManageCatalog: boolean;
+    canViewEvents: boolean;
     canManageNotifications: boolean;
     canManageProvisioningFailures: boolean;
     canManageAssurancePolicy?: boolean;
@@ -293,7 +295,9 @@ export type EntitlementsAdminApi = {
     create(submission: EntitlementCreation): Promise<Entitlement>;
     createAccessPackage(submission: AccessPackageCreation): Promise<Entitlement>;
     getAccessPackage(packageId: string): Promise<AccessPackageDetails | null>;
+    updateAccessPackageRoles(packageId: string, version: number, roleMappings: AccessPackageRole[]): Promise<AccessPackageDetails>;
     update(id: string, submission: EntitlementUpdate): Promise<Entitlement>;
+    deactivate(id: string): Promise<void>;
     retryNotificationDelivery(id: string): Promise<void>;
 };
 
@@ -436,7 +440,12 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
                 throw error;
             }
         },
+        updateAccessPackageRoles: (id, version, roleMappings) => request(
+            `/admin/access-packages/${encodeURIComponent(id)}`,
+            json("PUT", { roleMappings, version })
+        ),
         update: (id, submission) => request(`/admin/entitlements/${encodeURIComponent(id)}`, json("PUT", submission)),
+        deactivate: (id) => request(`/admin/entitlements/${encodeURIComponent(id)}`, { method: "DELETE" }),
         retryNotificationDelivery: (id) => request(
             `/admin/notification-deliveries/${encodeURIComponent(id)}/retry`,
             { method: "POST" }

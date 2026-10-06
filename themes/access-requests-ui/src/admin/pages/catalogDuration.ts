@@ -36,9 +36,9 @@ export function durationSeconds(amount: string, unit: DurationUnit): number | un
 export function durationText(seconds: number, t: (key: string) => string): string {
     const input = durationInput(seconds);
     const unitKey = {
-        SECONDS: "accessRequestsAdminDurationUnitSeconds",
-        HOURS: "accessRequestsAdminDurationUnitHours",
-        DAYS: "accessRequestsAdminDurationUnitDays"
+        SECONDS: input.amount === "1" ? "accessRequestsAdminDurationUnitSecond" : "accessRequestsAdminDurationUnitSeconds",
+        HOURS: input.amount === "1" ? "accessRequestsAdminDurationUnitHour" : "accessRequestsAdminDurationUnitHours",
+        DAYS: input.amount === "1" ? "accessRequestsAdminDurationUnitDay" : "accessRequestsAdminDurationUnitDays"
     }[input.unit];
     return `${input.amount} ${t(unitKey)}`;
 }

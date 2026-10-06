@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -28,7 +28,7 @@ describe("Access requests Admin tabs", () => {
 
     it("shows realm-scoped tabs, including policy settings only for realm admins", async () => {
         api.capabilities.mockResolvedValue({
-            canManageCatalog: true, canManageNotifications: true, canManageProvisioningFailures: true,
+            canManageCatalog: true, canViewEvents: true, canManageNotifications: true, canManageProvisioningFailures: true,
             canManageAssurancePolicy: true
         });
         renderTabs("events");
@@ -57,21 +57,22 @@ describe("Access requests Admin tabs", () => {
 
     it("hides tabs the server has not authorized", async () => {
         api.capabilities.mockResolvedValue({
-            canManageCatalog: false, canManageNotifications: false, canManageProvisioningFailures: true
+            canManageCatalog: false, canViewEvents: true, canManageNotifications: false, canManageProvisioningFailures: true
         });
         renderTabs("provisioning");
 
-        expect(await screen.findByRole("tab", { name: "accessRequestsAdminFailedProvisioning" })).toBeVisible();
+        await waitFor(() => expect(screen.getByRole("tab", { name: "accessRequestsAdminFailedProvisioning" })).not.toHaveAttribute("aria-disabled", "true"));
         expect(screen.queryByRole("tab", { name: "accessRequestsAdminCatalogTab" })).not.toBeInTheDocument();
-        expect(screen.queryByRole("tab", { name: "accessRequestsAdminEvents" })).not.toBeInTheDocument();
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminEvents" })).toBeVisible();
         expect(screen.queryByRole("tab", { name: "accessRequestsAdminNotificationDelivery" })).not.toBeInTheDocument();
         expect(screen.getByRole("tab", { name: "accessRequestsAdminRevocationFailures" })).toBeVisible();
     });
 
-    it("fails closed when capability lookup fails", async () => {
+    it("keeps only the current tab visible and disabled when capability lookup fails", async () => {
         api.capabilities.mockRejectedValue(new Error("unavailable"));
         renderTabs("events");
         expect(await screen.findByText("/master/access-requests/events")).toBeVisible();
-        expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminEvents" })).toHaveAttribute("aria-disabled", "true");
+        expect(screen.getAllByRole("tab")).toHaveLength(1);
     });
 });

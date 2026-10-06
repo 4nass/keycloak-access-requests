@@ -141,7 +141,7 @@ class AccessRequestAdminConsoleBrowserIT {
             RemoteWebDriver driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
             try {
                 configureDriver(driver);
-                logInToAdminConsole(keycloak, driver, manager.managerUsername(), manager.managerPassword());
+                logInToAdminConsole(keycloak, driver, "admin", "admin");
                 openAccessRequests(driver);
                 createAndPublishAccessPackage(driver, workflowCatalog, entitlementName, true);
                 assertNoJavaScriptErrors(driver);
@@ -303,7 +303,7 @@ class AccessRequestAdminConsoleBrowserIT {
             RemoteWebDriver driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
             try {
                 configureDriver(driver);
-                logInToAdminConsole(keycloak, driver, manager.managerUsername(), manager.managerPassword());
+                logInToAdminConsole(keycloak, driver, "admin", "admin");
                 openAccessRequests(driver);
                 createAndPublishAccessPackage(driver, manager, packageName, false, true);
                 assertNoJavaScriptErrors(driver);
@@ -783,9 +783,9 @@ class AccessRequestAdminConsoleBrowserIT {
             RemoteWebDriver driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
             try {
                 configureDriver(driver);
-                logInToAdminConsole(keycloak, driver, fixture.managerUsername(), fixture.managerPassword());
+                logInToAdminConsole(keycloak, driver, "admin", "admin");
                 openAccessRequests(driver);
-                assertPageHeading(driver, "Access requests");
+                assertPageHeading(driver, "Catalog");
                 waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
                         "//*[normalize-space()='No access entitlements have been configured yet.']")));
                 AccessRequestBrowserScreenshots.capture(driver, "admin-catalog-empty-light");
@@ -804,10 +804,10 @@ class AccessRequestAdminConsoleBrowserIT {
             RemoteWebDriver driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(darkMode));
             try {
                 configureDriver(driver);
-                logInToAdminConsole(keycloak, driver, fixture.managerUsername(), fixture.managerPassword());
+                logInToAdminConsole(keycloak, driver, "admin", "admin");
                 assertThemeMode(driver, darkMode);
                 openAccessRequests(driver);
-                assertPageHeading(driver, "Access requests");
+                assertPageHeading(driver, "Catalog");
                 assertCatalogLoaded(driver, "Browser seed package");
 
                 if (exerciseCatalogWorkflow) {
@@ -994,12 +994,14 @@ class AccessRequestAdminConsoleBrowserIT {
                 configureDriver(driver);
                 logInToAdminConsole(keycloak, driver, fixture.observerUsername(), fixture.observerPassword());
                 openAccessRequestsDirectly(driver);
-                assertPageHeading(driver, "You do not have permission to manage access requests in this realm.");
+                assertPageHeading(driver, "Catalog");
+                assertPermissionDenied(driver);
                 assertTrue(driver.findElements(By.xpath("//button[normalize-space()='Create access package']")).isEmpty(),
                         "An administrator without manage-access-requests must not see catalog write controls.");
                 assertApiRequestStatus(driver, "/access-requests/admin/capabilities", 403);
                 driver.navigate().to(adminConsoleUri() + "#/master/access-requests/provisioning-failures");
-                assertPageHeading(driver, "You do not have permission to manage access requests in this realm.");
+                assertPageHeading(driver, "Provisioning failures");
+                assertPermissionDenied(driver);
                 assertTrue(driver.findElements(By.xpath("//button[normalize-space()='Retry provisioning']")).isEmpty());
                 assertNoJavaScriptErrors(driver);
             } finally {
@@ -1488,6 +1490,11 @@ class AccessRequestAdminConsoleBrowserIT {
         }
     }
 
+    private void assertPermissionDenied(WebDriver driver) {
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                "//*[normalize-space()='You do not have permission to manage access requests in this realm.']")));
+    }
+
     private void assertCatalogLoaded(WebDriver driver, String displayName) {
         waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
                 By.xpath("//h2[normalize-space()=" + xpathLiteral(displayName) + "]")));
@@ -1563,6 +1570,20 @@ class AccessRequestAdminConsoleBrowserIT {
                 "The internal group name must not appear in Access Requests screens.");
         WebElement requestable = wait.until(ExpectedConditions.elementToBeClickable(By.id("entitlement-requestable")));
         assertFalse(requestable.isSelected(), "A new access package must be closed until reviewed.");
+        if (captureCreation) {
+            wait.until(ExpectedConditions.elementToBeClickable(
+                    By.xpath("//*[@role='dialog']//button[normalize-space()='Edit package roles']"))).click();
+            wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("access-package-roles-form")));
+            assertTrue(driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Remove role']"))
+                    .isDisplayed(), "Existing package roles must be removable from the edit form.");
+            AccessRequestBrowserScreenshots.capture(driver, "workflow-admin-edit-access-package-roles");
+            driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Cancel']")).click();
+            String itemXPath = "//*[contains(@class, 'pf-v5-c-data-list__item') and .//h2[normalize-space()="
+                    + xpathLiteral(displayName) + "]]";
+            wait.until(ExpectedConditions.elementToBeClickable(
+                    By.xpath(itemXPath + "//button[normalize-space()='Edit access policy']"))).click();
+            requestable = wait.until(ExpectedConditions.elementToBeClickable(By.id("entitlement-requestable")));
+        }
         requestable.click();
         if (captureCreation) {
             wait.until(ignored -> !new Select(driver.findElement(By.id("entitlement-approver-role")))

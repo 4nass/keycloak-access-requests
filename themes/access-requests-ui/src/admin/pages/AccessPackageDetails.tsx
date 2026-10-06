@@ -1,5 +1,5 @@
 import {
-    Alert, DataList, DataListCell, DataListItem, DataListItemCells, DataListItemRow,
+    Alert, Button, DataList, DataListCell, DataListItem, DataListItemCells, DataListItemRow,
     Label, Spinner, Title
 } from "@patternfly/react-core";
 import { useEffect, useState } from "react";
@@ -11,9 +11,10 @@ import {
     type AccessPackageDetails as Details
 } from "../api/EntitlementsAdminApi";
 
-export function AccessPackageDetails({ api, entitlementId, onValidityChange }: {
+export function AccessPackageDetails({ api, entitlementId, onEditRoles, onValidityChange }: {
     api: EntitlementsAdminApi;
     entitlementId: string;
+    onEditRoles?: (details: Details) => void;
     onValidityChange: (valid: boolean | undefined) => void;
 }) {
     const { t } = useTranslation();
@@ -61,6 +62,12 @@ export function AccessPackageDetails({ api, entitlementId, onValidityChange }: {
         <Title headingLevel="h4" size="md" className="pf-v5-u-mt-md">
             {t("accessRequestsAdminPackageRoles")}
         </Title>
+        {onEditRoles && (details.roleEditingAllowed
+            ? <Button variant="secondary" className="pf-v5-u-my-sm" onClick={() => onEditRoles(details)}>
+                {t("accessRequestsAdminPackageEditRoles")}
+            </Button>
+            : <Alert isInline variant="info" className="pf-v5-u-my-sm"
+                title={t("accessRequestsAdminPackageRolesLocked")} />)}
         <DataList aria-label={t("accessRequestsAdminPackageRoles")}>
             {details.roleMappings.map((role) => <DataListItem key={`${role.type}:${role.roleId}`}>
                 <DataListItemRow>

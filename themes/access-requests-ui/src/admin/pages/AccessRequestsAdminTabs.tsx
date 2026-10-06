@@ -6,7 +6,7 @@ import { useInRouterContext, useLocation, useNavigate } from "react-router-dom";
 import type { AdminCapabilities } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
 
-type AdminTab = "catalog" | "assurance" | "events" | "notifications" | "provisioning" | "revocations";
+export type AdminTab = "catalog" | "assurance" | "events" | "notifications" | "provisioning" | "revocations";
 
 export function AccessRequestsAdminTabs({ active }: { active: AdminTab }) {
     // The catalog is also rendered in isolated component tests without a router.
@@ -42,7 +42,19 @@ function RoutedTabs({ active }: { active: AdminTab }) {
         revocations: `${base}/revocation-failures`
     };
 
-    if (!capabilities) return null;
+    if (!capabilities || !Object.values(capabilities).some(Boolean)) {
+        const activeTitle = {
+            catalog: "accessRequestsAdminCatalogTab",
+            assurance: "accessRequestsAdminAssurancePolicy",
+            events: "accessRequestsAdminEvents",
+            notifications: "accessRequestsAdminNotificationDelivery",
+            provisioning: "accessRequestsAdminFailedProvisioning",
+            revocations: "accessRequestsAdminRevocationFailures"
+        }[active];
+        return <Tabs activeKey={active} aria-label={t("accessRequestsAdminCatalog")} component="nav">
+            <Tab eventKey={active} isDisabled title={<TabTitleText>{t(activeTitle)}</TabTitleText>} />
+        </Tabs>;
+    }
 
     return (
         <Tabs
@@ -64,7 +76,7 @@ function RoutedTabs({ active }: { active: AdminTab }) {
                 title={<TabTitleText>{t("accessRequestsAdminFailedProvisioning")}</TabTitleText>} />}
             {capabilities.canManageProvisioningFailures && <Tab eventKey="revocations" href={paths.revocations}
                 title={<TabTitleText>{t("accessRequestsAdminRevocationFailures")}</TabTitleText>} />}
-            {capabilities.canManageCatalog && <Tab eventKey="events" href={paths.events}
+            {capabilities.canViewEvents && <Tab eventKey="events" href={paths.events}
                 title={<TabTitleText>{t("accessRequestsAdminEvents")}</TabTitleText>} />}
         </Tabs>
     );

@@ -44,6 +44,7 @@ await i18n.init({ initImmediate: false, lng: "en", resources: { en: { translatio
     accessRequestsAdminRevocationManualRetryOnly: "Manual retry only",
     accessRequestsAdminRevocationResolvedAt: "Resolved at",
     accessRequestsAdminEventsViewRequest: "View request",
+    accessRequestsAdminEventsRequest: "Request ID",
     accessRequestsAdminRevocationOpenEmpty: "No open failures.",
     accessRequestsAdminRevocationResolvedEmpty: "No resolved failures.",
     accessRequestsAdminErrorUnavailable: "Service unavailable.",
@@ -93,9 +94,10 @@ describe("RevocationFailuresPage", () => {
             page: 0, size: 20, state: "RESOLVED"
         }));
         expect(screen.queryByRole("button", { name: "Retry revocation" })).not.toBeInTheDocument();
-        expect(screen.getByRole("link", { name: "View request: request-1" })).toHaveAttribute(
+        expect(screen.getByRole("link", { name: "View request" })).toHaveAttribute(
             "href", "/master/access-requests/requests/request-1"
         );
+        expect(screen.getByText("Request ID")).toBeVisible();
     });
 
     it("shows a failed manual removal of permanent access without assuming an expiry", async () => {

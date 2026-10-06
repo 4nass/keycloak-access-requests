@@ -67,6 +67,7 @@ describe("Access Request Admin Console navigation", () => {
     it("shows one Access requests entry after the server grants an administrative capability", async () => {
         mocks.capabilities.mockResolvedValue({
             canManageCatalog: true,
+            canViewEvents: true,
             canManageNotifications: true,
             canManageProvisioningFailures: true
         });
@@ -88,7 +89,9 @@ describe("Access Request Admin Console navigation", () => {
         [{ canManageCatalog: false, canManageNotifications: true, canManageProvisioningFailures: false },
             "/master/access-requests/notification-deliveries"],
         [{ canManageCatalog: false, canManageNotifications: false, canManageProvisioningFailures: true },
-            "/master/access-requests/provisioning-failures"]
+            "/master/access-requests/provisioning-failures"],
+        [{ canManageCatalog: false, canViewEvents: true, canManageNotifications: false, canManageProvisioningFailures: false },
+            "/master/access-requests/events"]
     ])("opens the first authorized operational tab without catalog access", async (capabilities, href) => {
         mocks.capabilities.mockResolvedValue(capabilities);
         renderNavigation();
