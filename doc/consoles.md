@@ -97,7 +97,7 @@ to the same filtered results. A direct link to a request opens the same dialog.
 
 The theme extends `keycloak.v2` and integrates a React application built from Keycloak's public Admin UI package. It follows the native Keycloak layout, navigation behavior, localization, PatternFly components, light/dark mode, and keyboard patterns.
 
-The Admin UI is visible only after the capability check succeeds. The server still enforces Keycloak administrator access and `manage-access-requests` for non-realm administrators.
+The Admin UI is visible only after the capability check succeeds. Realm administrators can manage the catalog and assurance policy. Delegated administrators with `manage-access-requests` can use operational tabs, including Events, but cannot change catalog policy.
 
 ## Enable a theme
 

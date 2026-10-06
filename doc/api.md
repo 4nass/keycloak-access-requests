@@ -20,7 +20,7 @@ Requester and approver endpoints require:
 
 See [API audience configuration](configuration.md#configure-the-api-audience).
 
-Admin endpoints use Keycloak administration authorization. The caller must be a Keycloak administrator in `{realm}` and, unless they are a realm administrator, must hold the `manage-access-requests` realm role. See [delegated catalog administration](configuration.md#delegate-catalog-administration).
+Admin endpoints use Keycloak administration authorization. Catalog mutations and assurance-policy changes require a realm administrator. Operational endpoints require a Keycloak administrator in `{realm}` with `manage-access-requests`, unless the caller is a realm administrator. See [delegated operations](configuration.md#delegate-access-request-operations).
 
 ## Pagination and filters
 
@@ -111,9 +111,11 @@ HIGH and CRITICAL approval additionally requires the realm's approval-assurance 
 
 ## Catalog administration endpoints
 
+Read-only catalog endpoints accept operational managers. Every catalog mutation below requires `realm-admin`; `manage-access-requests` alone receives `403`. The capabilities response exposes `canManageCatalog` and `canViewEvents` separately so operational managers retain access to Events.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/admin/capabilities` | Confirm catalog-management access for the current admin |
+| `GET` | `/admin/capabilities` | Return the current administrator's catalog and operational capabilities |
 | `GET` | `/admin/assurance-policy` | Read the realm's HIGH/CRITICAL approval-assurance policy; realm-admin only |
 | `PUT` | `/admin/assurance-policy` | Update that policy within product safety bounds; realm-admin only |
 | `GET` | `/admin/references` | Search selectable Keycloak roles or groups |
@@ -122,7 +124,9 @@ HIGH and CRITICAL approval additionally requires the realm's approval-assurance 
 | `POST` | `/admin/access-packages` | Create a draft package with its dedicated group and role bindings |
 | `GET` | `/admin/entitlements/{entitlementId}` | Get one entitlement |
 | `GET` | `/admin/access-packages/{packageId}` | Inspect the bound group, roles, and configuration health |
+| `PUT` | `/admin/access-packages/{packageId}` | Replace the roles of an unused, closed package |
 | `PUT` | `/admin/entitlements/{entitlementId}` | Update metadata and requestable state |
+| `DELETE` | `/admin/entitlements/{entitlementId}` | Remove an entitlement from the request catalog without erasing history |
 
 ### `GET /admin/references`
 
@@ -175,10 +179,15 @@ publish its entitlement separately.
 still leaves the package unpublished. Admin entitlement responses include the stored policy.
 
 `GET /admin/access-packages/{packageId}` returns the group ID/name, `groupExists`,
-`configurationValid`, and each bound role's type, ID, name, and `missing` flag. It returns 404 for
+`configurationValid`, `roleEditingAllowed`, and each bound role's type, ID, name, and `missing` flag. It returns 404 for
 an entitlement without an access-package binding. Publishing an unbound entitlement or an invalid package through the
 entitlement `PUT` returns 409;
 unpublishing remains possible.
+
+`PUT /admin/access-packages/{packageId}` replaces the complete role list using
+`{"version":3,"roleMappings":[{"type":"REALM_ROLE","roleId":"..."}]}`. One to 100 distinct existing realm or client roles are required. The package must be closed to new requests, unused by any request, have no group members or child groups, and match its stored binding. Otherwise the server returns `409 Conflict`. A stale entitlement version also returns `409`. The group mappings, binding, entitlement version, and audit event are updated in the Keycloak transaction. A package already used in a request must be replaced by a new package rather than silently changing what an approval or provisioning retry grants.
+
+Every successful role replacement stores the ordered role type/ID lists before and after the change in the extension's entitlement history. The matching Keycloak Admin Event includes the same snapshots when realm Admin Events are enabled. This allows removed roles to be identified even if the source role is later deleted.
 
 ### `PUT /admin/entitlements/{entitlementId}`
 
@@ -199,6 +208,8 @@ unpublishing remains possible.
 
 The resource type and resource ID are intentionally absent: the target resource is immutable. The client must send the version returned by the most recent read. Duration values must be positive whole seconds with default no greater than maximum. A concurrent modification returns `409 Conflict`; reload the entitlement before retrying. Setting `requestable=false` is the supported soft-disable operation.
 
+`DELETE /admin/entitlements/{entitlementId}` is an idempotent shortcut for that soft-disable: it returns `204 No Content` even when the entitlement is already closed. It does not delete the entitlement, package, existing grants, requests, or audit history. The Admin Console calls this action **Remove from catalog**; the entitlement remains visible to administrators and can be reopened through `PUT`.
+
 `autoApprove=true` enables immediate approval and provisioning for new requests to a
 published `LOW`-risk package. Omitting the field on update preserves the current policy, except
 that changing the risk away from `LOW` clears it. Explicit `false` restores manual review.
@@ -208,7 +219,8 @@ Successful catalog creates and updates also emit Keycloak Admin Events with reso
 `ACCESS_REQUEST_ENTITLEMENT` and resource path `access-requests/entitlements/{id}`. The event
 details contain the new `requestable`, `riskLevel`, `approverRoleId`, duration-policy, and
 `autoApprove` values, but not the full
-entitlement representation. A soft-disable is an `UPDATE` event, not `DELETE`. Keycloak stores
+entitlement representation. Package role edits additionally include `packageRoleMappingsBefore` and
+`packageRoleMappingsAfter`. A soft-disable is an `UPDATE` event, not `DELETE`. Keycloak stores
 these events only when Admin Events are enabled for the realm; the extension's own catalog
 history is persisted regardless of that setting.
 
@@ -244,8 +256,8 @@ the request does not exist in the selected realm.
 
 ## Notification delivery administration endpoints
 
-The notification endpoints are realm-scoped and use the same Keycloak administrator and
-manage-access-requests authorization as catalog management.
+The notification endpoints are realm-scoped and require Keycloak administrator access plus
+`manage-access-requests`, or realm-administrator access.
 
 | Method | Path | Purpose |
 | --- | --- | --- |

@@ -14,13 +14,13 @@ These images are captured in a browser against Keycloak with the built extension
 | Admin · Revocation failures | [Open, empty](admin-revocation-failures-light.png), [open, dark](admin-revocation-failures-dark.png), [resolved, empty](admin-revocation-failures-resolved-empty-light.png) | [Open incident](admin-revocation-failures-filled-light.png), [resolved incident](admin-revocation-failures-resolved-filled-light.png) |
 | Admin · Events | [Empty search](admin-events-light.png) | [Event history](admin-events-filled-light.png), [request details](workflow-admin-request-history.png) |
 
-The Admin setup captures show the [access package form](workflow-admin-create-access-package.png), its [selected role](workflow-admin-create-access-package-roles.png), the [package review](workflow-admin-review-access-package.png), and the [requestable setting before publication](workflow-admin-publish-access-package.png).
+The Admin setup captures show the [access package form](workflow-admin-create-access-package.png), its [selected role](workflow-admin-create-access-package-roles.png), the [package role editor](workflow-admin-edit-access-package-roles.png), the [package review](workflow-admin-review-access-package.png), and the [requestable setting before publication](workflow-admin-publish-access-package.png).
 
 The optional LOW-risk policy is pictured in the [auto-approval access package form](workflow-admin-auto-approve-access-package.png).
 
 The [submission](workflow-request-access.png), [pending request](workflow-my-requests-pending.png), and [approver queue](workflow-approvals-pending.png) captures show the rest of the request journey. Light and dark refer to the browser color scheme used by the tests.
 
-The HIGH-risk approval flow shows [verification required](workflow-approval-step-up-required.png) and Keycloak's [OTP step-up challenge](workflow-approval-step-up-otp.png). The Approval assurance page is captured with the realm administrator account; the other Admin captures use a delegated catalog manager.
+The HIGH-risk approval flow shows [verification required](workflow-approval-step-up-required.png) and Keycloak's [OTP step-up challenge](workflow-approval-step-up-otp.png). Catalog and Approval assurance captures use the realm administrator account. Operational Admin views are also exercised with a delegated access-request manager.
 
 Creating an access package also creates its associated catalog entitlement and dedicated delivery group. The Admin Console has one creation path; administrators review the package policy before opening it to requests. Direct entitlement drafts remain available to API clients but cannot be published as requestable access.
 

@@ -60,23 +60,25 @@ To remove an API client's access, remove this client scope from that client. Exi
 
 The Admin catalog endpoints follow Keycloak's administration authorization model instead. They do not use the API audience.
 
-## Delegate catalog administration
+## Delegate access-request operations
 
-Catalog administration has two boundaries:
+Catalog changes, including access packages, risk, automatic approval, and publication, require a realm administrator. The `manage-access-requests` role does not permit these changes.
+
+Operational administration has two boundaries:
 
 1. The actor must be a Keycloak administrator for the target realm.
 2. Unless the actor is a realm administrator, the actor must hold the target realm role `manage-access-requests`.
 
-`realm-management:realm-admin` and the master realm's full `admin` role bypass the dedicated role as full administrators. `manage-realm` and `manage-users` alone do not grant access-request catalog management.
+`realm-management:realm-admin` and the master realm's full `admin` role can also administer the catalog. `manage-realm` and `manage-users` alone do not grant access-request management.
 
 For a least-privilege delegation:
 
 1. Create the realm role `manage-access-requests`.
 2. Create a group such as `access-request-managers`.
 3. Assign `manage-access-requests` and the minimum Keycloak administration role needed to enter the target realm's Admin Console, normally `realm-management:view-realm`, to that group.
-4. Assign catalog managers to the group.
+4. Assign operational managers to the group.
 
-This separation is intentional: a person can manage the access-request catalog without receiving broader realm-management permissions.
+These managers can handle requests, audit events, notification deliveries, and provisioning or revocation failures, but cannot change the catalog or assurance policy.
 
 ## Configure approvers
 
@@ -122,7 +124,7 @@ Before making the catalog available to users, confirm:
 - if the bundled console themes are selected, their pages have been verified with the realm's branding and extensions;
 - if lifecycle e-mails are enabled, the realm SMTP connection and the selected e-mail-template integration have been tested;
 - API clients receive the `access-requests-api` audience;
-- catalog managers have the smallest necessary Keycloak admin role plus `manage-access-requests`;
+- catalog administrators have `realm-admin`; operational managers have the smallest necessary Keycloak admin role plus `manage-access-requests`;
 - approver roles have been assigned to the intended users or groups;
 - HIGH/CRITICAL ACR mappings, LoA flow, real MFA and freshness have been tested with an approver;
 - each entitlement targets an existing role or group;

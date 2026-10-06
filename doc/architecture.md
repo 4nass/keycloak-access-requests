@@ -96,7 +96,7 @@ view uses recipient identifiers rather than e-mail addresses.
 The realm resource has two different entry points:
 
 - requester and approver actions require a Keycloak access token with the `access-requests-api` audience;
-- catalog administration requires Keycloak administrative authorization and, for a delegated manager, the `manage-access-requests` realm role.
+- catalog mutations require realm-administrator authorization; `manage-access-requests` permits operational administration but not catalog changes.
 
 The server checks ownership for cancellation, an effective entitlement-specific approver role for decisions, and self-approval prevention. The UI only mirrors these permissions for usability.
 
