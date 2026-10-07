@@ -78,6 +78,16 @@ public final class EntitlementAuditEvent {
         return from(entitlement, EntitlementAuditEventType.ENTITLEMENT_CREATED, actorId);
     }
 
+    public static EntitlementAuditEvent packageCreated(Entitlement entitlement, String actorId,
+            List<AccessPackage.RoleMapping> initialMappings) {
+        Objects.requireNonNull(initialMappings, "initial role mappings must not be null");
+        if (initialMappings.isEmpty()) {
+            throw new IllegalArgumentException("An access package must have at least one initial role");
+        }
+        return from(entitlement, EntitlementAuditEventType.ENTITLEMENT_CREATED, actorId,
+                List.of(), initialMappings);
+    }
+
     public static EntitlementAuditEvent updated(Entitlement entitlement, String actorId) {
         return from(entitlement, EntitlementAuditEventType.ENTITLEMENT_UPDATED, actorId);
     }

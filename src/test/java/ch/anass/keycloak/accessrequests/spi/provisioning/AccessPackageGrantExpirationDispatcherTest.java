@@ -127,6 +127,40 @@ class AccessPackageGrantExpirationDispatcherTest {
     }
 
     @Test
+    void retriesAnExpiredFailureEvenWhenTheNormalScanNeverReachesItsEnd() {
+        List<AccessGrant> candidates = grants(300);
+        AccessGrant failed = candidates.getFirst();
+        Set<String> completed = ConcurrentHashMap.newKeySet();
+        AtomicInteger ticks = new AtomicInteger();
+        AtomicInteger failedAttempts = new AtomicInteger();
+        List<String> attempted = new ArrayList<>();
+        AccessPackageGrantExpirationDispatcher dispatcher = new AccessPackageGrantExpirationDispatcher(
+                CLOCK,
+                (factory, dueAt, afterExpiry, afterRequestId, limit) ->
+                        page(candidates.stream().filter(grant -> !grant.requestId().equals(failed.requestId())
+                                && !completed.contains(grant.requestId())).toList(),
+                                afterExpiry, afterRequestId, limit),
+                (factory, dueAt, limit) -> ticks.incrementAndGet() < 2 ? List.of() : List.of(failed),
+                (factory, realmId, requestId) -> {
+                    attempted.add(requestId);
+                    if (requestId.equals(failed.requestId())) {
+                        failedAttempts.incrementAndGet();
+                    } else {
+                        completed.add(requestId);
+                    }
+                });
+
+        dispatcher.run(session(sessionFactory()));
+        assertEquals(100, attempted.size());
+        assertEquals(0, failedAttempts.get());
+
+        dispatcher.run(session(sessionFactory()));
+        assertEquals(1, failedAttempts.get(), "An eligible retry must not wait for cursor wraparound");
+        assertEquals(200, attempted.size(), "Retries and fresh expirations share the tick budget");
+        assertEquals(199, completed.size());
+    }
+
+    @Test
     void twoNodesMaySeeTheSameCandidateButOnlyTheLockAwareAttemptRemovesIt() throws Exception {
         AccessGrant candidate = grants(1).getFirst();
         ReentrantLock transactionLock = new ReentrantLock();

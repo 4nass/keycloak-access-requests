@@ -70,7 +70,10 @@ class JpaGrantRevocationFailureRepositoryTest {
                 grants.findByRequestId("realm-1", "request-1").orElseThrow().revocationState());
         assertTrue(grants.findDuePackageGrants(NOW, null, null, 10).stream()
                 .noneMatch(grant -> grant.requestId().equals("request-1")));
+        assertTrue(grants.findRetryableFailedPackageGrants(NOW, 10).isEmpty());
         assertTrue(grants.findDuePackageGrants(NOW.plusSeconds(300), null, null, 10).stream()
+                .noneMatch(grant -> grant.requestId().equals("request-1")));
+        assertTrue(grants.findRetryableFailedPackageGrants(NOW.plusSeconds(300), 10).stream()
                 .anyMatch(grant -> grant.requestId().equals("request-1")));
 
         inTransaction(() -> failures.record("realm-1", "request-1",

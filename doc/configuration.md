@@ -103,6 +103,8 @@ The approval endpoint checks the **current**, locked entitlement risk, the token
 
 The extension can validate Keycloak's LoA evidence, but it cannot prove that an arbitrary custom authentication flow actually used two independent factors. Realm administrators must review and test that flow before publishing HIGH or CRITICAL access packages. Without the required flow or evidence, approval fails closed.
 
+The `REQUEST_APPROVED` event for a CRITICAL request stores the configured and observed ACR/LoA, freshness limit, authentication time, token issue time, and verification time. It does not store the token or MFA credential. This is ordinary persisted audit data, protected by the same database access controls and backup policy as other Keycloak data; the extension does not detect direct database tampering or deletion.
+
 ## Localization
 
 The themes include English, French, German, and Spanish messages. To make these selectable:

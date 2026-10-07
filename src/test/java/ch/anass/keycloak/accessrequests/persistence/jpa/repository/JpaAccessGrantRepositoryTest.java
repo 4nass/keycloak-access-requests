@@ -244,6 +244,33 @@ class JpaAccessGrantRepositoryTest {
     }
 
     @Test
+    void keepsOpenFailuresOutOfTheNormalCursorAndSelectsDueRetriesSeparately() {
+        AccessGrant failed = packageGrant("retry-behind-cursor", GrantRevocationState.AUTHORIZED);
+        AccessGrant newExpiry = packageGrant("new-expiry", GrantRevocationState.AUTHORIZED);
+        Instant now = failed.expiresAt();
+        inTransaction(() -> {
+            repository.create(failed);
+            repository.create(newExpiry);
+            new JpaGrantRevocationFailureRepository(entityManager).record(
+                    failed.realmId(), failed.requestId(),
+                    ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationFailureCode.REMOVAL_FAILED,
+                    now);
+        });
+        entityManager.clear();
+
+        assertEquals(List.of("new-expiry"), repository.findDuePackageGrants(now, null, null, 10).stream()
+                .map(AccessGrant::requestId).toList());
+        assertTrue(repository.findRetryableFailedPackageGrants(now, 10).isEmpty());
+
+        Instant retryAt = now.plusSeconds(300);
+        assertEquals(List.of("retry-behind-cursor"),
+                repository.findRetryableFailedPackageGrants(retryAt, 10).stream()
+                        .map(AccessGrant::requestId).toList());
+        assertEquals(List.of("new-expiry"), repository.findDuePackageGrants(retryAt, null, null, 10).stream()
+                .map(AccessGrant::requestId).toList());
+    }
+
+    @Test
     void rejectsUnboundedOrIncompleteDuePackageGrantScans() {
         Instant now = Instant.parse("2026-09-01T14:15:30Z");
 

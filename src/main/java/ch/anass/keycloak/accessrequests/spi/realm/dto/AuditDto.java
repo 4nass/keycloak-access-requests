@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.spi.realm.dto;
 
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalAssuranceEvidence;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEventType;
 import ch.anass.keycloak.accessrequests.core.domain.request.DecisionStatus;
@@ -72,7 +73,7 @@ public final class AuditDto {
             String type, String actorId, String occurredAt,
             ProvisioningFailureCode failureCode, String closureReason,
             GrantRevocationFailureCode revocationFailureCode, String revocationResolutionReason,
-            String actorName) {
+            String actorName, ApprovalAssuranceEvidence assurance) {
         public static AdminRequestHistoryEntryResponse from(AccessRequestEvent event) {
             return from(event, null);
         }
@@ -88,7 +89,7 @@ public final class AuditDto {
                     ? event.comment() : null;
             return new AdminRequestHistoryEntryResponse(event.type().name(), event.actorId(),
                     event.occurredAt().toString(), failureCode, closureReason,
-                    revocationFailureCode, revocationResolutionReason, actorName);
+                    revocationFailureCode, revocationResolutionReason, actorName, event.assuranceEvidence());
         }
     }
 

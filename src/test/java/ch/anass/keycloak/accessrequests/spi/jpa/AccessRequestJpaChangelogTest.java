@@ -72,7 +72,15 @@ class AccessRequestJpaChangelogTest {
                             "REQUEST_VERSION",
                             "REVOCATION_ATTEMPT",
                             "COMMENT",
-                            "METADATA"),
+                            "METADATA",
+                            "ASSURANCE_REQUIRED_ACR",
+                            "ASSURANCE_REQUIRED_LOA",
+                            "ASSURANCE_MAX_AGE_SECONDS",
+                            "ASSURANCE_OBSERVED_ACR",
+                            "ASSURANCE_OBSERVED_LOA",
+                            "ASSURANCE_AUTHENTICATED_TIMESTAMP",
+                            "ASSURANCE_TOKEN_ISSUED_TIMESTAMP",
+                            "ASSURANCE_VERIFIED_TIMESTAMP"),
                     columnsOf(connection, "AR_ACCESS_REQUEST_HISTORY"));
             assertEquals(
                     Set.of(
@@ -167,6 +175,9 @@ class AccessRequestJpaChangelogTest {
                     .contains("IDX_NOTIFICATION_OUTBOX_REALM_STATE_ATTEMPT"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_GRANT")
                     .contains("IDX_ACCESS_GRANT_RESOURCE"));
+            assertEquals(java.util.List.of("RESOLVED_TIMESTAMP", "NEXT_ATTEMPT_TIMESTAMP", "REQUEST_ID"),
+                    indexColumnsOf(connection, "AR_GRANT_REVOCATION_FAILURE",
+                            "IDX_GRANT_REVOCATION_FAILURE_RETRY"));
         }
     }
 

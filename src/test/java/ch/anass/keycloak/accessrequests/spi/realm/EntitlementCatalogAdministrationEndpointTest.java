@@ -139,11 +139,14 @@ class EntitlementCatalogAdministrationEndpointTest {
     }
 
     @Test
-    void doesNotExposeDeleteForEntitlementsWhoseHistoryMustBePreserved() {
-        assertTrue(Arrays.stream(RESOURCE_TYPE.getDeclaredMethods())
-                .noneMatch(method -> method.isAnnotationPresent(DELETE.class)
-                        && method.isAnnotationPresent(Path.class)
-                        && method.getAnnotation(Path.class).value().startsWith("admin/entitlements")));
+    void exposesSoftDeleteForEntitlementsWhoseHistoryMustBePreserved() {
+        Method handler = handler("deactivateEntitlement");
+
+        assertTrue(handler.isAnnotationPresent(DELETE.class));
+        assertEquals("admin/entitlements/{entitlementId}", handler.getAnnotation(Path.class).value());
+        assertEquals(Response.class, handler.getReturnType());
+        assertEquals(1, handler.getParameterCount());
+        assertPathParameter(handler, 0);
     }
 
     @Test

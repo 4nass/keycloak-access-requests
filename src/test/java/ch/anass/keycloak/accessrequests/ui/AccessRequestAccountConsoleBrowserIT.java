@@ -89,7 +89,7 @@ class AccessRequestAccountConsoleBrowserIT {
     }
 
     @Test
-    void approvesAHighRiskRequestAfterRealOtpStepUpWithoutRepeatingThePassword() throws Exception {
+    void approvesACriticalRequestAfterRealOtpStepUpAndPersistsAuditEvidence() throws Exception {
         try (KeycloakContainer keycloak = keycloak()) {
             keycloak.start();
             configureAdminCliTokenBehavior(keycloak);
@@ -107,7 +107,7 @@ class AccessRequestAccountConsoleBrowserIT {
             assignRealmRole(keycloak, adminToken, approverId, approverRoleId, approverRoleName);
             String requester = "otp-requester-" + UUID.randomUUID();
             createTestUser(keycloak, adminToken, requester, "requester-password", false);
-            String entitlementId = createHighRiskPackage(keycloak, adminToken, sourceRoleId, approverRoleId);
+            String entitlementId = createCriticalPackage(keycloak, adminToken, sourceRoleId, approverRoleId);
             String requesterToken = accessToken(keycloak, "admin-cli", requester, "requester-password");
             HttpResponse<String> request = HTTP_CLIENT.send(
                     adminRequest(keycloak, "/realms/master/access-requests/requests", requesterToken)
@@ -159,6 +159,18 @@ class AccessRequestAccountConsoleBrowserIT {
             assertEquals(200, details.statusCode(), details.body());
             assertEquals("APPROVED", JSON.readTree(details.body()).path("decisionStatus").asText());
             assertEquals("SUCCEEDED", JSON.readTree(details.body()).path("provisioningStatus").asText());
+            HttpResponse<String> audit = HTTP_CLIENT.send(adminRequest(keycloak,
+                    "/realms/master/access-requests/admin/requests/" + requestId, adminToken)
+                    .GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, audit.statusCode(), audit.body());
+            JsonNode approval = java.util.stream.StreamSupport.stream(
+                            JSON.readTree(audit.body()).path("history").spliterator(), false)
+                    .filter(entry -> "REQUEST_APPROVED".equals(entry.path("type").asText()))
+                    .findFirst().orElseThrow();
+            assertEquals("2", approval.path("assurance").path("requiredAcr").asText());
+            assertEquals(2, approval.path("assurance").path("observedLoa").asInt());
+            assertTrue(approval.path("assurance").path("verifiedAt").asLong()
+                    - approval.path("assurance").path("authenticatedAt").asLong() <= 300);
         }
     }
 
@@ -496,13 +508,13 @@ class AccessRequestAccountConsoleBrowserIT {
         assertEquals(200, updated.statusCode());
     }
 
-    private String createHighRiskPackage(KeycloakContainer keycloak, String adminToken,
+    private String createCriticalPackage(KeycloakContainer keycloak, String adminToken,
             String sourceRoleId, String approverRoleId) throws Exception {
         HttpResponse<String> created = postAdminJson(keycloak,
                 "/realms/master/access-requests/admin/access-packages", adminToken, """
-                        {"displayName":"OTP protected access","description":"High risk test package",
-                         "riskLevel":"HIGH","approverRoleId":"%s",
-                         "defaultDurationSeconds":28800,"maxDurationSeconds":86400,
+                        {"displayName":"OTP protected access","description":"Critical test package",
+                         "riskLevel":"CRITICAL","approverRoleId":"%s",
+                         "defaultDurationSeconds":3600,"maxDurationSeconds":14400,
                          "roleMappings":[{"type":"REALM_ROLE","roleId":"%s"}]}
                         """.formatted(approverRoleId, sourceRoleId));
         assertEquals(201, created.statusCode(), created.body());
@@ -511,9 +523,9 @@ class AccessRequestAccountConsoleBrowserIT {
                 "/realms/master/access-requests/admin/entitlements/" + entitlementId, adminToken)
                         .header("Content-Type", "application/json")
                         .PUT(HttpRequest.BodyPublishers.ofString("""
-                                {"displayName":"OTP protected access","description":"High risk test package",
-                                 "riskLevel":"HIGH","approverRoleId":"%s","requestable":true,"version":0,
-                                 "defaultDurationSeconds":28800,"maxDurationSeconds":86400}
+                                {"displayName":"OTP protected access","description":"Critical test package",
+                                 "riskLevel":"CRITICAL","approverRoleId":"%s","requestable":true,"version":0,
+                                 "defaultDurationSeconds":3600,"maxDurationSeconds":14400}
                                 """.formatted(approverRoleId))).build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(200, published.statusCode(), published.body());
         return entitlementId;

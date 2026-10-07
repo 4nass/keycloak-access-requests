@@ -75,6 +75,22 @@ class EntitlementAuditEventTest {
                 event.roleMappingsAfter());
     }
 
+    @Test
+    void packageCreationCapturesItsInitialRoleSelection() {
+        List<AccessPackage.RoleMapping> selected = new java.util.ArrayList<>(List.of(
+                new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "realm-role"),
+                new AccessPackage.RoleMapping(ResourceType.CLIENT_ROLE, "client-role")));
+
+        EntitlementAuditEvent event = EntitlementAuditEvent.packageCreated(entitlement(),
+                "catalog-manager-1", selected);
+        selected.clear();
+
+        assertEquals(EntitlementAuditEventType.ENTITLEMENT_CREATED, event.type());
+        assertEquals(List.of(), event.roleMappingsBefore());
+        assertEquals(List.of(new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "realm-role"),
+                new AccessPackage.RoleMapping(ResourceType.CLIENT_ROLE, "client-role")), event.roleMappingsAfter());
+    }
+
     private static Entitlement entitlement() {
         return Entitlement.create(
                 "entitlement-1",

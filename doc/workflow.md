@@ -93,7 +93,7 @@ If the original package group membership was removed separately, a manager can r
 
 ## Audit history
 
-The provider records immutable request events for creation, cancellation, approval, rejection, provisioning start, provisioning success, and provisioning failure. It also records entitlement creation and updates with a snapshot of the configured fields.
+The provider persists request events for creation, cancellation, approval, rejection, provisioning start, provisioning success, and provisioning failure. It also records entitlement creation and updates with a snapshot of the configured fields.
 
 These history records are for traceability. They do not replace Keycloak event logging, database backups, or an organization-wide audit retention policy.
 

@@ -34,6 +34,14 @@ public final class KeycloakEntitlementAdminEventPublisher {
         publish(entitlement, OperationType.CREATE);
     }
 
+    public void packageCreated(Entitlement entitlement, List<AccessPackage.RoleMapping> initialMappings) {
+        Objects.requireNonNull(initialMappings, "initialMappings must not be null");
+        builder(entitlement, OperationType.CREATE)
+                .detail("packageRoleMappingsBefore", "[]")
+                .detail("packageRoleMappingsAfter", JSON.valueToTree(initialMappings).toString())
+                .success();
+    }
+
     public void updated(Entitlement entitlement) {
         publish(entitlement, OperationType.UPDATE);
     }

@@ -15,7 +15,7 @@ Teams that keep their own theme can integrate the realm API and reproduce the re
 The Account Console is the end-user experience. It adds an **Access requests** navigation group with:
 
 - **Catalog**: browse requestable access, search it, and submit a justification and requested duration (or permanent access when allowed);
-- **My requests**: view request status, decision details, and immutable history; cancel pending requests;
+- **My requests**: view request status, decision details, and persisted history; cancel pending requests;
 - **Approvals**: view the requested duration and decide requests only when the signed-in user can approve at least one entitlement.
 
 The theme extends `keycloak.v3`, uses Keycloak Account Console components and PatternFly patterns, and obtains data from the realm API. Dates, request states, history, risk levels, and feedback messages are localized.

@@ -80,6 +80,14 @@
             <column name="REQUEST_VERSION" type="BIGINT"/>
             <column name="COMMENT" type="TEXT"/>
             <column name="METADATA" type="TEXT"/>
+            <column name="ASSURANCE_REQUIRED_ACR" type="VARCHAR(128)"/>
+            <column name="ASSURANCE_REQUIRED_LOA" type="INT"/>
+            <column name="ASSURANCE_MAX_AGE_SECONDS" type="INT"/>
+            <column name="ASSURANCE_OBSERVED_ACR" type="VARCHAR(128)"/>
+            <column name="ASSURANCE_OBSERVED_LOA" type="INT"/>
+            <column name="ASSURANCE_AUTHENTICATED_TIMESTAMP" type="BIGINT"/>
+            <column name="ASSURANCE_TOKEN_ISSUED_TIMESTAMP" type="BIGINT"/>
+            <column name="ASSURANCE_VERIFIED_TIMESTAMP" type="BIGINT"/>
         </createTable>
 
         <createTable tableName="AR_ENTITLEMENT">
@@ -397,6 +405,11 @@
             <column name="REALM_ID"/>
             <column name="RESOLVED_TIMESTAMP"/>
             <column name="LAST_FAILED_TIMESTAMP" descending="true"/>
+        </createIndex>
+        <createIndex indexName="IDX_GRANT_REVOCATION_FAILURE_RETRY" tableName="AR_GRANT_REVOCATION_FAILURE">
+            <column name="RESOLVED_TIMESTAMP"/>
+            <column name="NEXT_ATTEMPT_TIMESTAMP"/>
+            <column name="REQUEST_ID"/>
         </createIndex>
         <addColumn tableName="AR_ACCESS_GRANT">
             <column name="EXPIRES_TIMESTAMP" type="BIGINT"/>

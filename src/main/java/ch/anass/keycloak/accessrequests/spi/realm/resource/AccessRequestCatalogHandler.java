@@ -153,8 +153,10 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
                 Entitlement saved = entitlementRepository().create(created);
                 accessPackageRepository().create(accessPackage);
                 entitlementAuditEventPublisher().publish(
-                        EntitlementAuditEvent.created(saved, manager.user().getId()));
-                new KeycloakEntitlementAdminEventPublisher(session, manager.realm(), manager.auth()).created(saved);
+                        EntitlementAuditEvent.packageCreated(saved, manager.user().getId(),
+                                accessPackage.roleMappings()));
+                new KeycloakEntitlementAdminEventPublisher(session, manager.realm(), manager.auth())
+                        .packageCreated(saved, accessPackage.roleMappings());
                 return saved;
             });
             return Response.status(Response.Status.CREATED)

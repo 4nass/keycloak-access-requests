@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.spi.realm.assurance;
 
 import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalAssurancePolicy;
+import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalAssuranceEvidence;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.port.ApprovalAssuranceVerifier;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -34,10 +35,10 @@ public final class KeycloakApprovalAssuranceVerifier implements ApprovalAssuranc
     }
 
     @Override
-    public void verify(RiskLevel riskLevel) {
+    public ApprovalAssuranceEvidence verify(RiskLevel riskLevel) {
         ApprovalAssurancePolicy.Requirement required = policies.read(realm).requirementFor(riskLevel);
         if (required == null) {
-            return;
+            return null;
         }
         // A configured LoA condition is necessary, but operators must still configure the
         // corresponding browser flow to actually perform MFA at that level.
@@ -61,11 +62,17 @@ public final class KeycloakApprovalAssuranceVerifier implements ApprovalAssuranc
         try {
             Map<Integer, Long> levelTimes = JsonSerialization.readValue(
                     authentication.session().getNote(Constants.LOA_MAP), new TypeReference<>() {});
-            if (!hasFreshAssurance(required, authentication.token().getAcr(), authentication.token().getIat(),
+            String observedAcr = authentication.token().getAcr();
+            Long issuedAt = authentication.token().getIat();
+            long verifiedAt = clock.instant().getEpochSecond();
+            if (!hasFreshAssurance(required, observedAcr, issuedAt,
                     LoAUtil.getCurrentLevelOfAuthentication(clientSession), acrMap, configuredMaxAges,
-                    levelTimes, clock.instant().getEpochSecond())) {
+                    levelTimes, verifiedAt)) {
                 throw new ApprovalAssuranceException("STEP_UP_REQUIRED", required.acr());
             }
+            int observedLoa = Objects.requireNonNull(resolveLoa(observedAcr, acrMap));
+            return new ApprovalAssuranceEvidence(required.acr(), required.loa(), required.maxAgeSeconds(),
+                    observedAcr, observedLoa, levelTimes.get(observedLoa), issuedAt, verifiedAt);
         } catch (IOException | IllegalArgumentException exception) {
             throw new ApprovalAssuranceException("STEP_UP_REQUIRED", required.acr());
         }

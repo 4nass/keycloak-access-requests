@@ -5,7 +5,7 @@ import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
 import java.util.List;
 
 /**
- * Reads the immutable audit history for an access request within a realm.
+ * Reads the persisted audit history for an access request within a realm.
  */
 public interface AccessRequestHistoryReader {
 

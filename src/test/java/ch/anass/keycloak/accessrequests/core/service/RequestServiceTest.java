@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalAssuranceEvidence;
 import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEventType;
@@ -811,6 +812,30 @@ class RequestServiceTest {
                         AccessRequestEventType.PROVISIONING_STARTED,
                         AccessRequestEventType.PROVISIONING_SUCCEEDED),
                 events.published().stream().map(AccessRequestEvent::type).toList());
+    }
+
+    @Test
+    void criticalApprovalPersistsTheServerObservedAssuranceAndRejectsMissingEvidence() {
+        Entitlement critical = Entitlement.create("entitlement-1", "realm-1", ResourceType.REALM_ROLE,
+                "critical-reader", "Critical Reader", "Restricted access", RiskLevel.CRITICAL,
+                "access-request-approver", Instant.EPOCH).publish(Instant.EPOCH);
+        entitlements.add(critical);
+        AccessRequest request = service.create("realm-1", "requester-1", "entitlement-1",
+                "Access is needed for a critical incident.");
+
+        assertThrows(IllegalStateException.class,
+                () -> service.approve("realm-1", request.id(), "approver-1", "Approved."));
+        assertEquals(DecisionStatus.PENDING, requests.findById("realm-1", request.id()).orElseThrow().decisionStatus());
+        assertEquals(1, events.published().size());
+
+        ApprovalAssuranceEvidence evidence = new ApprovalAssuranceEvidence("2", 2, 300,
+                "3", 3, 1_000, 1_010, 1_020);
+        service.approve("realm-1", request.id(), "approver-1", "Approved.", risk -> {
+            assertEquals(RiskLevel.CRITICAL, risk);
+            return evidence;
+        });
+
+        assertEquals(evidence, events.published().get(1).assuranceEvidence());
     }
 
     @Test

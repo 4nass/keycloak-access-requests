@@ -1,6 +1,7 @@
 package ch.anass.keycloak.accessrequests.core.service;
 
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
+import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalAssuranceEvidence;
 import ch.anass.keycloak.accessrequests.core.domain.grant.AccessGrant;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantOrigin;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
@@ -11,6 +12,7 @@ import ch.anass.keycloak.accessrequests.core.domain.entitlement.Entitlement;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.AccessPackage;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.DurationPolicy;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
+import ch.anass.keycloak.accessrequests.core.domain.entitlement.RiskLevel;
 import ch.anass.keycloak.accessrequests.core.domain.request.InvalidProvisioningRetryException;
 import ch.anass.keycloak.accessrequests.core.domain.grant.ProvisioningResult;
 import ch.anass.keycloak.accessrequests.core.domain.request.ProvisioningFailureCode;
@@ -268,7 +270,7 @@ public final class RequestService {
                 AccessRequestEvent event = AccessRequestEvent.created(persisted, requesterId, occurredAt);
                 if (entitlement.autoApprove()) {
                     eventPublisher.publish(event);
-                    return completeApproval(persisted, entitlement, AUTO_APPROVER_ID, null);
+                    return completeApproval(persisted, entitlement, AUTO_APPROVER_ID, null, null);
                 }
                 publish(event, persisted, entitlement);
                 return persisted;
@@ -302,7 +304,7 @@ public final class RequestService {
             String requestId,
             String approverId,
             String decisionComment) {
-        return approve(realmId, requestId, approverId, decisionComment, riskLevel -> { });
+        return approve(realmId, requestId, approverId, decisionComment, riskLevel -> null);
     }
 
     public AccessRequest approve(
@@ -316,21 +318,26 @@ public final class RequestService {
             AccessRequest request = findRequest(realmId, requestId);
             Entitlement entitlement = requireCurrentEntitlementForUpdate(realmId, request.entitlementId());
             authorizeDecision(realmId, request, approverId);
-            assuranceVerifier.verify(entitlement.riskLevel());
+            ApprovalAssuranceEvidence evidence = assuranceVerifier.verify(entitlement.riskLevel());
+            if (entitlement.riskLevel() == RiskLevel.CRITICAL
+                    && evidence == null) {
+                throw new IllegalStateException("CRITICAL approval requires recorded assurance evidence");
+            }
             requireBoundPackage(entitlement);
-            return completeApproval(request, entitlement, approverId, decisionComment);
+            return completeApproval(request, entitlement, approverId, decisionComment,
+                    entitlement.riskLevel() == RiskLevel.CRITICAL ? evidence : null);
         });
     }
 
     private AccessRequest completeApproval(AccessRequest request, Entitlement entitlement,
-            String approverId, String decisionComment) {
+            String approverId, String decisionComment, ApprovalAssuranceEvidence evidence) {
         AccessRequest candidate = request.copy();
         Instant decidedAt = Instant.now(clock);
         candidate.approve(approverId, decisionComment, decidedAt);
         requireRepresentableExpiry(candidate, decidedAt);
         AccessRequest approved = updateOrThrow(candidate, request.version());
         AccessRequestEvent approvalEvent = AccessRequestEvent.approved(
-                approved, approverId, decidedAt, decisionComment);
+                approved, approverId, decidedAt, decisionComment, evidence);
         publish(approvalEvent, approved, entitlement);
         publish(AccessRequestEvent.provisioningStarted(approved, approverId, decidedAt), approved, entitlement);
 

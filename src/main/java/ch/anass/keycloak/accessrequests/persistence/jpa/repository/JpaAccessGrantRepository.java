@@ -66,8 +66,7 @@ public final class JpaAccessGrantRepository implements AccessGrantRevocationRepo
                           and not exists (
                               select failure.requestId from GrantRevocationFailureEntity failure
                                where failure.requestId = entity.requestId
-                                 and failure.resolvedTimestamp is null
-                                 and failure.nextAttemptTimestamp > :dueAt)
+                                 and failure.resolvedTimestamp is null)
                 """ + cursorCondition + """
                         order by entity.expiresTimestamp, entity.requestId
                 """, AccessGrantEntity.class)
@@ -80,6 +79,31 @@ public final class JpaAccessGrantRepository implements AccessGrantRevocationRepo
             query.setParameter("afterRequestId", afterRequestId);
         }
         return query.getResultList().stream().map(AccessGrantEntity::toDomain).toList();
+    }
+
+    /** Open failures are scanned independently so a forward-only expiry cursor cannot strand a retry. */
+    public List<AccessGrant> findRetryableFailedPackageGrants(Instant dueAt, int limit) {
+        Objects.requireNonNull(dueAt, "dueAt must not be null");
+        if (limit < 1 || limit > 100) {
+            throw new IllegalArgumentException("A bounded retry page is required");
+        }
+        return entityManager.createQuery("""
+                        select grant from AccessGrantEntity grant, GrantRevocationFailureEntity failure
+                         where failure.requestId = grant.requestId
+                           and failure.realmId = grant.realmId
+                           and failure.resolvedTimestamp is null
+                           and failure.nextAttemptTimestamp <= :dueAt
+                           and grant.revocationState = :authorized
+                           and grant.origin = :createdByExtension
+                           and grant.deliveryGroupId is not null
+                           and grant.expiresTimestamp <= :dueAt
+                         order by failure.nextAttemptTimestamp, failure.requestId
+                        """, AccessGrantEntity.class)
+                .setParameter("dueAt", dueAt.toEpochMilli())
+                .setParameter("authorized", GrantRevocationState.AUTHORIZED)
+                .setParameter("createdByExtension", GrantOrigin.CREATED_BY_EXTENSION)
+                .setMaxResults(limit)
+                .getResultList().stream().map(AccessGrantEntity::toDomain).toList();
     }
 
     @Override

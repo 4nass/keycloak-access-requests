@@ -2031,15 +2031,22 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         try (Connection connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
              PreparedStatement statement = connection.prepareStatement("""
-                     select ROLE_MAPPINGS_BEFORE, ROLE_MAPPINGS_AFTER from AR_ENTITLEMENT_HISTORY
-                      where ENTITLEMENT_ID = ? and EVENT_TYPE = 'ENTITLEMENT_UPDATED'
+                     select EVENT_TYPE, ROLE_MAPPINGS_BEFORE, ROLE_MAPPINGS_AFTER
+                       from AR_ENTITLEMENT_HISTORY
+                      where ENTITLEMENT_ID = ?
                         and ROLE_MAPPINGS_BEFORE is not null
+                      order by VERSION
                      """)) {
             statement.setString(1, packageId);
             try (ResultSet history = statement.executeQuery()) {
+                assertTrue(history.next(), "Package creation must persist its initial role selection.");
+                assertEquals("ENTITLEMENT_CREATED", history.getString(1));
+                assertEquals(0, json.readTree(history.getString(2)).size());
+                assertEquals(oldRoleId, json.readTree(history.getString(3)).get(0).path("roleId").asText());
                 assertTrue(history.next(), "A package role edit must persist both audit snapshots.");
-                assertEquals(oldRoleId, json.readTree(history.getString(1)).get(0).path("roleId").asText());
-                assertEquals(newRoleId, json.readTree(history.getString(2)).get(0).path("roleId").asText());
+                assertEquals("ENTITLEMENT_UPDATED", history.getString(1));
+                assertEquals(oldRoleId, json.readTree(history.getString(2)).get(0).path("roleId").asText());
+                assertEquals(newRoleId, json.readTree(history.getString(3)).get(0).path("roleId").asText());
                 assertFalse(history.next());
             }
         }
@@ -2050,11 +2057,20 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 .header("Authorization", "Bearer " + adminToken).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, response.statusCode(), response.body());
-        JsonNode roleUpdate = json.readTree(response.body()).valueStream()
+        List<JsonNode> roleEvents = json.readTree(response.body()).valueStream()
                 .filter(event -> "ACCESS_REQUEST_ENTITLEMENT".equals(event.path("resourceType").asText()))
                 .filter(event -> ("access-requests/entitlements/" + packageId)
                         .equals(event.path("resourcePath").asText()))
                 .filter(event -> event.path("details").has("packageRoleMappingsBefore"))
+                .toList();
+        JsonNode creation = roleEvents.stream().filter(event -> "CREATE".equals(event.path("operationType").asText()))
+                .findFirst().orElseThrow();
+        assertEquals(0, json.readTree(creation.path("details")
+                .path("packageRoleMappingsBefore").asText()).size());
+        assertEquals(oldRoleId, json.readTree(creation.path("details")
+                .path("packageRoleMappingsAfter").asText()).get(0).path("roleId").asText());
+        JsonNode roleUpdate = roleEvents.stream()
+                .filter(event -> "UPDATE".equals(event.path("operationType").asText()))
                 .findFirst().orElseThrow();
         assertEquals(oldRoleId, json.readTree(roleUpdate.path("details")
                 .path("packageRoleMappingsBefore").asText()).get(0).path("roleId").asText());
@@ -2640,7 +2656,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         int createdEvent = requesterDetailResponse.body().indexOf("\"type\":\"REQUEST_CREATED\"");
         int canceledEvent = requesterDetailResponse.body().indexOf("\"type\":\"REQUEST_CANCELED\"");
         assertTrue(createdEvent >= 0 && createdEvent < canceledEvent,
-                "The requester detail must return the immutable history in chronological order.");
+                "The requester detail must return the history in chronological order.");
 
         HttpResponse<String> canceledRequestsResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(URI.create(myRequestsEndpoint + "?status=CANCELED"))

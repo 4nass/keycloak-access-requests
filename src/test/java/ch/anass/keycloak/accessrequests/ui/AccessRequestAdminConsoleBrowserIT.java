@@ -469,7 +469,7 @@ class AccessRequestAdminConsoleBrowserIT {
                         .GET().build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(200, audit.statusCode(), audit.body());
         JsonNode history = JSON.readTree(audit.body()).path("history");
-        assertEquals(4, history.size(), "The completed request must have a complete immutable audit history.");
+        assertEquals(4, history.size(), "The completed request must have a complete audit history.");
         assertEquals("REQUEST_CREATED", history.get(0).path("type").asText());
         assertEquals(requesterId, history.get(0).path("actorId").asText());
         assertEquals("REQUEST_APPROVED", history.get(1).path("type").asText());

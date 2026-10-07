@@ -290,6 +290,27 @@ class JpaEntitlementRepositoryTest {
     }
 
     @Test
+    void persistsTheInitialPackageRoleSelectionOnItsCreationEvent() throws Exception {
+        Entitlement entitlement = unpublished("created-role-audit", "realm-1", ResourceType.GROUP,
+                "package-created-role-audit", "New package", "Initial roles must be auditable.", RiskLevel.LOW);
+        EntityTransactionSupport.execute(entityManager, () -> new JpaEntitlementAuditEventPublisher(entityManager)
+                .publish(EntitlementAuditEvent.packageCreated(entitlement, "catalog-manager-1",
+                        List.of(new AccessPackage.RoleMapping(ResourceType.REALM_ROLE, "initial-role")))));
+        entityManager.clear();
+
+        Object[] snapshots = (Object[]) entityManager.createNativeQuery("""
+                        select ROLE_MAPPINGS_BEFORE, ROLE_MAPPINGS_AFTER from AR_ENTITLEMENT_HISTORY
+                         where ENTITLEMENT_ID = :id and EVENT_TYPE = 'ENTITLEMENT_CREATED'
+                        """)
+                .setParameter("id", entitlement.id())
+                .getSingleResult();
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertEquals(0, json.readTree((String) snapshots[0]).size());
+        assertEquals("REALM_ROLE", json.readTree((String) snapshots[1]).get(0).path("type").asText());
+        assertEquals("initial-role", json.readTree((String) snapshots[1]).get(0).path("roleId").asText());
+    }
+
+    @Test
     void returnsDraftAndRequestableEntitlementsForAdministrativePagination() {
         persist(published("entitlement-3", "realm-1", ResourceType.REALM_ROLE, "role-3", "Charlie",
                 "Third entitlement.", RiskLevel.LOW));

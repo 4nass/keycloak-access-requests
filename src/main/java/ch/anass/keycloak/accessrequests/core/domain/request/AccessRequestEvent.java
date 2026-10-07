@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 import ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationFailureCode;
+import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalAssuranceEvidence;
 
 public final class AccessRequestEvent {
 
@@ -17,6 +18,7 @@ public final class AccessRequestEvent {
     private final String metadata;
     private final Long requestVersion;
     private final Long revocationAttempt;
+    private final ApprovalAssuranceEvidence assuranceEvidence;
 
     private AccessRequestEvent(
             String id,
@@ -28,12 +30,20 @@ public final class AccessRequestEvent {
             String comment,
             String metadata,
             Long requestVersion) {
-        this(id, requestId, realmId, type, actorId, occurredAt, comment, metadata, requestVersion, null);
+        this(id, requestId, realmId, type, actorId, occurredAt, comment, metadata, requestVersion, null, null);
     }
 
     private AccessRequestEvent(
             String id, String requestId, String realmId, AccessRequestEventType type, String actorId,
             Instant occurredAt, String comment, String metadata, Long requestVersion, Long revocationAttempt) {
+        this(id, requestId, realmId, type, actorId, occurredAt, comment, metadata, requestVersion,
+                revocationAttempt, null);
+    }
+
+    private AccessRequestEvent(
+            String id, String requestId, String realmId, AccessRequestEventType type, String actorId,
+            Instant occurredAt, String comment, String metadata, Long requestVersion, Long revocationAttempt,
+            ApprovalAssuranceEvidence assuranceEvidence) {
         this.id = requireText(id, "id");
         this.requestId = requireText(requestId, "requestId");
         this.realmId = requireText(realmId, "realmId");
@@ -48,6 +58,10 @@ public final class AccessRequestEvent {
             throw new IllegalArgumentException("A revocation attempt belongs to a failure event and must be positive");
         }
         this.revocationAttempt = revocationAttempt;
+        if (assuranceEvidence != null && type != AccessRequestEventType.REQUEST_APPROVED) {
+            throw new IllegalArgumentException("Assurance evidence belongs to an approval event");
+        }
+        this.assuranceEvidence = assuranceEvidence;
     }
 
     public static AccessRequestEvent created(AccessRequest request, String actorId, Instant occurredAt) {
@@ -67,6 +81,14 @@ public final class AccessRequestEvent {
             Instant occurredAt,
             String comment) {
         return from(request, AccessRequestEventType.REQUEST_APPROVED, actorId, occurredAt, comment);
+    }
+
+    public static AccessRequestEvent approved(AccessRequest request, String actorId, Instant occurredAt,
+            String comment, ApprovalAssuranceEvidence evidence) {
+        Objects.requireNonNull(request, "request must not be null");
+        return new AccessRequestEvent(UUID.randomUUID().toString(), request.id(), request.realmId(),
+                AccessRequestEventType.REQUEST_APPROVED, actorId, occurredAt, comment, null, request.version(),
+                null, evidence);
     }
 
     public static AccessRequestEvent rejected(
@@ -164,8 +186,16 @@ public final class AccessRequestEvent {
             String id, String requestId, String realmId, AccessRequestEventType type,
             String actorId, Instant occurredAt, String comment, String metadata, Long requestVersion,
             Long revocationAttempt) {
+        return rehydrate(id, requestId, realmId, type, actorId, occurredAt, comment, metadata,
+                requestVersion, revocationAttempt, null);
+    }
+
+    public static AccessRequestEvent rehydrate(
+            String id, String requestId, String realmId, AccessRequestEventType type,
+            String actorId, Instant occurredAt, String comment, String metadata, Long requestVersion,
+            Long revocationAttempt, ApprovalAssuranceEvidence evidence) {
         return new AccessRequestEvent(id, requestId, realmId, type, actorId, occurredAt, comment, metadata,
-                requestVersion, revocationAttempt);
+                requestVersion, revocationAttempt, evidence);
     }
 
     private static AccessRequestEvent from(
@@ -225,6 +255,10 @@ public final class AccessRequestEvent {
 
     public Long revocationAttempt() {
         return revocationAttempt;
+    }
+
+    public ApprovalAssuranceEvidence assuranceEvidence() {
+        return assuranceEvidence;
     }
 
     private static String requireText(String value, String fieldName) {

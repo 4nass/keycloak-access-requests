@@ -2,6 +2,7 @@ package ch.anass.keycloak.accessrequests.persistence.jpa.repository;
 
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEventEntity;
 import ch.anass.keycloak.accessrequests.persistence.jpa.entity.AccessRequestEntity;
+import ch.anass.keycloak.accessrequests.core.domain.approval.ApprovalAssuranceEvidence;
 import ch.anass.keycloak.accessrequests.core.domain.entitlement.ResourceType;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequest;
 import ch.anass.keycloak.accessrequests.core.domain.request.AccessRequestEvent;
@@ -20,6 +21,7 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class JpaAccessRequestHistoryReaderTest {
 
@@ -72,6 +74,21 @@ class JpaAccessRequestHistoryReaderTest {
         assertEquals(List.of(AccessRequestEventType.REQUEST_CREATED, AccessRequestEventType.REQUEST_APPROVED),
                 history.stream().map(AccessRequestEvent::type).toList());
         assertEquals("Approved.", history.get(1).comment());
+    }
+
+    @Test
+    void persistsCriticalApprovalAssuranceEvidence() {
+        ApprovalAssuranceEvidence evidence = new ApprovalAssuranceEvidence("2", 2, 300,
+                "3", 3, 1_000, 1_010, 1_020);
+        AccessRequestEvent event = AccessRequestEvent.rehydrate("critical-event", "critical-request", "realm-1",
+                AccessRequestEventType.REQUEST_APPROVED, "approver-1", Instant.ofEpochSecond(1_020),
+                "Approved.", null, 1L, null, evidence);
+        transaction(() -> new JpaAccessRequestEventPublisher(entityManager).publish(event));
+        entityManager.clear();
+
+        AccessRequestEvent verified = new JpaAccessRequestHistoryReader(entityManager)
+                .findByRequestId("realm-1", "critical-request").getFirst();
+        assertEquals(evidence, verified.assuranceEvidence());
     }
 
     @Test

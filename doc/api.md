@@ -109,6 +109,8 @@ The server returns `403 Forbidden` when a caller tries to cancel another user's 
 
 HIGH and CRITICAL approval additionally requires the realm's approval-assurance policy. If Keycloak has no matching LoA condition or ACR mapping, or the LoA condition's Max Age is zero or exceeds the policy limit, approval returns `503 ASSURANCE_NOT_CONFIGURED`. When the approver's token or session lacks the required level or its timestamp is stale, approval returns `403 STEP_UP_REQUIRED` with a `requiredAcr` field. A higher LoA is accepted only if the token ACR maps to it and Keycloak has a fresh timestamp for that level. The client requests the required ACR without forcing full reauthentication and asks the approver to confirm the decision again; it must not use a client-supplied LoA as proof. See [realm configuration](configuration.md#configure-approval-assurance-for-high-and-critical).
 
+For CRITICAL approvals, the administrative request-detail history includes an `assurance` object on `REQUEST_APPROVED` with the configured and observed ACR/LoA, freshness limit, authentication time, token issue time, and verification time (Unix seconds). Requester history does not expose these fields. This audit record is not protected against direct database tampering.
+
 ## Catalog administration endpoints
 
 Read-only catalog endpoints accept operational managers. Every catalog mutation below requires `realm-admin`; `manage-access-requests` alone receives `403`. The capabilities response exposes `canManageCatalog` and `canViewEvents` separately so operational managers retain access to Events.
@@ -187,7 +189,7 @@ unpublishing remains possible.
 `PUT /admin/access-packages/{packageId}` replaces the complete role list using
 `{"version":3,"roleMappings":[{"type":"REALM_ROLE","roleId":"..."}]}`. One to 100 distinct existing realm or client roles are required. The package must be closed to new requests, unused by any request, have no group members or child groups, and match its stored binding. Otherwise the server returns `409 Conflict`. A stale entitlement version also returns `409`. The group mappings, binding, entitlement version, and audit event are updated in the Keycloak transaction. A package already used in a request must be replaced by a new package rather than silently changing what an approval or provisioning retry grants.
 
-Every successful role replacement stores the ordered role type/ID lists before and after the change in the extension's entitlement history. The matching Keycloak Admin Event includes the same snapshots when realm Admin Events are enabled. This allows removed roles to be identified even if the source role is later deleted.
+Package creation records an empty `before` list and the initial ordered role type/ID list as `after`. Every successful role replacement then stores the lists before and after the change in the extension's entitlement history. The matching Keycloak Admin Events include the same snapshots when realm Admin Events are enabled. This allows the initial selection and subsequently removed roles to be identified even if a source role is later deleted.
 
 ### `PUT /admin/entitlements/{entitlementId}`
 
@@ -219,7 +221,7 @@ Successful catalog creates and updates also emit Keycloak Admin Events with reso
 `ACCESS_REQUEST_ENTITLEMENT` and resource path `access-requests/entitlements/{id}`. The event
 details contain the new `requestable`, `riskLevel`, `approverRoleId`, duration-policy, and
 `autoApprove` values, but not the full
-entitlement representation. Package role edits additionally include `packageRoleMappingsBefore` and
+entitlement representation. Package creation and role edits additionally include `packageRoleMappingsBefore` and
 `packageRoleMappingsAfter`. A soft-disable is an `UPDATE` event, not `DELETE`. Keycloak stores
 these events only when Admin Events are enabled for the realm; the extension's own catalog
 history is persisted regardless of that setting.
@@ -312,7 +314,7 @@ no longer approved with failed provisioning, or concurrently changed requests, r
 Closure accepts `{"reason":"..."}` with a mandatory 10–1000 character operational reason and
 returns `200 OK` with the closure time, actor, and reason. It requires `manage-access-requests`.
 Only an approved request with an open provisioning failure can be closed. The action leaves the
-approval and failed provisioning state unchanged, records an immutable history event, removes
+approval and failed provisioning state unchanged, records a persisted history event, removes
 the request from the active failure queue, and permanently blocks retry. There is no hard delete.
 Invalid reasons return `400`, missing or cross-realm requests `404`, and already closed or
 concurrently changed requests `409`. The requester detail history exposes the closure event,
