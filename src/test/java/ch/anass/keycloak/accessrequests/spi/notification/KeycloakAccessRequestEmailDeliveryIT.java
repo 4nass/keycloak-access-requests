@@ -556,21 +556,21 @@ class KeycloakAccessRequestEmailDeliveryIT {
         String roleName = "email-target-" + UUID.randomUUID();
         String roleId = createRealmRole(keycloak, adminToken, roleName);
         URI entitlementsEndpoint = realmEndpoint(keycloak, "/realms/master/access-requests/admin/entitlements");
+        URI packagesEndpoint = realmEndpoint(keycloak, "/realms/master/access-requests/admin/access-packages");
         String description = "Read-only access for email delivery verification.";
         HttpResponse<String> creation = HTTP_CLIENT.send(
-                HttpRequest.newBuilder(entitlementsEndpoint)
+                HttpRequest.newBuilder(packagesEndpoint)
                         .header("Authorization", "Bearer " + adminToken)
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString("""
                                 {
-                                  "resourceType":"REALM_ROLE",
-                                  "resourceId":"%s",
                                   "displayName":"%s",
                                   "description":"%s",
-                                  "riskLevel":"HIGH",
-                                  "approverRoleId":"%s"
+                                  "riskLevel":"LOW",
+                                  "approverRoleId":"%s",
+                                  "roleMappings":[{"type":"REALM_ROLE","roleId":"%s"}]
                                 }
-                                """.formatted(roleId, displayName, description, approverRoleId)))
+                                """.formatted(displayName, description, approverRoleId, roleId)))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(201, creation.statusCode());
@@ -584,7 +584,7 @@ class KeycloakAccessRequestEmailDeliveryIT {
                                 {
                                   "displayName":"%s",
                                   "description":"%s",
-                                  "riskLevel":"HIGH",
+                                  "riskLevel":"LOW",
                                   "approverRoleId":"%s",
                                   "requestable":true,
                                   "version":0

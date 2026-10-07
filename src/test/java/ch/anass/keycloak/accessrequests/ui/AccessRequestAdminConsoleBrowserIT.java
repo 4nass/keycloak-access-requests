@@ -606,7 +606,7 @@ class AccessRequestAdminConsoleBrowserIT {
                 fixture = configureAdminConsole(firstServer);
                 failure = createDeletedRoleFailure(firstServer, fixture.globalAdminToken()).request();
                 assertFailedProvisioningIsVisible(
-                        firstServer, fixture.globalAdminToken(), failure, "RESOURCE_MISSING");
+                        firstServer, fixture.globalAdminToken(), failure, "RESOURCE_TYPE_MISMATCH");
                 assertRequesterStateAndHistory(firstServer, failure, "FAILED",
                         "REQUEST_APPROVED", "PROVISIONING_STARTED", "PROVISIONING_FAILED");
                 String replacementRoleId = createRealmRole(
@@ -617,6 +617,7 @@ class AccessRequestAdminConsoleBrowserIT {
             // Restart to clear Keycloak's role cache after the fixture-only database repair.
             try (KeycloakContainer keycloak = keycloakWithPostgres()) {
                 keycloak.start();
+                restorePackageRoleMapping(keycloak, accessToken(keycloak, "admin-cli", "admin", "admin"), failure);
                 try (GenericContainer<?> chrome = chrome()) {
                     chrome.start();
                     RemoteWebDriver driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
@@ -627,7 +628,7 @@ class AccessRequestAdminConsoleBrowserIT {
                         openFailedProvisioning(driver);
                         assertPageHeading(driver, "Provisioning failures");
                         retryFailedProvisioningInBrowser(
-                                driver, failure, "The original resource is missing.");
+                                driver, failure, "The resource no longer matches the entitlement type.");
                         assertApiRequestStatus(
                                 driver, "/admin/requests/" + failure.requestId() + "/provisioning/retry", 200);
                         assertNoJavaScriptErrors(driver);
@@ -678,7 +679,7 @@ class AccessRequestAdminConsoleBrowserIT {
             assertRoleNotGranted(keycloak, admin.globalAdminToken(), old.requesterId(), replacementRoleId);
 
             deactivateEntitlement(keycloak, admin.globalAdminToken(), old.entitlementId(), pending);
-            String newEntitlementId = createPublishedReplacementEntitlement(
+            String newEntitlementId = createPublishedReplacementPackage(
                     keycloak, admin.globalAdminToken(), replacementRoleId, pending.approverRoleId());
             String newRequestId = submitReplacementRequest(keycloak, requesterToken, newEntitlementId);
             assertFalse(newRequestId.equals(old.requestId()));
@@ -1111,8 +1112,9 @@ class AccessRequestAdminConsoleBrowserIT {
         assertFalse(item.getText().contains("The configured Keycloak role no longer exists."));
         item.findElement(By.xpath(".//button[normalize-space()='Retry provisioning']")).click();
 
-        By dialog = By.xpath("//*[@role='dialog' and .//*[normalize-space()='" + failure.requestId() + "']]");
-        wait.until(ExpectedConditions.visibilityOfElementLocated(dialog));
+        WebElement dialog = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[role='dialog']")));
+        assertTrue(dialog.getText().contains(failure.requestId()),
+                "The retry dialog must identify the failed request.");
         wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
                 "//*[@role='dialog']//button[normalize-space()='Retry provisioning']"))).click();
 
@@ -1137,7 +1139,7 @@ class AccessRequestAdminConsoleBrowserIT {
                 + xpathLiteral(failure.displayName()) + "]]";
         WebElement item = wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath(itemXPath)));
         assertTrue(item.getText().contains(failure.requestId()));
-        assertTrue(item.getText().contains("The original resource is missing."));
+        assertTrue(item.getText().contains("The resource no longer matches the entitlement type."));
         item.findElement(By.xpath(".//button[normalize-space()='Close failure']")).click();
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("provisioning-closure-reason")))
                 .sendKeys("The original role was deleted; a newly approved request targets its replacement.");
@@ -1191,17 +1193,19 @@ class AccessRequestAdminConsoleBrowserIT {
         String displayName = "Recoverable browser entitlement";
 
         HttpResponse<String> createdEntitlement = HTTP_CLIENT.send(
-                adminRequest(keycloak, "/realms/master/access-requests/admin/entitlements", globalAdminToken)
+                adminRequest(keycloak, "/realms/master/access-requests/admin/access-packages", globalAdminToken)
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString("""
-                                {"resourceType":"REALM_ROLE","resourceId":"%s","displayName":"%s",
+                                {"displayName":"%s",
                                  "description":"Verifies browser-driven provisioning recovery.","riskLevel":"LOW",
-                                 "approverRoleId":"%s"}
-                                """.formatted(targetRoleId, displayName, approverRoleId)))
+                                 "approverRoleId":"%s",
+                                 "roleMappings":[{"type":"REALM_ROLE","roleId":"%s"}]}
+                                """.formatted(displayName, approverRoleId, targetRoleId)))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(201, createdEntitlement.statusCode(), createdEntitlement.body());
         String entitlementId = responseId(createdEntitlement.body());
+        String groupId = JSON.readTree(createdEntitlement.body()).path("resourceId").asText();
         HttpResponse<String> activated = HTTP_CLIENT.send(
                 adminRequest(keycloak, "/realms/master/access-requests/admin/entitlements/" + entitlementId,
                         globalAdminToken)
@@ -1230,7 +1234,7 @@ class AccessRequestAdminConsoleBrowserIT {
         return new PendingProvisioningFixture(
                 new FailedProvisioningFixture(requestId, entitlementId, requesterId,
                         requestClientId, requesterUsername, requesterPassword,
-                        targetRoleId, targetRoleName, displayName),
+                        targetRoleId, targetRoleName, groupId, displayName),
                 approverId, approverUsername, approverRoleId, approverToken);
     }
 
@@ -1251,6 +1255,21 @@ class AccessRequestAdminConsoleBrowserIT {
         }
     }
 
+    private void restorePackageRoleMapping(
+            KeycloakContainer keycloak, String globalAdminToken, FailedProvisioningFixture failure)
+            throws Exception {
+        HttpResponse<String> restored = HTTP_CLIENT.send(
+                adminRequest(keycloak, "/admin/realms/master/groups/" + failure.groupId()
+                        + "/role-mappings/realm", globalAdminToken)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("""
+                                [{"id":"%s","name":"%s"}]
+                                """.formatted(failure.roleId(), failure.roleName())))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(204, restored.statusCode(), restored.body());
+    }
+
     private void assertFailedProvisioningIsVisible(
             KeycloakContainer keycloak, String globalAdminToken,
             FailedProvisioningFixture failure, String failureCode)
@@ -1264,7 +1283,7 @@ class AccessRequestAdminConsoleBrowserIT {
         assertTrue(response.body().contains("\"failureCode\":\"" + failureCode + "\""), response.body());
         HttpResponse<String> mappings = HTTP_CLIENT.send(
                 adminRequest(keycloak, "/admin/realms/master/users/" + failure.requesterId()
-                        + "/role-mappings/realm", globalAdminToken).GET().build(),
+                        + "/role-mappings/realm/composite", globalAdminToken).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, mappings.statusCode());
         assertFalse(mappings.body().contains("\"id\":\"" + failure.roleId() + "\""),
@@ -1332,7 +1351,7 @@ class AccessRequestAdminConsoleBrowserIT {
         String globalAdminToken = accessToken(keycloak, "admin-cli", "admin", "admin");
         HttpResponse<String> mappings = HTTP_CLIENT.send(
                 adminRequest(keycloak, "/admin/realms/master/users/" + failure.requesterId()
-                        + "/role-mappings/realm", globalAdminToken).GET().build(),
+                        + "/role-mappings/realm/composite", globalAdminToken).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, mappings.statusCode());
         assertTrue(mappings.body().contains("\"id\":\"" + failure.roleId() + "\""),
@@ -1387,7 +1406,7 @@ class AccessRequestAdminConsoleBrowserIT {
                 adminRequest(keycloak, path, globalAdminToken).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, current.statusCode(), current.body());
-        assertTrue(current.body().contains("\"resourceId\":\"" + pending.request().roleId() + "\""),
+        assertTrue(current.body().contains("\"resourceId\":\"" + pending.request().groupId() + "\""),
                 current.body());
         var version = Pattern.compile("\\\"version\\\"\\s*:\\s*(\\d+)").matcher(current.body());
         assertTrue(version.find(), current.body());
@@ -1403,23 +1422,23 @@ class AccessRequestAdminConsoleBrowserIT {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, deactivated.statusCode(), deactivated.body());
         assertTrue(deactivated.body().contains("\"requestable\":false"), deactivated.body());
-        assertTrue(deactivated.body().contains("\"resourceId\":\"" + pending.request().roleId() + "\""),
+        assertTrue(deactivated.body().contains("\"resourceId\":\"" + pending.request().groupId() + "\""),
                 deactivated.body());
     }
 
-    private String createPublishedReplacementEntitlement(
+    private String createPublishedReplacementPackage(
             KeycloakContainer keycloak, String globalAdminToken, String replacementRoleId,
             String approverRoleId) throws Exception {
         String path = "/realms/master/access-requests/admin/entitlements";
         HttpResponse<String> created = HTTP_CLIENT.send(
-                adminRequest(keycloak, path, globalAdminToken)
+                adminRequest(keycloak, "/realms/master/access-requests/admin/access-packages", globalAdminToken)
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString("""
-                                {"resourceType":"REALM_ROLE","resourceId":"%s",
-                                 "displayName":"Replacement browser entitlement",
+                                {"displayName":"Replacement browser entitlement",
                                  "description":"A new approval is required for the replacement role.",
-                                 "riskLevel":"LOW","approverRoleId":"%s"}
-                                """.formatted(replacementRoleId, approverRoleId)))
+                                 "riskLevel":"LOW","approverRoleId":"%s",
+                                 "roleMappings":[{"type":"REALM_ROLE","roleId":"%s"}]}
+                                """.formatted(approverRoleId, replacementRoleId)))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(201, created.statusCode(), created.body());
@@ -1435,7 +1454,7 @@ class AccessRequestAdminConsoleBrowserIT {
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, activated.statusCode(), activated.body());
-        assertTrue(activated.body().contains("\"resourceId\":\"" + replacementRoleId + "\""), activated.body());
+        assertTrue(activated.body().contains("\"resourceType\":\"GROUP\""), activated.body());
         return entitlementId;
     }
 
@@ -1578,10 +1597,7 @@ class AccessRequestAdminConsoleBrowserIT {
                     .isDisplayed(), "Existing package roles must be removable from the edit form.");
             AccessRequestBrowserScreenshots.capture(driver, "workflow-admin-edit-access-package-roles");
             driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Cancel']")).click();
-            String itemXPath = "//*[contains(@class, 'pf-v5-c-data-list__item') and .//h2[normalize-space()="
-                    + xpathLiteral(displayName) + "]]";
-            wait.until(ExpectedConditions.elementToBeClickable(
-                    By.xpath(itemXPath + "//button[normalize-space()='Edit access policy']"))).click();
+            wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("entitlement-requestable")));
             requestable = wait.until(ExpectedConditions.elementToBeClickable(By.id("entitlement-requestable")));
         }
         requestable.click();
@@ -1922,6 +1938,7 @@ class AccessRequestAdminConsoleBrowserIT {
             String requesterPassword,
             String roleId,
             String roleName,
+            String groupId,
             String displayName) {
     }
 

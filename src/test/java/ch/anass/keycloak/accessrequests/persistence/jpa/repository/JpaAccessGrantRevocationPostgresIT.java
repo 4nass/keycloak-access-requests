@@ -79,10 +79,10 @@ class JpaAccessGrantRevocationPostgresIT {
     private static void assertSecondNodeWaitsForRevocation(boolean packageMembership) throws Exception {
         Instant activatedAt = Instant.parse("2026-09-01T10:00:00Z");
         AccessGrant authorized = new AccessGrant(packageMembership ? "request-postgres-package" : "request-postgres-lock",
-                "realm-1", "user-1", "entitlement-1", ResourceType.REALM_ROLE,
-                packageMembership ? "source-role" : "jit-role-1", GrantOrigin.CREATED_BY_EXTENSION,
+                "realm-1", "user-1", "entitlement-1", ResourceType.GROUP,
+                "jit-group-1", GrantOrigin.CREATED_BY_EXTENSION,
                 activatedAt, activatedAt.plus(Duration.ofHours(4)), GrantRevocationState.AUTHORIZED, 0,
-                packageMembership ? "jit-group-1" : null);
+                "jit-group-1");
         EntityManager setup = factory.createEntityManager();
         try {
             revocationRepository(setup);

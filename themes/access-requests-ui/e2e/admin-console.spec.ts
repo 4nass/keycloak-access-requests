@@ -32,7 +32,8 @@ test("renders Access requests as a native Administration Console entry", async (
     await accessRequests.focus();
     await expect(accessRequests).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect(page.getByRole("heading", { name: "Access requests" })).toBeVisible();
+    await expect(page).toHaveURL(/#\/master\/access-requests(?:\/)?$/);
+    await expect(page.getByRole("heading", { name: "Catalog" })).toBeVisible();
 });
 
 test("keeps the cold Administration Console asset transfer within budget", async ({ page }) => {
