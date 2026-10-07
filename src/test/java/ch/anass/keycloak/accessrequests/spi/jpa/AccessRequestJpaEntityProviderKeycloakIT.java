@@ -948,12 +948,12 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             }
         }
         assertPackageGrantAuthorizationAfterProvisioning(server, adminToken, managerToken, entitlementEndpoint,
-                entitlementId, groupId, sourceRoleId, approverRoleName, approverRoleId);
+                entitlementId, groupId, sourceRoleId, sourceRoleName, approverRoleName, approverRoleId);
     }
 
     private void assertPackageGrantAuthorizationAfterProvisioning(
             GenericContainer<?> server, String adminToken, String managerToken, URI entitlementEndpoint,
-            String entitlementId, String groupId, String sourceRoleId,
+            String entitlementId, String groupId, String sourceRoleId, String sourceRoleName,
             String approverRoleName, String approverRoleId) throws Exception {
         String publish = """
                 {"displayName":"Temporary reporting access","description":"Time-bound reporting package.",
@@ -1031,7 +1031,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 "CREATED_BY_EXTENSION", "AUTHORIZED", 1, true);
         assertPermanentPackageGrantCanBeManuallyRevoked(server, adminToken, managerToken,
                 clientId, password, entitlementId, approverToken, requestsEndpoint, accessRequestsEndpoint,
-                groupId, preexistingRequestId);
+                groupId, sourceRoleName, preexistingRequestId);
 
         String retryUsername = "package-retry-requester-" + UUID.randomUUID();
         createEnabledUser(server, adminToken, retryUsername, password);
@@ -1132,7 +1132,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     private void assertPermanentPackageGrantCanBeManuallyRevoked(GenericContainer<?> server,
             String adminToken, String managerToken, String clientId, String password,
             String entitlementId, String approverToken, URI requestsEndpoint,
-            URI accessRequestsEndpoint, String groupId, String preexistingRequestId) throws Exception {
+            URI accessRequestsEndpoint, String groupId, String sourceRoleName,
+            String preexistingRequestId) throws Exception {
         String username = "package-manual-revocation-" + UUID.randomUUID();
         createEnabledUser(server, adminToken, username, password);
         String requesterToken = accessToken(server, clientId, username, password);
@@ -1147,6 +1148,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 requestId, "approve", "Approved."), HttpResponse.BodyHandlers.ofString());
         assertEquals(200, approved.statusCode(), approved.body());
         assertPackageGrantState(requestId, requesterId, groupId, "CREATED_BY_EXTENSION", "AUTHORIZED", 1, true);
+        String issuedBeforeRevocation = accessToken(server, clientId, username, password);
+        assertRealmRoleClaim(issuedBeforeRevocation, sourceRoleName, true);
 
         String base = accessRequestsEndpoint + "/admin/grants/";
         URI revoke = URI.create(base + requestId + "/revocation");
@@ -1167,16 +1170,58 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals(409, preexisting.statusCode(), preexisting.body());
 
         String reason = "Assignment ended; manager withdrew permanent access.";
-        HttpResponse<String> revoked = client.send(HttpRequest.newBuilder(revoke)
+        String constraintName = "CK_AR_GRANT_MANUAL_RETRY_IT";
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute("alter table AR_ACCESS_GRANT add constraint " + constraintName
+                    + " check (REQUEST_ID <> '" + UUID.fromString(requestId)
+                    + "' or REVOCATION_STATE <> 'REVOKED')");
+        }
+        try {
+            HttpResponse<String> failed = client.send(HttpRequest.newBuilder(revoke)
+                    .header("Authorization", "Bearer " + managerToken)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                            new ObjectMapper().createObjectNode().put("reason", reason).toString()))
+                    .build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, failed.statusCode(), failed.body());
+            assertTrue(failed.body().contains("\"status\":\"FAILED\""), failed.body());
+            assertGrantRevocationState(requestId, "AUTHORIZED", 1);
+            assertGroupMembership(server, adminToken, requesterId, groupId);
+            assertTrue(revocationFailureRecorded(requestId),
+                    "A failed manual removal of permanent access must remain visible to managers");
+            URI failures = URI.create(accessRequestsEndpoint + "/admin/revocation-failures");
+            HttpResponse<String> open = client.send(HttpRequest.newBuilder(failures)
+                    .header("Authorization", "Bearer " + managerToken).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, open.statusCode(), open.body());
+            assertTrue(open.body().contains(requestId), open.body());
+        } finally {
+            try (Connection connection = DriverManager.getConnection(
+                    POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                 Statement statement = connection.createStatement()) {
+                statement.execute("alter table AR_ACCESS_GRANT drop constraint " + constraintName);
+            }
+        }
+        URI retry = URI.create(base + requestId + "/revocation/retry");
+        HttpResponse<String> revoked = client.send(HttpRequest.newBuilder(retry)
                 .header("Authorization", "Bearer " + managerToken)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(
-                        new ObjectMapper().createObjectNode().put("reason", reason).toString()))
+                .POST(HttpRequest.BodyPublishers.noBody())
                 .build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(200, revoked.statusCode(), revoked.body());
         assertTrue(revoked.body().contains("\"status\":\"REVOKED\""));
         assertNoGroupMembership(server, adminToken, requesterId, groupId);
         assertGrantRevocationState(requestId, "REVOKED", 2);
+        assertRealmRoleClaim(issuedBeforeRevocation, sourceRoleName, true);
+        assertRealmRoleClaim(accessToken(server, clientId, username, password), sourceRoleName, false);
+
+        HttpResponse<String> resolved = client.send(HttpRequest.newBuilder(
+                        URI.create(accessRequestsEndpoint + "/admin/revocation-failures?state=RESOLVED"))
+                .header("Authorization", "Bearer " + managerToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, resolved.statusCode(), resolved.body());
+        assertTrue(resolved.body().contains(requestId), resolved.body());
 
         HttpResponse<String> detail = client.send(HttpRequest.newBuilder(
                         URI.create(accessRequestsEndpoint + "/admin/requests/" + requestId))
@@ -1187,7 +1232,8 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         assertEquals("REVOKED", body.path("grant").path("revocationState").asText());
         assertFalse(body.path("grant").path("manuallyRevocable").asBoolean());
         assertFalse(body.path("grant").hasNonNull("expiresAt"));
-        assertTrue(detail.body().contains(reason), detail.body());
+        assertTrue(detail.body().contains("REVOCATION_FAILED"), detail.body());
+        assertTrue(detail.body().contains("REVOCATION_SUCCEEDED"), detail.body());
 
         HttpResponse<String> repeated = client.send(HttpRequest.newBuilder(revoke)
                 .header("Authorization", "Bearer " + managerToken)
@@ -3567,6 +3613,24 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         var matcher = Pattern.compile("\\\"sub\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(payload);
         assertTrue(matcher.find(), "The access token payload must contain a subject.");
         return matcher.group(1);
+    }
+
+    private void assertRealmRoleClaim(String accessToken, String roleName, boolean expected) throws Exception {
+        String[] segments = accessToken.split("\\.");
+        assertEquals(3, segments.length, "The access token must be a JWT.");
+        JsonNode claims = new ObjectMapper().readTree(Base64.getUrlDecoder().decode(segments[1]));
+        assertTrue(claims.path("exp").asLong() > Instant.now().getEpochSecond(),
+                "The previously issued access token must still be valid for this assertion.");
+        JsonNode roles = claims.path("realm_access").path("roles");
+        assertTrue(roles.isArray(), "The test client must include realm roles in its access token.");
+        boolean present = false;
+        for (JsonNode role : roles) {
+            if (roleName.equals(role.asText())) {
+                present = true;
+                break;
+            }
+        }
+        assertEquals(expected, present, "Unexpected realm role claim in the access token.");
     }
 
     private void assertPendingRequestAndCreatedAuditEvent(

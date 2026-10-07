@@ -29,7 +29,7 @@ public final class JpaGrantRevocationFailureRepository implements AccessGrantRev
         Objects.requireNonNull(code);
         Objects.requireNonNull(now);
         AccessGrant grant = grants.findByRequestIdForUpdate(realmId, requestId).orElse(null);
-        if (grant == null || grant.deliveryGroupId() == null || !grant.canAutoRevokeAt(now)) {
+        if (grant == null || !grant.canManuallyRevoke()) {
             return Optional.empty();
         }
         GrantRevocationFailureEntity failure = entityManager.find(GrantRevocationFailureEntity.class, requestId);

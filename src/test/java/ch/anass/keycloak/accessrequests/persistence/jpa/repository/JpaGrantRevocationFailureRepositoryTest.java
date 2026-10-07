@@ -88,6 +88,41 @@ class JpaGrantRevocationFailureRepositoryTest {
     }
 
     @Test
+    void recordsFailedManualRemovalOfPermanentGrantWithoutSchedulingIt() {
+        inTransaction(() -> grants.create(grant("permanent-request", "realm-1",
+                GrantRevocationState.AUTHORIZED, null)));
+        entityManager.clear();
+
+        inTransaction(() -> assertTrue(failures.record("realm-1", "permanent-request",
+                GrantRevocationFailureCode.REMOVAL_FAILED, NOW).isPresent()));
+        entityManager.clear();
+
+        assertEquals(1, failures.findPage("realm-1", true, 0, 20).total());
+        assertTrue(failures.findOpen("realm-1", "permanent-request").isPresent());
+        assertEquals(GrantRevocationState.AUTHORIZED,
+                grants.findByRequestId("realm-1", "permanent-request").orElseThrow().revocationState());
+        assertTrue(grants.findRetryableFailedPackageGrants(NOW.plusSeconds(3600), 10).isEmpty(),
+                "A permanent grant must be retried only by an administrator");
+    }
+
+    @Test
+    void recordsFailedEarlyManualRemovalWithoutSchedulingItBeforeExpiry() {
+        inTransaction(() -> grants.create(grant("future-request", "realm-1",
+                GrantRevocationState.AUTHORIZED, NOW.plusSeconds(3600))));
+        entityManager.clear();
+
+        inTransaction(() -> assertTrue(failures.record("realm-1", "future-request",
+                GrantRevocationFailureCode.AUTHORITY_UNVERIFIABLE, NOW).isPresent()));
+        entityManager.clear();
+
+        assertTrue(failures.findOpen("realm-1", "future-request").isPresent());
+        assertTrue(grants.findRetryableFailedPackageGrants(NOW.plusSeconds(300), 10).isEmpty());
+        assertTrue(grants.findRetryableFailedPackageGrants(NOW.plusSeconds(3600), 10).stream()
+                .anyMatch(grant -> grant.requestId().equals("future-request")),
+                "The expiry worker may resume a still-open temporary failure once it becomes due");
+    }
+
+    @Test
     void successfulRemovalResolvesTheFailureAndKeepsItsArchive() {
         inTransaction(() -> failures.record("realm-1", "request-1",
                 GrantRevocationFailureCode.REMOVAL_FAILED, NOW));
@@ -121,9 +156,13 @@ class JpaGrantRevocationFailureRepositoryTest {
     }
 
     private static AccessGrant grant(String requestId, String realmId, GrantRevocationState state) {
+        return grant(requestId, realmId, state, NOW.minusSeconds(1));
+    }
+
+    private static AccessGrant grant(String requestId, String realmId, GrantRevocationState state, Instant expiresAt) {
         return new AccessGrant(requestId, realmId, "user-1", "entitlement-1", ResourceType.REALM_ROLE,
                 "source-role", GrantOrigin.CREATED_BY_EXTENSION, NOW.minusSeconds(3600),
-                NOW.minusSeconds(1), state, 0, "package-group");
+                expiresAt, state, 0, "package-group");
     }
 
     private void inTransaction(Runnable operation) {
@@ -131,7 +170,7 @@ class JpaGrantRevocationFailureRepositoryTest {
         try {
             operation.run();
             entityManager.getTransaction().commit();
-        } catch (RuntimeException exception) {
+        } catch (RuntimeException | Error exception) {
             entityManager.getTransaction().rollback();
             throw exception;
         }
