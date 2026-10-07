@@ -258,14 +258,16 @@ class AccessRequestAdminConsoleBrowserIT {
                 waitFor(driver).until(ExpectedConditions.urlContains("/master/access-requests/events"));
                 waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
                         "//a[contains(@href, '/access-requests/requests/" + requestId + "')]")));
-                String openRequesterId = createEnabledUser(keycloak, adminToken,
+                // The browser journey can outlast the admin-cli access token on slower Keycloak versions.
+                String galleryAdminToken = accessToken(keycloak, "admin-cli", "admin", "admin");
+                String openRequesterId = createEnabledUser(keycloak, galleryAdminToken,
                         "gallery-open-requester", "gallery-password", "Robin", "Requester");
-                String closedRequesterId = createEnabledUser(keycloak, adminToken,
+                String closedRequesterId = createEnabledUser(keycloak, galleryAdminToken,
                         "gallery-closed-requester", "gallery-password", "Sam", "Requester");
                 AccessRequestBrowserGalleryFixture.Incidents incidents =
                         AccessRequestBrowserGalleryFixture.seed(postgres, requestId,
                                 openRequesterId, closedRequesterId, approverId, manager.approverRoleId());
-                verifyPopulatedAdminPages(keycloak, driver, adminToken, incidents,
+                verifyPopulatedAdminPages(keycloak, driver, galleryAdminToken, incidents,
                         requestId, requesterId);
                 assertNoJavaScriptErrors(driver);
             } finally {
