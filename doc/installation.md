@@ -64,7 +64,7 @@ COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 ```
 
-Start the resulting image with your normal production configuration and the `start` command. Keep the Keycloak image tag aligned with the provider baseline.
+Start the resulting image with your normal production configuration and the `start` command. Use a Keycloak version listed in the compatibility table.
 
 ## First startup and database changes
 
@@ -74,6 +74,8 @@ The JAR registers a Keycloak JPA entity provider and its Liquibase changelog. On
 - `AR_ACCESS_REQUEST_HISTORY`
 - `AR_ENTITLEMENT`
 - `AR_ENTITLEMENT_HISTORY`
+- `AR_ACCESS_PACKAGE` and `AR_ACCESS_PACKAGE_ROLE`
+- `AR_ACCESS_GRANT` and `AR_GRANT_REVOCATION_FAILURE`
 - `AR_NOTIFICATION_OUTBOX`
 
 No separate migration command is required. Back up the Keycloak database before every upgrade, review the release notes, and validate the new image against a restored production-like database before rollout.

@@ -28,7 +28,7 @@ The complete deployment, configuration, and verification procedure is in [the in
 
 - an entitlement catalog with a resource, risk level, approver role, and requestable state;
 - user-facing request, history, cancellation, and approval flows;
-- synchronous provisioning of realm roles, client roles, and groups after approval;
+- access-package membership provisioning, with mapped realm and client roles, after approval;
 - persisted request and entitlement audit history;
 - realm-scoped REST endpoints and native-looking Keycloak console themes.
 
