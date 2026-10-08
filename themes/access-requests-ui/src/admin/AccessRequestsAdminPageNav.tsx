@@ -27,8 +27,8 @@ type SelectedItem = {
 };
 
 /**
- * Forked from Keycloak 26.7.4's PageNav:
- * https://github.com/keycloak/keycloak/blob/26.7.4/js/apps/admin-ui/src/PageNav.tsx
+ * Forked from Keycloak 26.7.5's PageNav:
+ * https://github.com/keycloak/keycloak/blob/26.7.5/js/apps/admin-ui/src/PageNav.tsx
  *
  * The public PageNav export has no supported contribution point for an additional navigation item.
  * Keep this implementation aligned with that source on every Keycloak minor upgrade; the only

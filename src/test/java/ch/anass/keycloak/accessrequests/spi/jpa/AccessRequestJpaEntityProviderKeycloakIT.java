@@ -50,7 +50,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
     private static final String ADMIN_CONSOLE_RESOURCE_PATH = "theme/access-requests/admin/resources/";
     private static final String ACCESS_REQUESTS_API_AUDIENCE = "access-requests-api";
     private static final String ACCESS_REQUEST_MANAGER_ROLE = "manage-access-requests";
-    private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.4";
+    private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.5";
     private static final String DEFAULT_POSTGRESQL_CONTAINER = "mirror.gcr.io/postgres:18";
     private static final String KEYCLOAK_VERSION = System.getProperty("keycloak.version", DEFAULT_KEYCLOAK_VERSION);
     private static final String KEYCLOAK_IMAGE = System.getProperty(

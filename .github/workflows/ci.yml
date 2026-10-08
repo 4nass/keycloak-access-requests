@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        keycloak: ['26.7.0', '26.7.1', '26.7.2', '26.7.3', '26.7.4']
+        keycloak: ['26.7.0', '26.7.1', '26.7.2', '26.7.3', '26.7.4', '26.7.5']
 
     steps:
       - name: Check out repository
