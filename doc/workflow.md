@@ -15,7 +15,7 @@ An entitlement is a realm-scoped, requestable access item. It has the following 
 | Duration policy | Default and maximum request duration, and whether permanent access is allowed |
 | Version | The optimistic-lock version used when updating the entitlement |
 
-An entitlement is unique per realm, resource type, and resource. Its target resource cannot be changed after creation; create a new entitlement instead when the target must change.
+An entitlement is unique per realm, resource type, and resource. Its target resource cannot be changed after creation; create a new entitlement instead when the target must change. To publish it, bind it to an access package with a dedicated delivery group. The package maps the selected realm and client roles; requesters receive group membership, not direct role assignments.
 
 New entitlements are drafts (`requestable=false`). Setting `requestable=true` publishes the entitlement to the requester catalog. Setting it back to `false` stops new requests while preserving the entitlement and its history. There is no hard-delete endpoint.
 
@@ -23,9 +23,9 @@ The initial duration policy depends on risk: LOW 30/90 days, MEDIUM 7/30 days, H
 
 ### Separate birthright and just-in-time access
 
-Do not publish a structural (birthright) role or group managed by HR, LDAP, AD, or another synchronization process as a just-in-time entitlement. Create a separate Keycloak resource dedicated to temporary access, such as `database-admin-jit`, and publish that resource instead. The external system keeps ownership of its structural mappings; the extension manages only its dedicated JIT mappings. Publishing an existing shared resource does **not** make it exclusively managed by the extension.
+Do not publish a structural (birthright) role or group managed by HR, LDAP, AD, or another synchronization process directly. Create an access package with a dedicated delivery group and map the required Keycloak roles to that group. External systems retain ownership of their structural assignments; the extension manages only membership in its package group. Mapping a shared role to a package does **not** give the extension ownership of the shared role itself.
 
-Risk is currently a catalog and approval-queue classification. It does not alter the number of approvers or activate an automatic approval policy.
+Every manually decided request has one authorized approver, not multiple approval stages. `LOW` requests can be approved automatically only when the entitlement's `autoApprove` policy is explicitly enabled. `HIGH` and `CRITICAL` approvals require the realm's configured authentication assurance and a fresh approver session; approval fails closed when that configuration or evidence is missing.
 
 ## Request lifecycle
 
@@ -43,7 +43,7 @@ PENDING ── cancel by requester ──► CANCELED
 
 `decisionStatus` describes the business decision. `provisioningStatus` describes the result of applying an approved entitlement:
 
-- a new request starts as `PENDING` / `NOT_STARTED`;
+- a new request normally starts as `PENDING` / `NOT_STARTED`; a configured `LOW` auto-approval is decided and provisioned during submission;
 - a rejected or canceled request has no provisioning work;
 - approval is final, and provisioning is attempted synchronously;
 - a provisioning error leaves the decision as `APPROVED` and records `FAILED` so the outcome is auditable.
@@ -56,7 +56,7 @@ The service rejects a request when any of these conditions is true:
 - the entitlement is not requestable;
 - the requester is disabled;
 - the justification is missing, blank, or outside the configured size policy;
-- the requester already has the selected role or group effectively granted;
+- the requester already belongs to the selected access-package group;
 - the requester already has a pending request for the same entitlement.
 - the selected finite duration is not positive or exceeds the entitlement's maximum, or permanent access was not allowed.
 
@@ -68,7 +68,7 @@ Only the requester may cancel their own `PENDING` request. A completed request c
 
 ## Approval rules
 
-An approval or rejection requires all of the following:
+A manual approval or rejection requires all of the following:
 
 - the request is in the current realm and still `PENDING`;
 - the entitlement is still requestable;
@@ -76,6 +76,8 @@ An approval or rejection requires all of the following:
 - the actor is not the requester.
 
 The approver role is checked on the server for every decision. The **Approvals** navigation item and queue are only convenience and discoverability features; they never grant authorization.
+
+For `HIGH` and `CRITICAL`, approval also checks the configured ACR/LoA and freshness of the approver's authentication. `CRITICAL` uses a stricter freshness limit by default. The Account Console can request step-up, but only server-verified Keycloak evidence authorizes the decision; rejection does not require step-up. See [realm configuration](configuration.md#configure-approval-assurance-for-high-and-critical).
 
 ## Provisioning behavior
 
