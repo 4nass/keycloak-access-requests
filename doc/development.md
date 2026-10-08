@@ -6,9 +6,9 @@
 | --- | --- |
 | Java | 21 |
 | Maven | 3.9 or newer |
-| Keycloak build baseline | 26.7.4 |
-| Validated Keycloak runtimes | 26.7.0–26.7.4 |
-| Quarkus BOM | 3.33.3.2 |
+| Keycloak build baseline | 26.7.5 |
+| Validated Keycloak runtimes | 26.7.0–26.7.5 |
+| Quarkus BOM | 3.33.4 |
 | Node.js | 24.18.1, provisioned by Maven |
 | pnpm | 11.18.0, provisioned by Maven |
 
@@ -70,8 +70,8 @@ The UI tests cover success paths and failures such as `401`, `403`, `409`, netwo
 
 Two GitHub Actions workflows protect `main` and pull requests:
 
-- **Build and tests** runs `mvn clean verify` against Keycloak 26.7.0–26.7.4 in separate jobs, always compiling against 26.7.4 and uploading the provider JAR from each job.
-- **Console E2E** packages the 26.7.4-based JAR, starts each Keycloak runtime, selects both packaged themes, and runs Playwright in Chromium and Firefox.
+- **Build and tests** runs `mvn clean verify` against Keycloak 26.7.0–26.7.5 in separate jobs, always compiling against 26.7.5 and uploading the provider JAR from each job.
+- **Console E2E** packages the 26.7.5-based JAR, starts each Keycloak runtime, selects both packaged themes, and runs Playwright in Chromium and Firefox.
 
 The workflows run when relevant source, theme, Maven, or workflow files change. CodeQL and Dependabot run independently.
 
@@ -100,7 +100,7 @@ Never state compatibility with a new Keycloak patch or minor release merely beca
 ## Publish a GitHub Release
 
 Update the Maven project version to the release version, run the full verification
-workflow, and create a matching version tag such as `v26.7.0`. The Release
+workflow, and create a matching version tag such as `v26.7.1`. The Release
 workflow checks that the tag matches the Maven version, runs `mvn clean verify`,
 and publishes both `keycloak-access-requests.jar` and
 `keycloak-access-requests-email-theme.zip` as GitHub Release assets.

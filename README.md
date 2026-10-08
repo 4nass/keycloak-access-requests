@@ -8,9 +8,10 @@ It is delivered as one JAR containing the server provider, database migrations, 
 
 | Extension version | Verified Keycloak versions | Build baseline |
 | --- | --- | --- |
+| `26.7.1` | 26.7.0–26.7.5 | 26.7.5 |
 | `26.7.0` | 26.7.0–26.7.4 | 26.7.4 |
 
-The first extension release for the Keycloak 26.7 line is `26.7.0`; its patch number is the extension's own revision, not the Keycloak server patch. The provider is built against the latest verified 26.7 patch, currently 26.7.4. The same JAR passed the Keycloak integration suite and packaged-console browser tests on 26.7.0 through 26.7.4. Later 26.7.x patches require their own verification before they are added to the compatibility table. Keycloak 26.5.x and 26.6.x are not supported.
+The extension's patch number is its own revision, not the Keycloak server patch. Version `26.7.1` is built against Keycloak 26.7.5 and targets the 26.7.0–26.7.5 runtimes. Later 26.7.x patches require verification before they are added to the table. Keycloak 26.5.x and 26.6.x are not supported.
 
 ## Quick start
 
