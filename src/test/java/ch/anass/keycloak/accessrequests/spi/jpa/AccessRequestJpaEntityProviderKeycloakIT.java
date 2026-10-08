@@ -9,7 +9,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.lifecycle.Startables;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -36,7 +35,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.jar.JarFile;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -1487,7 +1485,9 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 }
             }
 
-            Startables.deepStart(Stream.of(firstNode, secondNode)).join();
+            // Avoid concurrent Quarkus augmentation; the held row lock still makes both timers contend.
+            firstNode.start();
+            secondNode.start();
             try {
                 awaitTwoBlockedRevocationTransactions();
             } finally {
