@@ -1,3 +1,3 @@
-/** Matches Keycloak 26.7.5's PageNav route normalization. */
+/** Matches Keycloak 26.8.0's PageNav route normalization. */
 export const normalizeNavRoutePath = (routePath: string): string =>
     routePath.replace(/\/:.+?(\?|(?:(?!\/).)*|$)/g, "").replace(/\/\*$/, "");

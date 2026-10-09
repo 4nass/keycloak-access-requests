@@ -2,7 +2,7 @@ name: Build and tests
 
 on:
   push:
-    branches: [ main, 'feat/entitlement-duration-policy' ]
+    branches: [ main, 'feat/keycloak-26-8-compatibility' ]
     paths:
       - 'src/**'
       - 'themes/access-requests-ui/**'
@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        keycloak: ['26.7.0', '26.7.1', '26.7.2', '26.7.3', '26.7.4', '26.7.5']
+        keycloak: ['26.7.0', '26.7.1', '26.7.2', '26.7.3', '26.7.4', '26.7.5', '26.8.0']
 
     steps:
       - name: Check out repository
