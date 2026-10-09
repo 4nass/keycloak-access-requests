@@ -21,6 +21,6 @@ This documentation describes the behavior that is implemented in the current pro
 
 ## Compatibility policy
 
-The provider is intentionally built for one Keycloak minor line at a time. Extension `26.7.1` uses Keycloak 26.7.5 as its build baseline and targets runtimes 26.7.0 through 26.7.5. The extension's first release on this line was `26.7.0`; subsequent patch numbers represent extension revisions. The build baseline is pinned to the latest verified patch, not floated automatically. Before declaring compatibility with another Keycloak patch or a new minor line, update the baseline and run the complete verification suite against every claimed runtime.
+The unreleased `1.0.0-SNAPSHOT` build compiles against Keycloak 26.8.0 and is tested against 26.7.0–26.7.5 and 26.8.0. Extension versions are independent of Keycloak versions; only the [compatibility table](../README.md#compatibility) defines the supported runtimes for an artifact. The build baseline is pinned, not floated automatically. Before adding another Keycloak patch or minor line to that table, run the complete suite against every claimed runtime without changing the build baseline.
 
 Keycloak 26.5.x and 26.6.x are not supported.

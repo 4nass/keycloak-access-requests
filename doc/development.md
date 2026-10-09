@@ -6,9 +6,9 @@
 | --- | --- |
 | Java | 21 |
 | Maven | 3.9 or newer |
-| Keycloak build baseline | 26.7.5 |
-| Validated Keycloak runtimes | 26.7.0–26.7.5 |
-| Quarkus BOM | 3.33.4 |
+| Keycloak build baseline | 26.8.0 |
+| Validated Keycloak runtimes | 26.7.0–26.7.5 and 26.8.0 |
+| Quarkus BOM | 3.40.1 |
 | Node.js | 24.18.1, provisioned by Maven |
 | pnpm | 11.18.0, provisioned by Maven |
 
@@ -70,8 +70,8 @@ The UI tests cover success paths and failures such as `401`, `403`, `409`, netwo
 
 Two GitHub Actions workflows protect `main` and pull requests:
 
-- **Build and tests** runs `mvn clean verify` against Keycloak 26.7.0–26.7.5 in separate jobs, always compiling against 26.7.5 and uploading the provider JAR from each job.
-- **Console E2E** packages the 26.7.5-based JAR, starts each Keycloak runtime, selects both packaged themes, and runs Playwright in Chromium and Firefox.
+- **Build and tests** runs `mvn clean verify` against Keycloak 26.7.0–26.7.5 and 26.8.0 in separate jobs, always compiling against 26.8.0 and uploading the provider JAR from each job.
+- **Console E2E** packages the 26.8.0-based JAR, starts each Keycloak runtime, selects both packaged themes, and runs Playwright in Chromium and Firefox.
 
 The workflows run when relevant source, theme, Maven, or workflow files change. CodeQL and Dependabot run independently.
 
@@ -86,21 +86,21 @@ The workflows run when relevant source, theme, Maven, or workflow files change. 
 
 ## Keycloak upgrades
 
-One extension release targets one Keycloak minor line. For an upgrade:
+The extension version is independent of the Keycloak version. The supported runtime set is the explicitly tested compatibility table. For an upgrade:
 
 1. Update the Maven Keycloak baseline and direct `@keycloak/*` UI packages together.
 2. Align the Quarkus BOM with the Keycloak line.
-3. Rebuild and run every test layer against the exact target Keycloak version.
+3. Rebuild and run every test layer against every Keycloak runtime claimed for the same JAR.
 4. Review the Account and Admin themes in light/dark mode and with keyboard navigation.
 5. Diff the maintained Admin navigation component against Keycloak's upstream `PageNav`; see [Admin navigation maintenance](architecture.md#admin-navigation-maintenance).
-6. Publish a release whose major and minor numbers identify the supported Keycloak line; use the patch number for the extension's own revisions.
+6. Follow semantic versioning for the extension's own API and behavior. Record the tested Keycloak runtime range separately; do not infer it from the extension version.
 
 Never state compatibility with a new Keycloak patch or minor release merely because the Java compilation succeeds.
 
 ## Publish a GitHub Release
 
-Update the Maven project version to the release version, run the full verification
-workflow, and create a matching version tag such as `v26.7.1`. The Release
+Update the Maven project and UI package versions to the release version, run the full verification
+workflow, and create a matching version tag such as `v1.0.0`. The Release
 workflow checks that the tag matches the Maven version, runs `mvn clean verify`,
 and publishes both `keycloak-access-requests.jar` and
 `keycloak-access-requests-email-theme.zip` as GitHub Release assets.
