@@ -21,6 +21,6 @@ This documentation describes the behavior that is implemented in the current pro
 
 ## Compatibility policy
 
-The unreleased `1.0.0-SNAPSHOT` build compiles against Keycloak 26.8.0 and is tested against 26.7.0–26.7.5 and 26.8.0. Extension versions are independent of Keycloak versions; only the [compatibility table](../README.md#compatibility) defines the supported runtimes for an artifact. The build baseline is pinned, not floated automatically. Before adding another Keycloak patch or minor line to that table, run the complete suite against every claimed runtime without changing the build baseline.
+Version `1.0.0` compiles against Keycloak 26.8.0 and is tested against 26.7.0–26.7.5 and 26.8.0. Extension versions are independent of Keycloak versions; only the [compatibility table](../README.md#compatibility) defines the supported runtimes for an artifact. The build baseline is pinned, not floated automatically. Before adding another Keycloak patch or minor line to that table, run the complete suite against every claimed runtime without changing the build baseline.
 
 Keycloak 26.5.x and 26.6.x are not supported.

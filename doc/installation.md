@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Keycloak 26.7.0 through 26.7.5 or 26.8.0 for the unreleased `1.0.0-SNAPSHOT` build (later versions require verification);
+- Keycloak 26.7.0 through 26.7.5 or 26.8.0 for extension `1.0.0` (later versions require verification);
 - Java 21;
 - a supported Keycloak database. The provider stores its data in the same database as Keycloak;
 - Maven 3.9 or newer when building from source.

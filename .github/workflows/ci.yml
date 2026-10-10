@@ -2,7 +2,7 @@ name: Build and tests
 
 on:
   push:
-    branches: [ main, 'feat/keycloak-26-8-compatibility' ]
+    branches: [ main ]
     paths:
       - 'src/**'
       - 'themes/access-requests-ui/**'

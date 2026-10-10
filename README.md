@@ -8,11 +8,9 @@ It is delivered as one JAR containing the server provider, database migrations, 
 
 | Extension version | Verified Keycloak versions | Build baseline |
 | --- | --- | --- |
-| `1.0.0-SNAPSHOT` (unreleased) | 26.7.0–26.7.5, 26.8.0 | 26.8.0 |
-| `26.7.1` | 26.7.0–26.7.5 | 26.7.5 |
-| `26.7.0` | 26.7.0–26.7.4 | 26.7.4 |
+| `1.0.0` | 26.7.0–26.7.5, 26.8.0 | 26.8.0 |
 
-Starting with `1.0.0`, the extension follows its own versioning; the table, rather than its version number, states the tested Keycloak runtimes. The unreleased build uses Keycloak 26.8.0 for compilation, and CI tests that build baseline on every listed runtime. Previously published `26.7.x` releases retain their original compatibility claims. Keycloak 26.5.x and 26.6.x are not supported.
+The extension follows its own versioning; the table, rather than its version number, states the tested Keycloak runtimes. Version `1.0.0` uses Keycloak 26.8.0 for compilation, and CI tests that build baseline on every listed runtime. Keycloak 26.5.x and 26.6.x are not supported.
 
 ## Quick start
 

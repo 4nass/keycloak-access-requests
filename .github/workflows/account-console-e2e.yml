@@ -2,7 +2,7 @@ name: Console E2E
 
 on:
   push:
-    branches: [ main, 'feat/keycloak-26-8-compatibility' ]
+    branches: [ main ]
     paths:
       - 'src/**'
       - 'themes/access-requests-ui/**'
