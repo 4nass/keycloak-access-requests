@@ -1585,6 +1585,10 @@ class AccessRequestAdminConsoleBrowserIT {
         }
         driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Create access package']")).click();
 
+        String itemXPath = "//*[contains(@class, 'pf-v5-c-data-list__item') and .//h2[normalize-space()="
+                + xpathLiteral(displayName) + "]]";
+        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                itemXPath + "//button[normalize-space()='Edit access policy']"))).click();
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
                 "//*[@role='dialog']//*[normalize-space()='Package roles']")));
         assertTrue(driver.findElements(By.xpath("//*[@role='dialog']//*[contains(text(),'AR_PKG_')]")).isEmpty(),
@@ -1610,8 +1614,6 @@ class AccessRequestAdminConsoleBrowserIT {
             captureDialogAtTop(driver, "workflow-admin-review-access-package");
         }
         driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Save']")).click();
-        String itemXPath = "//*[contains(@class, 'pf-v5-c-data-list__item') and .//h2[normalize-space()="
-                + xpathLiteral(displayName) + "]]";
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.xpath(itemXPath + "//*[normalize-space()='Open for requests']")));
     }
