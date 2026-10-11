@@ -1,0 +1,4 @@
+/* PatternFly v5's default select padding is narrower than its separate caret area. */
+body .pf-v5-c-form-control {
+    --pf-v5-c-form-control__select--PaddingRight: 3rem;
+}

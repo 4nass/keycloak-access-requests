@@ -18,8 +18,9 @@ export type PageParameters = {
     size: number;
 };
 
-export function usePagedLoader<T>(load: (parameters: PageParameters) => Promise<Page<T>>) {
-    const [parameters, setParameters] = useState<PageParameters>({ page: 0, search: "", size: 20 });
+export function usePagedLoader<T>(load: (parameters: PageParameters) => Promise<Page<T>>,
+    initialParameters: PageParameters = { page: 0, search: "", size: 20 }) {
+    const [parameters, setParameters] = useState<PageParameters>(initialParameters);
     const loadCurrentPage = useCallback(() => load(parameters), [load, parameters]);
     const setPage = useCallback((page: number) => {
         setParameters((current) => current.page === page ? current : { ...current, page });

@@ -9,6 +9,7 @@ export type Entitlement = {
     approverRoleId: string;
     approverRoleName?: string | null;
     requestable: boolean;
+    archived?: boolean;
     defaultDurationSeconds: number;
     maxDurationSeconds: number;
     allowPermanent: boolean;
@@ -126,6 +127,9 @@ export type AccessPackageDetails = {
     groupExists: boolean;
     configurationValid: boolean;
     roleEditingAllowed: boolean;
+    roleEditingBlockReason?: "INVALID_CONFIGURATION" | "ARCHIVED" | "OPEN_TO_REQUESTS"
+        | "HAS_UNFINISHED_REQUESTS" | "HAS_OUTSTANDING_GRANTS" | "HAS_REVOCATION_FAILURES"
+        | "HAS_CHILD_GROUPS" | "HAS_MEMBERS" | null;
     roleMappings: (AccessPackageRole & { name: string | null; missing: boolean })[];
 };
 
@@ -272,7 +276,7 @@ export type EntitlementsAdminApi = {
     capabilities(): Promise<AdminCapabilities>;
     approvalAssurancePolicy(): Promise<ApprovalAssurancePolicy>;
     updateApprovalAssurancePolicy(policy: ApprovalAssurancePolicy): Promise<ApprovalAssurancePolicy>;
-    list(query?: { page?: number; size?: number }): Promise<EntitlementPage>;
+    list(query?: { page?: number; size?: number; archived?: boolean }): Promise<EntitlementPage>;
     auditEvents(query?: AdminAuditEventQuery): Promise<AdminAuditEventPage>;
     auditUsers(search: string, signal?: AbortSignal): Promise<{ items: AuditUser[] }>;
     auditRequest(id: string, query?: { page?: number; size?: number }): Promise<AdminAuditRequestDetails>;
@@ -391,7 +395,7 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
         capabilities: () => request("/admin/capabilities"),
         approvalAssurancePolicy: () => request("/admin/assurance-policy"),
         updateApprovalAssurancePolicy: (policy) => request("/admin/assurance-policy", json("PUT", policy)),
-        list: (query) => request(`/admin/entitlements?${pageQuery(query)}`),
+        list: (query) => request(`/admin/entitlements?${pageQuery(query)}${query?.archived ? "&archived=true" : ""}`),
         auditEvents: (query) => request(`/admin/events?${auditQuery(query)}`),
         auditUsers: (search, signal) => request(`/admin/audit-users?search=${encodeURIComponent(search)}`, { signal }),
         auditRequest: (id, query) => request(`/admin/requests/${encodeURIComponent(id)}`

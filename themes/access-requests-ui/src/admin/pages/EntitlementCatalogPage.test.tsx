@@ -109,7 +109,13 @@ describe("EntitlementCatalogPage", () => {
         });
         render(<EntitlementCatalogPage />);
 
-        expect(await screen.findByText("accessRequestsAdminClosedToRequests")).toBeVisible();
+        const closedLabel = await screen.findByText("accessRequestsAdminClosedToRequests");
+        const policyLabel = screen.getByText("accessRequestsAdminTemporaryOnly");
+        const nameCell = screen.getByRole("heading", { name: "Finance Reader" }).closest(".pf-v5-c-data-list__cell");
+
+        expect(closedLabel).toBeVisible();
+        expect(nameCell).toContainElement(policyLabel);
+        expect(closedLabel.closest(".pf-v5-c-data-list__cell")).not.toContainElement(policyLabel);
         expect(screen.queryByText("accessRequestsAdminOpenToRequests")).not.toBeInTheDocument();
     });
 
@@ -298,21 +304,15 @@ describe("EntitlementCatalogPage", () => {
         expect(screen.getByText("accessRequestsAdminAutoApprove")).toBeVisible();
     });
 
-    it("creates a closed access package and shows its roles without exposing the delivery group", async () => {
+    it("returns to the catalog after creating a closed package without opening the edit dialog", async () => {
         const user = userEvent.setup();
         const created = {
             ...entitlement, id: "access-package-id", displayName: "Temporary access",
             resourceType: "GROUP" as const, resourceId: "jit-group-id", requestable: false, version: 0
         };
         api.createAccessPackage.mockResolvedValue(created);
-        api.getAccessPackage.mockResolvedValue({
-            entitlementId: created.id, groupId: "jit-group-id", groupName: "AR_PKG_TEMPORARY_ACCESS",
-            groupExists: true, configurationValid: true,
-            roleMappings: [
-                { type: "REALM_ROLE", roleId: "finance-reader-role", name: "Finance Reader", missing: false },
-                { type: "CLIENT_ROLE", roleId: "client-role-id", name: "Client Role", missing: false }
-            ]
-        });
+        api.list.mockResolvedValueOnce({ items: [entitlement], page: 0, size: 20, total: 1 })
+            .mockResolvedValue({ items: [created, entitlement], page: 0, size: 20, total: 2 });
         render(<EntitlementCatalogPage />);
 
         await screen.findByRole("heading", { name: "Finance Reader" });
@@ -357,14 +357,14 @@ describe("EntitlementCatalogPage", () => {
                 { type: "CLIENT_ROLE", roleId: "client-role-id" }
             ]
         })));
-        await waitFor(() => expect(screen.getByRole("heading", { name: "accessRequestsAdminPackageDetails" })).toBeVisible());
-        expect(screen.getByRole("dialog"))
-            .toHaveTextContent("Finance Reader");
-        expect(screen.getByRole("dialog")).not.toHaveTextContent("finance-reader-role");
+        expect(await screen.findByRole("heading", { name: "Temporary access" })).toBeVisible();
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(screen.getByText("accessRequestsAdminClosedToRequests")).toBeVisible();
         expect(screen.queryByText("AR_PKG_TEMPORARY_ACCESS")).not.toBeInTheDocument();
         expect(screen.queryByDisplayValue("jit-group-id")).not.toBeInTheDocument();
-        expect(screen.getByRole("checkbox", { name: "accessRequestsAdminRequestable" })).not.toBeChecked();
         expect(screen.getByText("accessRequestsAdminPackageCreated")).toBeVisible();
+        expect(api.getAccessPackage).not.toHaveBeenCalled();
+        expect(api.update).not.toHaveBeenCalled();
     });
 
     it("edits roles of an unused closed package through a separate versioned action", async () => {
@@ -395,6 +395,44 @@ describe("EntitlementCatalogPage", () => {
             [{ type: "CLIENT_ROLE", roleId: "client-role-id" }]));
         expect(await screen.findByText("accessRequestsAdminPackageRolesUpdated")).toBeVisible();
         expect(screen.getByRole("dialog", { name: /accessRequestsAdminEditEntitlement/ })).toBeVisible();
+    });
+
+    it("explains why a pending request blocks role changes and offers a replacement", async () => {
+        const user = userEvent.setup();
+        const accessPackage = { ...entitlement, resourceType: "GROUP" as const,
+            resourceId: "package-group", requestable: false };
+        api.createAccessPackage.mockResolvedValue({ ...accessPackage, id: "replacement-package", version: 0 });
+        api.list.mockResolvedValue({ items: [accessPackage], page: 0, size: 20, total: 1 });
+        api.getAccessPackage.mockResolvedValue({ entitlementId: accessPackage.id,
+            groupId: "package-group", groupName: "AR_PKG_PACKAGE", groupExists: true,
+            configurationValid: true, roleEditingAllowed: false, roleEditingBlockReason: "HAS_UNFINISHED_REQUESTS",
+            roleMappings: [{ type: "REALM_ROLE", roleId: "finance-reader-role", name: "Finance Reader", missing: false }] });
+        render(<EntitlementCatalogPage />);
+
+        await screen.findByRole("heading", { name: "Finance Reader" });
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminEditEntitlement" }));
+        expect(await screen.findByText("accessRequestsAdminPackageRolesUnfinished")).toBeVisible();
+        expect(screen.queryByRole("button", { name: "accessRequestsAdminPackageEditRoles" })).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "accessRequestsAdminPackageCreateReplacement" }));
+        const replacement = within(screen.getByRole("dialog", { name: "accessRequestsAdminPackageCreate" }));
+        expect(replacement.getByRole("textbox", { name: "accessRequestsAdminDisplayName" }))
+            .toHaveValue("Finance Reader (accessRequestsAdminPackageReplacementSuffix)");
+        expect(replacement.getByRole("textbox", { name: "accessRequestsAdminDescription" }))
+            .toHaveValue("Read-only finance access");
+        expect(replacement.getByText("Finance Reader")).toBeVisible();
+        expect(replacement.getByRole("spinbutton", { name: "accessRequestsAdminDefaultDuration" })).toHaveValue(30);
+        await user.click(replacement.getByRole("button", { name: "accessRequestsAdminPackageRemoveRole Finance Reader" }));
+        await user.selectOptions(replacement.getByRole("combobox", { name: "accessRequestsAdminPackageRoles" }), "CLIENT_ROLE");
+        await user.type(replacement.getByRole("textbox", { name: "accessRequestsAdminPackageSearchRoles" }), "client");
+        const roleSelect = await replacement.findByRole("combobox", { name: "accessRequestsAdminPackageSelectRole" });
+        await waitFor(() => expect(roleSelect).toHaveTextContent("Client Role"));
+        await user.selectOptions(roleSelect, "client-role-id");
+        await user.click(replacement.getByRole("button", { name: "accessRequestsAdminPackageAddRole" }));
+        await user.click(replacement.getByRole("button", { name: "accessRequestsAdminPackageCreate" }));
+        await waitFor(() => expect(api.createAccessPackage).toHaveBeenCalledWith(expect.objectContaining({
+            roleMappings: [{ type: "CLIENT_ROLE", roleId: "client-role-id" }]
+        })));
+        expect(api.updateAccessPackageRoles).not.toHaveBeenCalled();
     });
 
     it("keeps unsaved policy fields when role editing is cancelled or saved", async () => {
@@ -432,8 +470,16 @@ describe("EntitlementCatalogPage", () => {
             expect.objectContaining({ displayName: "Draft package name", version: 5 })));
     });
 
-    it("removes an entitlement from the request catalog without erasing its admin record", async () => {
+    it("archives a closed entitlement without erasing its administrative record", async () => {
         const user = userEvent.setup();
+        let removed = false;
+        api.deactivate.mockImplementation(async () => { removed = true; });
+        api.list.mockImplementation(async (query) => {
+            const items = query?.archived
+                ? removed ? [{ ...entitlement, archived: true, requestable: false }] : []
+                : removed ? [] : [{ ...entitlement, requestable: false }];
+            return { items, page: 0, size: 20, total: items.length };
+        });
         render(<EntitlementCatalogPage />);
         await screen.findByRole("heading", { name: "Finance Reader" });
         await user.click(screen.getByRole("button", { name: "accessRequestsAdminRemoveFromCatalog" }));
@@ -443,7 +489,12 @@ describe("EntitlementCatalogPage", () => {
 
         await waitFor(() => expect(api.deactivate).toHaveBeenCalledWith("finance-reader"));
         expect(await screen.findByText("accessRequestsAdminRemovedFromCatalog")).toBeVisible();
-        expect(screen.getByRole("heading", { name: "Finance Reader" })).toBeVisible();
+        await waitFor(() => expect(screen.queryByRole("heading", { name: "Finance Reader" })).not.toBeInTheDocument());
+        await user.selectOptions(screen.getByRole("combobox", { name: "accessRequestsAdminCatalogView" }), "archived");
+        expect(await screen.findByRole("heading", { name: "Finance Reader" })).toBeVisible();
+        expect(screen.getByText("accessRequestsAdminArchived")).toBeVisible();
+        expect(screen.queryByRole("button", { name: "accessRequestsAdminEditEntitlement" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "accessRequestsAdminRemoveFromCatalog" })).not.toBeInTheDocument();
     });
 
     it("does not show the technical group identifier in the catalog list", async () => {

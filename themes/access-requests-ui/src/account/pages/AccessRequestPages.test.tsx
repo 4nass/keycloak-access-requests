@@ -176,6 +176,8 @@ describe("Access Request account console pages", () => {
             "accessRequestsResourceTypeClientRole",
             "accessRequestsResourceTypePackage",
             "accessRequestsResourceTypeRealmRole",
+            "accessRequestsReviewEntitlement",
+            "accessRequestsReviewRequest",
             "accessRequestsRetry",
             "accessRequestsRiskCritical",
             "accessRequestsRiskHigh",
@@ -191,6 +193,7 @@ describe("Access Request account console pages", () => {
             "accessRequestsStepUpTitle",
             "accessRequestsSubmitRequest",
             "accessRequestsUserUnavailable",
+            "accessRequestsVerificationUnavailable",
             "accessRequestsVerifyIdentity",
             "accessRequestsViewDetails"
         ].sort());
@@ -412,9 +415,9 @@ describe("Access Request account console pages", () => {
         }));
         expect(accountAlerts.addAlert).toHaveBeenCalledWith("Access request submitted.");
         expect(within(screen.getByRole("listitem", { name: "Finance Administrator" }))
-            .getByText("Already granted")).toBeVisible();
+            .getByRole("button", { name: "Already granted" })).toBeDisabled();
         expect(within(screen.getByRole("listitem", { name: "VPN Production" }))
-            .getByText("Request pending")).toBeVisible();
+            .getByRole("button", { name: "Request pending" })).toBeDisabled();
     });
 
     it("does not show the approver-only package warning to a requester", async () => {
@@ -952,21 +955,20 @@ describe("Access Request account console pages", () => {
         expect(screen.getByRole("dialog", { name: "Approve Finance Reader" })).toBeVisible();
     });
 
-    it("offers step-up without replaying a failed high-risk approval automatically", async () => {
+    it("verifies identity before offering approval when the server requires step-up", async () => {
         const user = userEvent.setup();
-        const approve = vi.fn().mockRejectedValue(Object.assign(new Error("Step-up required"), {
-            code: "STEP_UP_REQUIRED", requiredAcr: "strong", status: 403
-        }));
+        const approve = vi.fn();
         const stepUp = vi.fn().mockResolvedValue(undefined);
         renderAccessRequestUi(<ApprovalsPage requests={[{
             id: "request-approval", requester: "Anass Chahbouni", entitlementName: "Restricted access",
             resourceType: "GROUP", riskLevel: "HIGH", justification: "Temporary reporting task",
-            requestedAt: "2026-08-26T10:00:00Z", durationSeconds: 8 * 3600
+            requestedAt: "2026-08-26T10:00:00Z", durationSeconds: 8 * 3600,
+            assurance: { state: "STEP_UP_REQUIRED", requiredAcr: "strong" }
         }]} onApprove={approve} onReject={vi.fn()} onStepUp={stepUp} />);
 
-        await user.click(screen.getByRole("button", { name: "Approve" }));
-        const dialog = screen.getByRole("dialog", { name: "Approve Restricted access" });
-        await user.click(within(dialog).getByRole("button", { name: "Confirm approval" }));
+        expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+        await user.click(screen.getByRole("button", { name: "Review request" }));
+        const dialog = screen.getByRole("dialog", { name: "Review request for Restricted access" });
         expect(await within(dialog).findByRole("button", { name: "Verify identity" }))
             .toBeVisible();
         expect(within(dialog).getAllByRole("alert")).toHaveLength(1);
@@ -982,8 +984,21 @@ describe("Access Request account console pages", () => {
         await user.click(within(dialog).getByRole("button", { name: "Verify identity" }));
 
         expect(stepUp).toHaveBeenCalledWith("strong");
-        expect(approve).toHaveBeenCalledTimes(1);
+        expect(approve).not.toHaveBeenCalled();
         expect(accountAlerts.addError).not.toHaveBeenCalled();
+    });
+
+    it("fails closed when the requested step-up has no usable ACR", () => {
+        const approve = vi.fn();
+        renderAccessRequestUi(<ApprovalsPage requests={[{
+            id: "request-approval", requester: "Approver", entitlementName: "Restricted access",
+            resourceType: "GROUP", riskLevel: "CRITICAL", justification: "Needed",
+            requestedAt: "2026-08-26T10:00:00Z",
+            assurance: { state: "STEP_UP_REQUIRED", requiredAcr: null }
+        }]} onApprove={approve} onReject={vi.fn()} onStepUp={vi.fn()} />);
+
+        expect(screen.getByRole("button", { name: "Verification unavailable" })).toBeDisabled();
+        expect(approve).not.toHaveBeenCalled();
     });
 
     it("does not offer an endless step-up when assurance configuration is unavailable", async () => {

@@ -29,6 +29,7 @@ import { AccessRequestEmptyState } from "./AccessRequestEmptyState";
 import { AccessRequestPagination, type AccessRequestPaginationState } from "./AccessRequestPagination";
 import { RiskLevelLabel, resourceTypeLabel } from "./AccessRequestPresentation";
 import { useAccessRequestAlerts } from "./useAccessRequestAlerts";
+import "./RequestAccessPage.css";
 
 export type RequestableEntitlement = {
     id: string;
@@ -145,11 +146,12 @@ export function RequestAccessPage({ entries, onRequest, onRefresh, pagination, s
                         title={t("accessRequestsNoRequestableAccess")}
                     />
                 ) : (
-                    <DataList aria-label={t("accessRequestsCatalog")}>
+                    <DataList aria-label={t("accessRequestsCatalog")} className="access-requests-catalog">
                         {entries.map((entry) => {
                             const titleId = `requestable-entitlement-${entry.id}-title`;
                             return (
-                                <DataListItem aria-labelledby={titleId} id={`requestable-entitlement-${entry.id}`} key={entry.id}>
+                                <DataListItem aria-labelledby={titleId} className="access-requests-catalog-item"
+                                    id={`requestable-entitlement-${entry.id}`} key={entry.id}>
                                     <DataListItemRow>
                                         <DataListItemCells
                                             dataListCells={[
@@ -178,12 +180,17 @@ export function RequestAccessPage({ entries, onRequest, onRefresh, pagination, s
                                         <DataListAction
                                             aria-label={t("accessRequestsRequestAccessTo", { entitlement: entry.name })}
                                             aria-labelledby={titleId}
+                                            className="access-requests-catalog-action"
                                             id={`requestable-entitlement-${entry.id}-action`}
                                         >
                                             {entry.alreadyGranted ? (
-                                                <p>{t("accessRequestsAlreadyGranted")}</p>
+                                                <Button isDisabled type="button" variant="secondary">
+                                                    {t("accessRequestsAlreadyGranted")}
+                                                </Button>
                                             ) : entry.pendingRequest ? (
-                                                <p>{t("accessRequestsRequestPending")}</p>
+                                                <Button isDisabled type="button" variant="secondary">
+                                                    {t("accessRequestsRequestPending")}
+                                                </Button>
                                             ) : (
                                                 <Button type="button" variant="primary" onClick={() => {
                                                     const initial = durationInput(defaultDuration(entry));

@@ -37,6 +37,10 @@ export type PendingApproval = {
     requestedAt: string;
     durationSeconds?: number | null;
     permanent?: boolean;
+    assurance?: {
+        state: "NOT_REQUIRED" | "SATISFIED" | "STEP_UP_REQUIRED" | "UNAVAILABLE";
+        requiredAcr?: string | null;
+    };
 };
 
 type ApprovalDecision = {
@@ -78,6 +82,12 @@ export function ApprovalsPage({ requests, onApprove, onReject, onStepUp, onRefre
         if (!isSubmitting) {
             closeDialog();
         }
+    };
+
+    const startApproval = (request: PendingApproval) => {
+        setPendingDecision({ request, type: "approve" });
+        setRequiredAcr(request.assurance?.state === "STEP_UP_REQUIRED"
+            ? request.assurance.requiredAcr ?? undefined : undefined);
     };
 
     const submit = async () => {
@@ -136,6 +146,9 @@ export function ApprovalsPage({ requests, onApprove, onReject, onStepUp, onRefre
                         {requests.map((request) => {
                             const requestedById = `pending-request-${request.id}-requested-by`;
                             const titleId = `pending-request-${request.id}-title`;
+                            const stepUpRequired = request.assurance?.state === "STEP_UP_REQUIRED";
+                            const assuranceUnavailable = request.assurance?.state === "UNAVAILABLE"
+                                || (stepUpRequired && (!request.assurance?.requiredAcr || !onStepUp));
                             return (
                                 <DataListItem aria-labelledby={requestedById} id={`pending-request-${request.id}`} key={request.id}>
                                     <DataListItemRow>
@@ -193,11 +206,14 @@ export function ApprovalsPage({ requests, onApprove, onReject, onStepUp, onRefre
                                             id={`pending-request-${request.id}-actions`}
                                         >
                                             <Button
+                                                isDisabled={assuranceUnavailable}
                                                 type="button"
                                                 variant="primary"
-                                                onClick={() => setPendingDecision({ request, type: "approve" })}
+                                                onClick={() => startApproval(request)}
                                             >
-                                                {t("accessRequestsApprove")}
+                                                {t(stepUpRequired && !assuranceUnavailable
+                                                    ? "accessRequestsReviewRequest" : assuranceUnavailable
+                                                        ? "accessRequestsVerificationUnavailable" : "accessRequestsApprove")}
                                             </Button>
                                             <Button
                                                 type="button"
@@ -215,12 +231,12 @@ export function ApprovalsPage({ requests, onApprove, onReject, onStepUp, onRefre
                 )}
             {pendingDecision && (
                 <Modal
-                    elementToFocus="#access-request-decision-comment"
+                    elementToFocus={requiredAcr ? "#access-request-verify-identity" : "#access-request-decision-comment"}
                     isOpen
                     onClose={dismissDialog}
                     showClose={!isSubmitting}
                     title={t(
-                        pendingDecision.type === "approve"
+                        requiredAcr ? "accessRequestsReviewEntitlement" : pendingDecision.type === "approve"
                             ? "accessRequestsApproveEntitlement"
                             : "accessRequestsRejectEntitlement",
                         { entitlement: pendingDecision.request.entitlementName }
@@ -296,6 +312,7 @@ export function ApprovalsPage({ requests, onApprove, onReject, onStepUp, onRefre
                         <ActionGroup>
                             {requiredAcr ? (
                                 <Button type="button" variant="primary"
+                                    id="access-request-verify-identity"
                                     onClick={() => { void Promise.resolve(onStepUp?.(requiredAcr)).catch(addError); }}>
                                     {t("accessRequestsVerifyIdentity")}
                                 </Button>

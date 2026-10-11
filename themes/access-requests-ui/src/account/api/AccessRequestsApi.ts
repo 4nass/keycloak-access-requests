@@ -79,6 +79,10 @@ export type PendingRequest = {
     createdAt: string;
     durationSeconds?: number | null;
     permanent?: boolean;
+    assurance?: {
+        state: "NOT_REQUIRED" | "SATISFIED" | "STEP_UP_REQUIRED" | "UNAVAILABLE";
+        requiredAcr?: string | null;
+    };
 };
 
 export type AccessRequestCapabilities = {

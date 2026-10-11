@@ -1,6 +1,7 @@
 import "@keycloak/keycloak-admin-ui/styles.css";
 import "@patternfly/patternfly/patternfly-addons.css";
 import "@patternfly/react-core/dist/styles/base.css";
+import "../form-select.css";
 
 import { type AdminEnvironment, KeycloakProvider } from "@keycloak/keycloak-admin-ui";
 import React from "react";

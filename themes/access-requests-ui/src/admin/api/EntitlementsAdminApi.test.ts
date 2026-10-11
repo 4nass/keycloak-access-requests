@@ -224,6 +224,16 @@ describe("Entitlements administration API client", () => {
         });
     });
 
+    it("requests the separate administrative archive", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ items: [], page: 0, size: 20, total: 0 }));
+
+        await createApi(fetchMock).list({ page: 0, size: 20, archived: true });
+
+        expect(request(fetchMock).url).toBe(
+            "https://keycloak.example/realms/finance/access-requests/admin/entitlements?page=0&size=20&archived=true"
+        );
+    });
+
     it("creates a draft access package from selected role IDs and reads its durable binding", async () => {
         const details = {
             entitlementId: "package-1", groupId: "group-1", groupName: "AR_PKG_package-1", groupExists: true,

@@ -46,12 +46,13 @@ import {
 } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
 import { AccessRequestsAdminTabs } from "./AccessRequestsAdminTabs";
-import { AccessPackageDialog } from "./AccessPackageDialog";
+import { AccessPackageDialog, type AccessPackageDraft } from "./AccessPackageDialog";
 import { AccessPackageDetails } from "./AccessPackageDetails";
 import { AccessPackageRolesDialog } from "./AccessPackageRolesDialog";
 import { KeycloakReferenceSelector } from "./KeycloakReferenceSelector";
 import { DURATION_PRESETS, durationInput, durationSeconds, durationText, type DurationUnit } from "./catalogDuration";
 import { DurationField } from "./DurationField";
+import "./EntitlementCatalogPage.css";
 
 type FormValues = {
     approverRoleId: string;
@@ -77,13 +78,15 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50].map((value) => ({ title: String(value), v
 export function EntitlementCatalogPage() {
     const { t } = useTranslation();
     const api = useEntitlementsAdminApi();
-    const [catalog, setCatalog] = useState<{ items: Entitlement[]; total: number; page: number; size: number }>();
+    const [catalog, setCatalog] = useState<{ items: Entitlement[]; total: number; page: number; size: number; archived: boolean }>();
     const [page, setPage] = useState(0);
     const [size, setSize] = useState(20);
+    const [archived, setArchived] = useState(false);
     const [loading, setLoading] = useState(true);
     const [refreshError, setRefreshError] = useState<unknown>();
     const [dialog, setDialog] = useState<DialogState>();
     const [packageDialogOpen, setPackageDialogOpen] = useState(false);
+    const [packageDialogDraft, setPackageDialogDraft] = useState<AccessPackageDraft>();
     const [rolesDialog, setRolesDialog] = useState<{ entitlement: Entitlement; details: PackageDetails }>();
     const [removeTarget, setRemoveTarget] = useState<Entitlement>();
     const [removeError, setRemoveError] = useState<unknown>();
@@ -100,9 +103,9 @@ export function EntitlementCatalogPage() {
         setLoading(true);
         setRefreshError(undefined);
         try {
-            const result = await api.list({ page, size });
+            const result = await api.list(archived ? { page, size, archived: true } : { page, size });
             if (loadId === latestLoad.current) {
-                setCatalog({ items: result.items, total: result.total, page, size });
+                setCatalog({ items: result.items, total: result.total, page, size, archived });
             }
         } catch (error) {
             if (loadId === latestLoad.current) {
@@ -113,7 +116,7 @@ export function EntitlementCatalogPage() {
                 setLoading(false);
             }
         }
-    }, [api, page, size]);
+    }, [api, page, size, archived]);
 
     useEffect(() => {
         void load();
@@ -209,14 +212,18 @@ export function EntitlementCatalogPage() {
         setRemoveError(undefined);
         try {
             await api.deactivate(removeTarget.id);
-            setCatalog((current) => current ? {
+            setCatalog((current) => current && !current.archived ? {
                 ...current,
-                items: current.items.map((item) => item.id === removeTarget.id
-                    ? { ...item, requestable: false, version: item.version + 1 } : item)
+                items: current.items.filter((item) => item.id !== removeTarget.id),
+                total: current.total - 1
             } : current);
             setActionNotice(t("accessRequestsAdminRemovedFromCatalog"));
             setRemoveTarget(undefined);
-            await load();
+            if (catalog?.items.length === 1 && page > 0) {
+                setPage(page - 1);
+            } else {
+                await load();
+            }
         } catch (error) {
             setRemoveError(error);
         } finally {
@@ -226,7 +233,8 @@ export function EntitlementCatalogPage() {
 
     const refreshMessage = refreshError ? errorText(refreshError, t) : undefined;
     const formMessage = formError ? errorText(formError, t) : undefined;
-    const visibleCatalog = catalog?.page === page && catalog.size === size ? catalog : undefined;
+    const visibleCatalog = catalog?.page === page && catalog.size === size && catalog.archived === archived
+        ? catalog : undefined;
 
     return (
         <>
@@ -253,9 +261,16 @@ export function EntitlementCatalogPage() {
                 <Toolbar aria-label={t("accessRequestsAdminCatalogTab")}>
                     <ToolbarContent>
                         <ToolbarItem>
-                            <Button onClick={() => setPackageDialogOpen(true)} type="button">
+                            <Button onClick={() => { setPackageDialogDraft(undefined); setPackageDialogOpen(true); }} type="button">
                                 {t("accessRequestsAdminPackageCreate")}
                             </Button>
+                        </ToolbarItem>
+                        <ToolbarItem>
+                            <FormSelect aria-label={t("accessRequestsAdminCatalogView")} value={archived ? "archived" : "active"}
+                                onChange={(_event, value) => { setPage(0); setArchived(value === "archived"); }}>
+                                <FormSelectOption value="active" label={t("accessRequestsAdminActiveCatalog")} />
+                                <FormSelectOption value="archived" label={t("accessRequestsAdminArchivedCatalog")} />
+                            </FormSelect>
                         </ToolbarItem>
                         {catalog && catalog.total > 0 && (
                             <ToolbarItem align={{ default: "alignRight" }} variant="pagination">
@@ -276,15 +291,16 @@ export function EntitlementCatalogPage() {
                 {!visibleCatalog && (loading || !refreshError) ? (
                     <EmptyState><Spinner aria-label={t("loading")} /></EmptyState>
                 ) : visibleCatalog?.items.length ? (
-                    <DataList aria-label={t("accessRequestsAdminCatalogTab")}>
+                    <DataList aria-label={t("accessRequestsAdminCatalogTab")} className="access-requests-admin-catalog">
                         {visibleCatalog.items.map((entitlement) => (
-                            <EntitlementListItem entitlement={entitlement} key={entitlement.id} onEdit={openEdit}
+                            <EntitlementListItem entitlement={entitlement} key={entitlement.id} archived={archived} onEdit={openEdit}
                                 onRemove={(item) => { setRemoveError(undefined); setRemoveTarget(item); }} />
                         ))}
                     </DataList>
                 ) : visibleCatalog ? (
                     <EmptyState>
-                        <EmptyStateHeader headingLevel="h2" titleText={t("accessRequestsAdminEmpty")} />
+                        <EmptyStateHeader headingLevel="h2" titleText={t(archived
+                            ? "accessRequestsAdminArchivedEmpty" : "accessRequestsAdminEmpty")} />
                         <EmptyStateBody>{t("accessRequestsAdminCatalogDescription")}</EmptyStateBody>
                     </EmptyState>
                 ) : null}
@@ -319,6 +335,17 @@ export function EntitlementCatalogPage() {
                         setRolesDialog({ entitlement: dialog.entitlement, details });
                         setDialog(undefined);
                     }}
+                    onCreateReplacement={(details) => {
+                        setPackageDialogDraft({
+                            ...form,
+                            displayName: `${form.displayName} (${t("accessRequestsAdminPackageReplacementSuffix")})`,
+                            roles: details.roleMappings.filter((role) => !role.missing).map((role) => ({
+                                type: role.type, roleId: role.roleId, name: role.name ?? role.roleId
+                            }))
+                        });
+                        setDialog(undefined);
+                        setPackageDialogOpen(true);
+                    }}
                 />
             )}
             {rolesDialog && <AccessPackageRolesDialog api={api} details={rolesDialog.details}
@@ -352,27 +379,34 @@ export function EntitlementCatalogPage() {
             </Modal>}
             {packageDialogOpen && <AccessPackageDialog
                 api={api}
-                onClose={() => setPackageDialogOpen(false)}
-                onCreated={(created) => {
+                initial={packageDialogDraft}
+                onClose={() => { setPackageDialogOpen(false); setPackageDialogDraft(undefined); }}
+                onCreated={() => {
                     setPackageDialogOpen(false);
-                    openEdit(created);
+                    setPackageDialogDraft(undefined);
                     setActionNotice(t("accessRequestsAdminPackageCreated"));
-                    void load();
+                    if (archived || page !== 0) {
+                        setArchived(false);
+                        setPage(0);
+                    } else {
+                        void load();
+                    }
                 }}
             />}
         </>
     );
 }
 
-function EntitlementListItem({ entitlement, onEdit, onRemove }: {
+function EntitlementListItem({ entitlement, archived, onEdit, onRemove }: {
     entitlement: Entitlement;
+    archived: boolean;
     onEdit: (entitlement: Entitlement) => void;
     onRemove: (entitlement: Entitlement) => void;
 }) {
     const { t } = useTranslation();
     const titleId = `entitlement-${entitlement.id}`;
     return (
-        <DataListItem aria-labelledby={titleId}>
+        <DataListItem aria-labelledby={titleId} className="access-requests-admin-catalog-item">
             <DataListItemRow>
                 <DataListItemCells dataListCells={[
                     <DataListCell key="name" width={3}>
@@ -381,6 +415,15 @@ function EntitlementListItem({ entitlement, onEdit, onRemove }: {
                             {t(resourceTypeKey(entitlement.resourceType))}: {entitlement.resourceName ?? t("accessRequestsAdminNotAvailable")}
                         </Text>}
                         <Text component="p">{entitlement.description}</Text>
+                        <div className="access-requests-admin-catalog-policy">
+                            <Label color={entitlement.allowPermanent ? "blue" : "grey"} isCompact>
+                                {t(entitlement.allowPermanent
+                                    ? "accessRequestsAdminPermanentAllowed" : "accessRequestsAdminTemporaryOnly")}
+                            </Label>
+                            {entitlement.autoApprove && <Label color="blue" isCompact>
+                                {t("accessRequestsAdminAutoApprove")}
+                            </Label>}
+                        </div>
                     </DataListCell>,
                     <DataListCell key="configuration" width={3}>
                         <DescriptionList isCompact isHorizontal>
@@ -403,24 +446,21 @@ function EntitlementListItem({ entitlement, onEdit, onRemove }: {
                         </DescriptionList>
                     </DataListCell>,
                     <DataListCell key="state" width={1}>
-                        <Label color={entitlement.requestable ? "green" : "grey"}>
-                            {t(entitlement.requestable
-                                ? "accessRequestsAdminOpenToRequests"
-                                : "accessRequestsAdminClosedToRequests")}
+                        <Label color={archived ? "grey" : entitlement.requestable ? "green" : "grey"}>
+                            {t(archived ? "accessRequestsAdminArchived" : entitlement.requestable
+                                ? "accessRequestsAdminOpenToRequests" : "accessRequestsAdminClosedToRequests")}
                         </Label>
-                        <Text component="small">{t(entitlement.allowPermanent
-                            ? "accessRequestsAdminPermanentAllowed" : "accessRequestsAdminTemporaryOnly")}</Text>
-                        {entitlement.autoApprove && <Text component="small">{t("accessRequestsAdminAutoApprove")}</Text>}
                     </DataListCell>
                 ]} />
-                <DataListAction aria-labelledby={titleId} id={`entitlement-actions-${entitlement.id}`} aria-label={t("accessRequestsAdminEditEntitlement")}>
+                {!archived && <DataListAction aria-labelledby={titleId} id={`entitlement-actions-${entitlement.id}`}
+                    aria-label={t("accessRequestsAdminEditEntitlement")} className="access-requests-admin-catalog-actions">
                     <Button variant="secondary" onClick={() => onEdit(entitlement)} type="button">
                         {t("accessRequestsAdminEditEntitlement")}
                     </Button>
-                    {entitlement.requestable && <Button variant="link" onClick={() => onRemove(entitlement)} type="button">
+                    <Button variant="link" onClick={() => onRemove(entitlement)} type="button">
                         {t("accessRequestsAdminRemoveFromCatalog")}
-                    </Button>}
-                </DataListAction>
+                    </Button>
+                </DataListAction>}
             </DataListItemRow>
         </DataListItem>
     );
@@ -438,7 +478,8 @@ function EntitlementDialog({
     onSave,
     onUpdate,
     onRiskChange,
-    onEditRoles
+    onEditRoles,
+    onCreateReplacement
 }: {
     api: EntitlementsAdminApi;
     entitlementId?: string;
@@ -452,6 +493,7 @@ function EntitlementDialog({
     onUpdate: <Key extends keyof FormValues>(key: Key, value: FormValues[Key]) => void;
     onRiskChange: (riskLevel: FormValues["riskLevel"]) => void;
     onEditRoles: (details: PackageDetails) => void;
+    onCreateReplacement: (details: PackageDetails) => void;
 }) {
     const { t } = useTranslation();
     const [packageConfigurationValid, setPackageConfigurationValid] = useState<boolean | undefined>();
@@ -562,7 +604,8 @@ function EntitlementDialog({
                 </FormGroup>
                 {form.resourceType === "GROUP" && entitlementId && (
                     <AccessPackageDetails api={api} entitlementId={entitlementId}
-                        onEditRoles={onEditRoles} onValidityChange={setPackageConfigurationValid} />
+                        onCreateReplacement={onCreateReplacement} onEditRoles={onEditRoles}
+                        onValidityChange={setPackageConfigurationValid} />
                 )}
                 {form.resourceType !== "GROUP" && <Alert
                     isInline

@@ -15,23 +15,38 @@ import { DurationField } from "./DurationField";
 import { KeycloakReferenceSelector } from "./KeycloakReferenceSelector";
 import { AccessPackageRoleSelector, type SelectedPackageRole } from "./AccessPackageRoleSelector";
 
-export function AccessPackageDialog({ api, onClose, onCreated }: {
+export type AccessPackageDraft = {
+    displayName: string;
+    description: string;
+    riskLevel: Entitlement["riskLevel"];
+    approverRoleId: string;
+    defaultDurationAmount: string;
+    defaultDurationUnit: DurationUnit;
+    maxDurationAmount: string;
+    maxDurationUnit: DurationUnit;
+    allowPermanent: boolean;
+    autoApprove: boolean;
+    roles: SelectedPackageRole[];
+};
+
+export function AccessPackageDialog({ api, initial, onClose, onCreated }: {
     api: EntitlementsAdminApi;
+    initial?: AccessPackageDraft;
     onClose: () => void;
     onCreated: (entitlement: Entitlement) => void;
 }) {
     const { t } = useTranslation();
-    const [displayName, setDisplayName] = useState("");
-    const [description, setDescription] = useState("");
-    const [riskLevel, setRiskLevel] = useState<Entitlement["riskLevel"]>("LOW");
-    const [approverRoleId, setApproverRoleId] = useState("");
-    const [defaultAmount, setDefaultAmount] = useState(DURATION_PRESETS.LOW.defaultDurationAmount);
-    const [defaultUnit, setDefaultUnit] = useState<DurationUnit>(DURATION_PRESETS.LOW.defaultDurationUnit);
-    const [maxAmount, setMaxAmount] = useState(DURATION_PRESETS.LOW.maxDurationAmount);
-    const [maxUnit, setMaxUnit] = useState<DurationUnit>(DURATION_PRESETS.LOW.maxDurationUnit);
-    const [allowPermanent, setAllowPermanent] = useState(false);
-    const [autoApprove, setAutoApprove] = useState(false);
-    const [roles, setRoles] = useState<SelectedPackageRole[]>([]);
+    const [displayName, setDisplayName] = useState(initial?.displayName ?? "");
+    const [description, setDescription] = useState(initial?.description ?? "");
+    const [riskLevel, setRiskLevel] = useState<Entitlement["riskLevel"]>(initial?.riskLevel ?? "LOW");
+    const [approverRoleId, setApproverRoleId] = useState(initial?.approverRoleId ?? "");
+    const [defaultAmount, setDefaultAmount] = useState(initial?.defaultDurationAmount ?? DURATION_PRESETS.LOW.defaultDurationAmount);
+    const [defaultUnit, setDefaultUnit] = useState<DurationUnit>(initial?.defaultDurationUnit ?? DURATION_PRESETS.LOW.defaultDurationUnit);
+    const [maxAmount, setMaxAmount] = useState(initial?.maxDurationAmount ?? DURATION_PRESETS.LOW.maxDurationAmount);
+    const [maxUnit, setMaxUnit] = useState<DurationUnit>(initial?.maxDurationUnit ?? DURATION_PRESETS.LOW.maxDurationUnit);
+    const [allowPermanent, setAllowPermanent] = useState(initial?.allowPermanent ?? false);
+    const [autoApprove, setAutoApprove] = useState(initial?.autoApprove ?? false);
+    const [roles, setRoles] = useState<SelectedPackageRole[]>(initial?.roles ?? []);
     const [validationError, setValidationError] = useState<string>();
     const [saveError, setSaveError] = useState<unknown>();
     const [saving, setSaving] = useState(false);

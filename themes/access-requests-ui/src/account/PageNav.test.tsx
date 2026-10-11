@@ -5,7 +5,17 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-    capabilities: vi.fn()
+    capabilities: vi.fn(),
+    features: {
+        isLinkedAccountsEnabled: true,
+        isViewApplicationsEnabled: true,
+        isViewGroupsEnabled: true,
+        isMyResourcesEnabled: false
+    }
+}));
+
+vi.mock("@keycloak/keycloak-account-ui", () => ({
+    useEnvironment: () => ({ environment: { features: mocks.features } })
 }));
 
 vi.mock("./api/useAccessRequestsApi", () => ({
@@ -53,6 +63,10 @@ function renderPageNav(initialEntry = "/request-access") {
 describe("Access Request Account Console navigation", () => {
     beforeEach(() => {
         mocks.capabilities.mockReset();
+        mocks.features.isLinkedAccountsEnabled = true;
+        mocks.features.isViewApplicationsEnabled = true;
+        mocks.features.isViewGroupsEnabled = true;
+        mocks.features.isMyResourcesEnabled = false;
     });
 
     it("shows Approvals to an approver even when the approval queue is empty", async () => {
@@ -95,5 +109,29 @@ describe("Access Request Account Console navigation", () => {
         renderPageNav("/personal-info");
 
         expect(screen.getByRole("button", { name: "Access requests" })).toHaveAttribute("aria-expanded", "false");
+    });
+
+    it("hides native pages disabled by the realm instead of linking to forbidden APIs", () => {
+        mocks.capabilities.mockResolvedValue({ canApprove: false });
+        mocks.features.isLinkedAccountsEnabled = false;
+        mocks.features.isViewApplicationsEnabled = false;
+        mocks.features.isViewGroupsEnabled = false;
+
+        renderPageNav();
+
+        expect(screen.queryByRole("link", { name: "Linked accounts" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("link", { name: "Applications" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("link", { name: "Groups" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("link", { name: "Resources" })).not.toBeInTheDocument();
+        expect(screen.getByRole("link", { name: "Personal information" })).toBeVisible();
+    });
+
+    it("shows native resource sharing only when Keycloak enables it", () => {
+        mocks.capabilities.mockResolvedValue({ canApprove: false });
+        mocks.features.isMyResourcesEnabled = true;
+
+        renderPageNav();
+
+        expect(screen.getByRole("link", { name: "Resources" })).toBeVisible();
     });
 });

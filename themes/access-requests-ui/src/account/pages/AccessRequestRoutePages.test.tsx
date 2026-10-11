@@ -138,6 +138,8 @@ await i18n.init({
                 accessRequestsResourceTypePackage: "Access package",
                 accessRequestsResourceTypeRealmRole: "Realm role",
                 accessRequestsRetry: "Retry",
+                accessRequestsReviewEntitlement: "Review request for {{entitlement}}",
+                accessRequestsReviewRequest: "Review request",
                 accessRequestsRiskCritical: "Critical",
                 accessRequestsRiskHigh: "High",
                 accessRequestsRiskLabel: "Risk",
@@ -150,6 +152,7 @@ await i18n.init({
                 accessRequestsSubmitRequest: "Submit request",
                 accessRequestsStepUpRequired: "Additional verification required",
                 accessRequestsVerifyIdentity: "Verify identity",
+                accessRequestsVerificationUnavailable: "Verification unavailable",
                 accessRequestsViewDetails: "View details"
             }
         }
@@ -630,25 +633,60 @@ describe("Access Request Account Console route pages", () => {
         expect(mocks.addAlert).toHaveBeenCalledWith("Access request approved.");
     });
 
-    it("requests the required ACR without forcing full reauthentication", async () => {
+    it("requests the required ACR before approval and preserves the queue page", async () => {
         const user = userEvent.setup();
-        mocks.api.pending.mockResolvedValue(page([pendingRequest("request-1", "Finance Reader")]));
-        mocks.api.approve.mockRejectedValueOnce(Object.assign(new Error("Step-up required"), {
-            code: "STEP_UP_REQUIRED", requiredAcr: "strong", status: 403
-        }));
+        mocks.api.pending.mockResolvedValue(page([{
+            ...pendingRequest("request-1", "Finance Reader"),
+            riskLevel: "HIGH",
+            assurance: { state: "STEP_UP_REQUIRED", requiredAcr: "strong" }
+        }], { page: 1, size: 20, total: 21 }));
 
         renderRoutePage(<ApprovalsRoutePage />);
 
         const card = await screen.findByRole("listitem", { name: "Finance Reader requested by anass" });
-        await user.click(within(card).getByRole("button", { name: "Approve" }));
-        const dialog = screen.getByRole("dialog", { name: "Approve Finance Reader" });
-        await user.click(within(dialog).getByRole("button", { name: "Confirm approval" }));
+        await user.click(within(card).getByRole("button", { name: "Review request" }));
+        const dialog = screen.getByRole("dialog", { name: "Review request for Finance Reader" });
         await user.click(await within(dialog).findByRole("button", { name: "Verify identity" }));
 
+        const redirect = new URL(window.location.href);
+        redirect.searchParams.set("approvalPage", "1");
+        redirect.searchParams.set("approvalSize", "20");
         await waitFor(() => expect(mocks.keycloak.login).toHaveBeenCalledWith({
-            acrValues: "strong", redirectUri: window.location.href
+            acrValues: "strong", redirectUri: redirect.href
         }));
-        expect(mocks.api.approve).toHaveBeenCalledTimes(1);
+        expect(mocks.api.approve).not.toHaveBeenCalled();
+    });
+
+    it("offers explicit approval once the server reports successful step-up", async () => {
+        const user = userEvent.setup();
+        mocks.api.pending.mockResolvedValue(page([{
+            ...pendingRequest("request-1", "Finance Reader"),
+            riskLevel: "CRITICAL",
+            assurance: { state: "SATISFIED", requiredAcr: null }
+        }]));
+
+        renderRoutePage(<ApprovalsRoutePage />);
+
+        const card = await screen.findByRole("listitem", { name: "Finance Reader requested by anass" });
+        expect(within(card).queryByRole("button", { name: "Verify identity" })).not.toBeInTheDocument();
+        await user.click(within(card).getByRole("button", { name: "Approve" }));
+        await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Confirm approval" }));
+
+        await waitFor(() => expect(mocks.api.approve).toHaveBeenCalledTimes(1));
+        expect(mocks.keycloak.login).not.toHaveBeenCalled();
+    });
+
+    it("restores the approval queue page after returning from identity verification", async () => {
+        const originalUrl = window.location.href;
+        window.history.replaceState({}, "", "?approvalPage=2&approvalSize=5");
+        try {
+            mocks.api.pending.mockResolvedValue(page([], { page: 2, size: 5, total: 11 }));
+            renderRoutePage(<ApprovalsRoutePage />);
+
+            await waitFor(() => expect(mocks.api.pending).toHaveBeenCalledWith({ page: 2, size: 5 }));
+        } finally {
+            window.history.replaceState({}, "", originalUrl);
+        }
     });
 
     it("does not expose a requester ID when the user no longer exists", async () => {

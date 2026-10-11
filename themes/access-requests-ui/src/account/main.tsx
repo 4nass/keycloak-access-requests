@@ -1,5 +1,6 @@
 import "@patternfly/patternfly/patternfly-addons.css";
 import "@patternfly/react-core/dist/styles/base.css";
+import "../form-select.css";
 
 // Keycloak ships these native Account Console styles without exporting a CSS subpath.
 import "../../node_modules/@keycloak/keycloak-account-ui/lib/keycloak-account-ui.css";

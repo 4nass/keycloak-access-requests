@@ -17,7 +17,8 @@ export function ApprovalsRoutePage() {
     const api = useAccessRequestsApi();
     const { keycloak } = useEnvironment<AccountEnvironment>();
     const loadPendingRequests = useCallback(({ page, size }: PageParameters) => api.pending({ page, size }), [api]);
-    const { error, loading, refreshError, reload, setPage, setPageSize, value } = usePagedLoader(loadPendingRequests);
+    const { error, loading, refreshError, reload, setPage, setPageSize, value } = usePagedLoader(
+        loadPendingRequests, approvalReturnPage());
 
     if (error) {
         return <LoadError error={error} onRetry={reload} />;
@@ -30,13 +31,29 @@ export function ApprovalsRoutePage() {
         {refreshError && <RefreshError error={refreshError} onRetry={reload} />}
         <ApprovalsPage
             onApprove={approve(api)}
-            onStepUp={(acr) => keycloak.login({ acrValues: acr, redirectUri: window.location.href })}
+            onStepUp={(acr) => {
+                const redirect = new URL(window.location.href);
+                redirect.searchParams.set("approvalPage", String(value.page));
+                redirect.searchParams.set("approvalSize", String(value.size));
+                return keycloak.login({ acrValues: acr, redirectUri: redirect.href });
+            }}
             onRefresh={reload}
             onReject={reject(api)}
             pagination={pagination(value, setPage, setPageSize)}
             requests={pendingEntries(value)}
         />
     </>;
+}
+
+function approvalReturnPage(): PageParameters {
+    const parameters = new URL(window.location.href).searchParams;
+    const page = Number(parameters.get("approvalPage"));
+    const size = Number(parameters.get("approvalSize"));
+    return {
+        page: Number.isSafeInteger(page) && page >= 0 ? page : 0,
+        search: "",
+        size: Number.isSafeInteger(size) && size > 0 && size <= 100 ? size : 20
+    };
 }
 
 function pendingEntries(page: { items: PendingRequest[] }): PendingApproval[] {
@@ -48,6 +65,7 @@ function pendingEntries(page: { items: PendingRequest[] }): PendingApproval[] {
         requester: item.requesterName ?? "",
         resourceType: item.resourceType,
         riskLevel: item.riskLevel,
+        assurance: item.assurance,
         durationSeconds: item.durationSeconds,
         permanent: item.permanent
     }));

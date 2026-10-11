@@ -1,0 +1,50 @@
+.access-requests-admin-catalog-item {
+    container-type: inline-size;
+}
+
+.access-requests-admin-catalog-policy {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--pf-v5-global--spacer--sm);
+    margin-block-start: var(--pf-v5-global--spacer--sm);
+}
+
+.access-requests-admin-catalog-actions {
+    flex: 0 0 26rem;
+    justify-content: flex-end;
+}
+
+@container (max-width: 75rem) {
+    .access-requests-admin-catalog-item .pf-v5-c-data-list__item-row {
+        flex-wrap: wrap;
+    }
+
+    .access-requests-admin-catalog-item .pf-v5-c-data-list__item-content,
+    .access-requests-admin-catalog-actions {
+        flex-basis: 100%;
+    }
+
+    .access-requests-admin-catalog-actions {
+        justify-content: flex-start;
+        margin-inline-start: 0;
+    }
+}
+
+@media (max-width: 56.25rem) {
+    .access-requests-admin-catalog .access-requests-admin-catalog-item .pf-v5-c-data-list__item-content {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        row-gap: var(--pf-v5-global--spacer--md);
+    }
+
+    .access-requests-admin-catalog .access-requests-admin-catalog-item .pf-v5-c-data-list__cell {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .access-requests-admin-catalog-actions {
+        flex-wrap: wrap;
+        gap: var(--pf-v5-global--spacer--sm);
+    }
+}

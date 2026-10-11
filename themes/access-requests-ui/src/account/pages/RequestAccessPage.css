@@ -1,0 +1,33 @@
+.access-requests-catalog-item {
+    container-type: inline-size;
+}
+
+.access-requests-catalog-action {
+    flex: 0 0 12rem;
+    justify-content: flex-end;
+}
+
+.access-requests-catalog-action .pf-v5-c-button {
+    width: 100%;
+    white-space: nowrap;
+}
+
+@container (max-width: 48rem) {
+    .access-requests-catalog-item .pf-v5-c-data-list__item-row {
+        flex-wrap: wrap;
+    }
+
+    .access-requests-catalog-item .pf-v5-c-data-list__item-content,
+    .access-requests-catalog-action {
+        flex-basis: 100%;
+    }
+
+    .access-requests-catalog-action {
+        justify-content: flex-start;
+        margin-inline-start: 0;
+    }
+
+    .access-requests-catalog-action .pf-v5-c-button {
+        width: auto;
+    }
+}

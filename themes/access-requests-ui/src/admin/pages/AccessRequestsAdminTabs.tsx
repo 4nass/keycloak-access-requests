@@ -30,9 +30,8 @@ function RoutedTabs({ active }: { active: AdminTab }) {
         return () => { activeRequest = false; };
     }, [api]);
 
-    const marker = "/access-requests";
-    const markerIndex = pathname.indexOf(marker);
-    const base = markerIndex < 0 ? pathname : pathname.slice(0, markerIndex + marker.length);
+    // Match the route segment after the realm, not a substring inside its name.
+    const base = /^\/[^/]+\/access-requests(?=\/|$)/.exec(pathname)?.[0] ?? pathname;
     const paths = {
         catalog: base,
         assurance: `${base}/assurance-policy`,

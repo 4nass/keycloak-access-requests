@@ -12,7 +12,7 @@ async function signIn(page: Page) {
     await page.evaluate(() => performance.clearResourceTimings());
     await page.locator("#kc-login").click();
 
-    await expect(page).toHaveURL(/\/admin\/master\/console\//);
+    await expect(page).toHaveURL(/\/admin\/[^/]+\/console\//);
 }
 
 async function initialThemeAssetBytes(page: Page) {
@@ -20,6 +20,25 @@ async function initialThemeAssetBytes(page: Page) {
         .filter((entry): entry is PerformanceResourceTiming => entry instanceof PerformanceResourceTiming)
         .filter((entry) => entry.name.includes("/resources/"))
         .reduce((bytes, entry) => bytes + entry.transferSize, 0));
+}
+
+async function expectSelectTextClearOfCaret(page: Page, selector: string) {
+    const gap = await page.locator(selector).evaluate((select: HTMLSelectElement) => {
+        const caret = select.parentElement?.querySelector(".pf-v5-c-form-control__toggle-icon");
+        if (!caret) return null;
+
+        const style = getComputedStyle(select);
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+        if (!context) return null;
+        context.font = style.font;
+        const textWidth = context.measureText(select.selectedOptions[0]?.text ?? "").width;
+        const textEnd = select.getBoundingClientRect().left + parseFloat(style.paddingLeft) + textWidth;
+        return caret.getBoundingClientRect().left - textEnd;
+    });
+
+    expect(gap).not.toBeNull();
+    expect(gap!).toBeGreaterThanOrEqual(4);
 }
 
 test("renders Access requests as a native Administration Console entry", async ({ page }) => {
@@ -45,4 +64,44 @@ test("keeps the cold Administration Console asset transfer within budget", async
 
     expect(await initialThemeAssetBytes(page)).toBeLessThanOrEqual(initialConsoleAssetBudgetBytes);
     expect(pageErrors).toEqual([]);
+});
+
+test("keeps Access requests tabs in the active realm", async ({ page }) => {
+    await signIn(page);
+    const realm = new URL(adminConsoleUrl).pathname.split("/")[2];
+    const base = `/${realm}/access-requests`;
+    await page.goto(`${adminConsoleUrl}#${base}`);
+    await expect(page.getByRole("tab")).toHaveCount(6);
+
+    for (const [index, suffix] of [
+        [1, "/assurance-policy"],
+        [2, "/notification-deliveries"],
+        [3, "/provisioning-failures"],
+        [4, "/revocation-failures"],
+        [5, "/events"],
+        [0, ""]
+    ] as const) {
+        await page.getByRole("tab").nth(index).click();
+        await expect(page).toHaveURL(`${adminConsoleUrl}#${base}${suffix}`);
+        await expect(page.getByRole("tab")).toHaveCount(6);
+        await expect(page.getByRole("tab").nth(index)).toHaveAttribute("aria-selected", "true");
+    }
+});
+
+test("keeps select labels clear of their carets across Admin pages", async ({ page }) => {
+    await signIn(page);
+    const realm = new URL(adminConsoleUrl).pathname.split("/")[2];
+    const base = `/${realm}/access-requests`;
+
+    await page.goto(`${adminConsoleUrl}#${base}`);
+    await expect(page.getByRole("combobox", { name: "Catalog view" })).toBeVisible();
+    await expectSelectTextClearOfCaret(page, 'select[aria-label="Catalog view"]');
+
+    await page.goto(`${adminConsoleUrl}#${base}/provisioning-failures`);
+    await expect(page.locator("#provisioning-failure-status")).toBeVisible();
+    await expectSelectTextClearOfCaret(page, "#provisioning-failure-status");
+
+    await page.goto(`${adminConsoleUrl}#${base}/revocation-failures`);
+    await expect(page.locator("#revocation-failure-status")).toBeVisible();
+    await expectSelectTextClearOfCaret(page, "#revocation-failure-status");
 });

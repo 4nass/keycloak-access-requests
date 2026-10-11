@@ -16,7 +16,7 @@ The Account Console is the end-user experience. It adds an **Access requests** n
 
 - **Catalog**: browse requestable access, search it, and submit a justification and requested duration (or permanent access when allowed);
 - **My requests**: view request status, decision details, and persisted history; cancel pending requests;
-- **Approvals**: view the requested duration and decide requests only when the signed-in user can approve at least one entitlement.
+- **Approvals**: view the requested duration and decide requests only when the signed-in user can approve at least one entitlement. HIGH and CRITICAL requests first offer identity verification when needed; the approval action becomes available after Keycloak confirms sufficient assurance.
 
 The theme extends `keycloak.v3`, uses Keycloak Account Console components and PatternFly patterns, and obtains data from the realm API. Dates, request states, history, risk levels, and feedback messages are localized.
 
@@ -45,6 +45,12 @@ ID are not shown in Access Requests screens; they remain available in Keycloak G
 administration API for troubleshooting. The source roles remain managed by Keycloak or external
 identity systems; the extension provisions membership in its dedicated package group, not direct
 role assignments.
+Closing a package stops new requests but does not remove existing access. Role edits remain blocked
+while a request can still be decided or provisioned, a grant has not been successfully revoked, a
+revocation failure remains open, or the delivery group still has members. Once these are resolved,
+historical requests alone do not block editing; the before/after role mappings stay in the catalog
+audit history. The editor explains the current blocker and also offers a prefilled replacement-package
+form; the replacement starts closed, and existing grants are not moved automatically.
 Direct role and group drafts created through the API remain closed to requests; the Admin Console does not offer that creation path. Only bound access packages can be published.
 
 For an operational recovery of a failed package revocation, use the administration API to look up

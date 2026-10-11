@@ -12,9 +12,10 @@ function CurrentLocation() {
     return <output>{useLocation().pathname}</output>;
 }
 
-function renderTabs(active: "catalog" | "assurance" | "events" | "notifications" | "provisioning" | "revocations") {
-    return render(<MemoryRouter initialEntries={["/master/access-requests/events"]}>
-        <Routes><Route path="/master/access-requests/*" element={<>
+function renderTabs(active: "catalog" | "assurance" | "events" | "notifications" | "provisioning" | "revocations",
+    realm = "master") {
+    return render(<MemoryRouter initialEntries={[`/${realm}/access-requests/events`]}>
+        <Routes><Route path="/:realm/access-requests/*" element={<>
             <AccessRequestsAdminTabs active={active} />
             <CurrentLocation />
         </>} /></Routes>
@@ -66,6 +67,31 @@ describe("Access requests Admin tabs", () => {
         expect(screen.getByRole("tab", { name: "accessRequestsAdminEvents" })).toBeVisible();
         expect(screen.queryByRole("tab", { name: "accessRequestsAdminNotificationDelivery" })).not.toBeInTheDocument();
         expect(screen.getByRole("tab", { name: "accessRequestsAdminRevocationFailures" })).toBeVisible();
+    });
+
+    it("keeps the complete realm name when it contains access-requests", async () => {
+        api.capabilities.mockResolvedValue({
+            canManageCatalog: true, canViewEvents: true, canManageNotifications: true, canManageProvisioningFailures: true,
+            canManageAssurancePolicy: true
+        });
+        renderTabs("events", "access-requests-demo");
+
+        const destinations = [
+            ["accessRequestsAdminCatalogTab", ""],
+            ["accessRequestsAdminAssurancePolicy", "/assurance-policy"],
+            ["accessRequestsAdminNotificationDelivery", "/notification-deliveries"],
+            ["accessRequestsAdminFailedProvisioning", "/provisioning-failures"],
+            ["accessRequestsAdminRevocationFailures", "/revocation-failures"],
+            ["accessRequestsAdminEvents", "/events"]
+        ];
+
+        for (const [name, suffix] of destinations) {
+            const expected = `/access-requests-demo/access-requests${suffix}`;
+            const tab = await screen.findByRole("tab", { name });
+            expect(tab).toHaveAttribute("href", expected);
+            await userEvent.click(tab);
+            expect(screen.getByText(expected)).toBeVisible();
+        }
     });
 
     it("keeps only the current tab visible and disabled when capability lookup fails", async () => {

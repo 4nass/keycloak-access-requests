@@ -11,9 +11,10 @@ import {
     type AccessPackageDetails as Details
 } from "../api/EntitlementsAdminApi";
 
-export function AccessPackageDetails({ api, entitlementId, onEditRoles, onValidityChange }: {
+export function AccessPackageDetails({ api, entitlementId, onCreateReplacement, onEditRoles, onValidityChange }: {
     api: EntitlementsAdminApi;
     entitlementId: string;
+    onCreateReplacement?: (details: Details) => void;
     onEditRoles?: (details: Details) => void;
     onValidityChange: (valid: boolean | undefined) => void;
 }) {
@@ -66,8 +67,15 @@ export function AccessPackageDetails({ api, entitlementId, onEditRoles, onValidi
             ? <Button variant="secondary" className="pf-v5-u-my-sm" onClick={() => onEditRoles(details)}>
                 {t("accessRequestsAdminPackageEditRoles")}
             </Button>
-            : <Alert isInline variant="info" className="pf-v5-u-my-sm"
-                title={t("accessRequestsAdminPackageRolesLocked")} />)}
+            : <>
+                <Alert isInline variant="info" className="pf-v5-u-my-sm"
+                    title={t(packageRoleBlockMessage(details.roleEditingBlockReason))} />
+                {["HAS_UNFINISHED_REQUESTS", "HAS_OUTSTANDING_GRANTS", "HAS_REVOCATION_FAILURES", "HAS_MEMBERS"]
+                    .includes(details.roleEditingBlockReason ?? "") && onCreateReplacement &&
+                    <Button variant="secondary" className="pf-v5-u-mb-sm" onClick={() => onCreateReplacement(details)}>
+                        {t("accessRequestsAdminPackageCreateReplacement")}
+                    </Button>}
+            </>)}
         <DataList aria-label={t("accessRequestsAdminPackageRoles")}>
             {details.roleMappings.map((role) => <DataListItem key={`${role.type}:${role.roleId}`}>
                 <DataListItemRow>
@@ -81,4 +89,18 @@ export function AccessPackageDetails({ api, entitlementId, onEditRoles, onValidi
             </DataListItem>)}
         </DataList>
     </section>;
+}
+
+function packageRoleBlockMessage(reason: Details["roleEditingBlockReason"]): string {
+    switch (reason) {
+        case "OPEN_TO_REQUESTS": return "accessRequestsAdminPackageRolesOpen";
+        case "HAS_UNFINISHED_REQUESTS": return "accessRequestsAdminPackageRolesUnfinished";
+        case "HAS_OUTSTANDING_GRANTS": return "accessRequestsAdminPackageRolesOutstandingGrants";
+        case "HAS_REVOCATION_FAILURES": return "accessRequestsAdminPackageRolesRevocationFailures";
+        case "HAS_MEMBERS": return "accessRequestsAdminPackageRolesHasMembers";
+        case "HAS_CHILD_GROUPS": return "accessRequestsAdminPackageRolesHasChildGroups";
+        case "ARCHIVED": return "accessRequestsAdminPackageRolesArchived";
+        case "INVALID_CONFIGURATION": return "accessRequestsAdminPackageRolesInvalid";
+        default: return "accessRequestsAdminPackageRolesLocked";
+    }
 }
