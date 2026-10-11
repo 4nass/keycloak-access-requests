@@ -24,6 +24,9 @@ Copy `target/keycloak-access-requests.jar` to the Keycloak `providers/` director
 
 The complete deployment, configuration, and verification procedure is in [the installation guide](doc/installation.md).
 
+For a disposable Keycloak, PostgreSQL, Mailpit, and pre-populated demo realm, see the
+[Docker Compose demo](demo/README.md).
+
 ## What it provides
 
 - an entitlement catalog with a resource, risk level, approver role, and requestable state;

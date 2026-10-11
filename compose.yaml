@@ -1,0 +1,67 @@
+name: access-requests-demo
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${DEMO_DB_PASSWORD:-demo-db-only}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.30.7
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
+
+  keycloak:
+    build:
+      context: .
+      dockerfile: demo/Dockerfile
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${DEMO_DB_PASSWORD:-demo-db-only}
+      KC_BOOTSTRAP_ADMIN_USERNAME: bootstrap
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${DEMO_BOOTSTRAP_PASSWORD:-demo-bootstrap-only}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-demo-admin-only}
+      DEMO_USER_PASSWORD: ${DEMO_USER_PASSWORD:-demo-user-only}
+    volumes:
+      - ./demo/access-requests-demo-realm.json:/opt/keycloak/data/import/access-requests-demo-realm.json:ro
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  seed:
+    image: python:3.13-alpine
+    command: ["python", "/demo/seed.py"]
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      DEMO_REALM: access-requests-demo
+      DEMO_ADMIN_USERNAME: demo-admin
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-demo-admin-only}
+      SEED_TIMEOUT_SECONDS: "300"
+    volumes:
+      - ./demo/seed.py:/demo/seed.py:ro
+      - ./demo/catalog.json:/demo/catalog.json:ro
+    depends_on:
+      keycloak:
+        condition: service_started
+    restart: "no"
+
+volumes:
+  postgres-data:

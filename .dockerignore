@@ -1,0 +1,10 @@
+.git
+.codex
+.agents
+.aws
+target
+**/node_modules
+**/dist
+**/server
+doc/screenshots
+*.log

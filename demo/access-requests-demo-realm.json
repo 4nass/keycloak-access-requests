@@ -1,0 +1,168 @@
+{
+  "realm": "access-requests-demo",
+  "enabled": true,
+  "displayName": "Access Requests Demo",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "accountTheme": "access-requests",
+  "adminTheme": "access-requests",
+  "emailTheme": "access-requests",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["en", "fr", "de", "es"],
+  "defaultLocale": "en",
+  "accessTokenLifespan": 300,
+  "eventsEnabled": true,
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": true,
+  "smtpServer": {
+    "host": "mailpit",
+    "port": "1025",
+    "from": "access-requests@demo.invalid",
+    "fromDisplayName": "Access Requests Demo",
+    "auth": "false",
+    "ssl": "false",
+    "starttls": "false"
+  },
+  "roles": {
+    "realm": [
+      { "name": "demo-approve-low", "description": "Approve LOW demo requests" },
+      { "name": "demo-approve-medium", "description": "Approve MEDIUM demo requests" },
+      { "name": "demo-approve-high", "description": "Approve HIGH demo requests" },
+      { "name": "demo-approve-critical", "description": "Approve CRITICAL demo requests" },
+      { "name": "demo-wiki-reader", "description": "Demo LOW target role" },
+      { "name": "demo-ops-deployer", "description": "Demo HIGH target role" }
+    ],
+    "client": {
+      "demo-app": [
+        { "name": "project-editor", "description": "Demo MEDIUM target role" },
+        { "name": "production-admin", "description": "Demo CRITICAL target role" }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "demo-app",
+      "name": "Demo application",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:8080/demo-callback"],
+      "webOrigins": ["http://localhost:8080"]
+    },
+    {
+      "clientId": "access-requests-api",
+      "name": "Access Requests API audience",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false
+    }
+  ],
+  "users": [
+    {
+      "username": "demo-admin",
+      "enabled": true,
+      "firstName": "Demo",
+      "lastName": "Administrator",
+      "email": "admin@demo.invalid",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${DEMO_ADMIN_PASSWORD}", "temporary": false }],
+      "realmRoles": ["default-roles-access-requests-demo"],
+      "clientRoles": { "realm-management": ["realm-admin"] }
+    },
+    {
+      "username": "demo-approver",
+      "enabled": true,
+      "firstName": "Alex",
+      "lastName": "Approver",
+      "email": "approver@demo.invalid",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${DEMO_USER_PASSWORD}", "temporary": false }],
+      "realmRoles": ["default-roles-access-requests-demo", "demo-approve-low", "demo-approve-medium"]
+    },
+    {
+      "username": "demo-mfa-approver",
+      "enabled": true,
+      "firstName": "Sam",
+      "lastName": "Sensitive Approver",
+      "email": "mfa-approver@demo.invalid",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${DEMO_USER_PASSWORD}", "temporary": false }],
+      "requiredActions": ["CONFIGURE_TOTP"],
+      "realmRoles": ["default-roles-access-requests-demo", "demo-approve-high", "demo-approve-critical"]
+    },
+    {
+      "username": "demo-requester",
+      "enabled": true,
+      "firstName": "Robin",
+      "lastName": "Requester",
+      "email": "requester@demo.invalid",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${DEMO_USER_PASSWORD}", "temporary": false }],
+      "realmRoles": ["default-roles-access-requests-demo"]
+    },
+    {
+      "username": "demo-requester-two",
+      "enabled": true,
+      "firstName": "Taylor",
+      "lastName": "Requester",
+      "email": "requester-two@demo.invalid",
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "${DEMO_USER_PASSWORD}", "temporary": false }],
+      "realmRoles": ["default-roles-access-requests-demo"]
+    }
+  ],
+  "browserFlow": "demo-browser-step-up",
+  "authenticationFlows": [
+    {
+      "alias": "demo-browser-step-up",
+      "description": "Demo browser login with conditional LoA 1 and OTP LoA 2",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "auth-cookie", "requirement": "ALTERNATIVE", "priority": 10 },
+        { "authenticatorFlow": true, "flowAlias": "demo-browser-authentication", "requirement": "ALTERNATIVE", "priority": 20 }
+      ]
+    },
+    {
+      "alias": "demo-browser-authentication",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticatorFlow": true, "flowAlias": "demo-browser-loa-1", "requirement": "CONDITIONAL", "priority": 10 },
+        { "authenticatorFlow": true, "flowAlias": "demo-browser-loa-2", "requirement": "CONDITIONAL", "priority": 20 }
+      ]
+    },
+    {
+      "alias": "demo-browser-loa-1",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "conditional-level-of-authentication", "authenticatorConfig": "demo-loa-1", "requirement": "REQUIRED", "priority": 10 },
+        { "authenticator": "auth-username-password-form", "requirement": "REQUIRED", "priority": 20 }
+      ]
+    },
+    {
+      "alias": "demo-browser-loa-2",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        { "authenticator": "conditional-level-of-authentication", "authenticatorConfig": "demo-loa-2", "requirement": "REQUIRED", "priority": 10 },
+        { "authenticator": "auth-otp-form", "requirement": "REQUIRED", "priority": 20 }
+      ]
+    }
+  ],
+  "authenticatorConfig": [
+    { "alias": "demo-loa-1", "config": { "loa-condition-level": "1", "loa-max-age": "36000" } },
+    { "alias": "demo-loa-2", "config": { "loa-condition-level": "2", "loa-max-age": "300" } }
+  ]
+}

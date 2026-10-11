@@ -1,0 +1,46 @@
+[
+  {
+    "displayName": "Demo Wiki Reader",
+    "description": "Read the internal wiki. Automatically approved for this demo.",
+    "riskLevel": "LOW",
+    "approverRole": "demo-approve-low",
+    "roles": [{ "type": "REALM_ROLE", "name": "demo-wiki-reader" }],
+    "defaultDurationSeconds": 2592000,
+    "maxDurationSeconds": 7776000,
+    "allowPermanent": true,
+    "autoApprove": true
+  },
+  {
+    "displayName": "Demo Project Editor",
+    "description": "Edit a project workspace after a standard approval.",
+    "riskLevel": "MEDIUM",
+    "approverRole": "demo-approve-medium",
+    "roles": [{ "type": "CLIENT_ROLE", "clientId": "demo-app", "name": "project-editor" }],
+    "defaultDurationSeconds": 604800,
+    "maxDurationSeconds": 2592000,
+    "allowPermanent": false,
+    "autoApprove": false
+  },
+  {
+    "displayName": "Demo Operations Deployer",
+    "description": "Deploy to a staging environment with fresh OTP step-up.",
+    "riskLevel": "HIGH",
+    "approverRole": "demo-approve-high",
+    "roles": [{ "type": "REALM_ROLE", "name": "demo-ops-deployer" }],
+    "defaultDurationSeconds": 28800,
+    "maxDurationSeconds": 86400,
+    "allowPermanent": false,
+    "autoApprove": false
+  },
+  {
+    "displayName": "Demo Production Administrator",
+    "description": "Critical client role requiring a separate approver and fresh OTP.",
+    "riskLevel": "CRITICAL",
+    "approverRole": "demo-approve-critical",
+    "roles": [{ "type": "CLIENT_ROLE", "clientId": "demo-app", "name": "production-admin" }],
+    "defaultDurationSeconds": 3600,
+    "maxDurationSeconds": 14400,
+    "allowPermanent": false,
+    "autoApprove": false
+  }
+]
