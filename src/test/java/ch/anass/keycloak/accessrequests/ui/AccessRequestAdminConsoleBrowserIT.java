@@ -866,7 +866,10 @@ class AccessRequestAdminConsoleBrowserIT {
                 assertPageHeading(driver, "Email notifications");
                 waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
                         "//h2[normalize-space()='There are no failed notification emails.']")));
-                assertApiRequestStatus(driver, "/access-requests/admin/notification-deliveries/summary", 200);
+                assertApiRequestStatus(driver, "/access-requests/admin/notification-deliveries?page=", 200);
+                assertTrue(apiRequests(driver).stream().noneMatch(request ->
+                                ((String) request.get("url")).contains("/notification-deliveries/summary")),
+                        "The failure worklist should not fetch or display aggregate e-mail counters.");
                 AccessRequestBrowserScreenshots.capture(driver,
                         darkMode ? "admin-email-notifications-dark" : "admin-email-notifications-light");
 

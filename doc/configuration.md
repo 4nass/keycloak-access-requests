@@ -35,10 +35,11 @@ E-mail delivery is configured independently for every realm. Deploying the provi
 
 Keycloak resolves e-mail templates from the realm's selected e-mail theme and its single parent chain; it has no automatic multi-theme composition. The selected theme must therefore expose the four access-request HTML/text templates and their message keys. If the template integration or SMTP configuration is missing, the access-request transaction still succeeds: the notification outbox retries delivery in the background and eventually records the entry as `FAILED`. Use the Email notifications tab to inspect and replay failed deliveries; Keycloak logs remain the source for delivery error diagnostics.
 
-Use **Access requests → Email notifications** in the bundled Admin Console to see fixed
-delivery-state counters, inspect failed rows without exposing recipient e-mail addresses, and
-manually requeue a failed delivery. The same information is available to an authenticated
-monitoring client through GET /admin/notification-deliveries/summary. Keycloak's own management
+Use **Access requests → Email notifications** in the bundled Admin Console to inspect and retry
+failed e-mail deliveries and role-recipient expansion jobs without exposing recipient e-mail
+addresses. The page omits aggregate counters so operators can focus on actionable failures.
+An authenticated monitoring client can use GET /admin/notification-deliveries/summary for
+individual recipient-delivery counts; completed role expansion is not an e-mail. Keycloak's own management
 metrics remain configured separately with --metrics-enabled=true; the extension does not rely on
 an internal Keycloak metrics SPI.
 

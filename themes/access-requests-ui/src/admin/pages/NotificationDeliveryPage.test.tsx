@@ -36,22 +36,17 @@ await i18n.init({
                 accessRequestsAdminNotAvailable: "Not available",
                 accessRequestsAdminNotificationDelivery: "Notification delivery",
                 accessRequestsAdminNotificationDeliveryAttempts: "Attempts",
-                accessRequestsAdminNotificationDeliveryDelivered: "Delivered",
                 accessRequestsAdminNotificationDeliveryDescription: "Monitor delivery.",
-                accessRequestsAdminNotificationDeliveryDiscarded: "Discarded",
                 accessRequestsAdminNotificationDeliveryEmpty: "No failed deliveries.",
                 accessRequestsAdminNotificationDeliveryEntitlementId: "Entitlement ID",
                 accessRequestsAdminNotificationDeliveryFailed: "Failed deliveries",
                 accessRequestsAdminNotificationDeliveryLastAttempt: "Last attempt",
-                accessRequestsAdminNotificationDeliveryPending: "Pending",
-                accessRequestsAdminNotificationDeliveryProcessing: "Processing",
                 accessRequestsAdminNotificationDeliveryRecipient: "Recipient",
                 accessRequestsAdminNotificationDeliveryRecipientType: "Recipient type",
                 accessRequestsAdminNotificationDeliveryRequestId: "Request",
                 accessRequestsAdminNotificationDeliveryRetry: "Retry delivery",
                 accessRequestsAdminNotificationDeliveryRetryDescription: "The delivery will return to the queue.",
                 accessRequestsAdminNotificationDeliveryRetryQueued: "Notification delivery queued for retry.",
-                accessRequestsAdminNotificationDeliverySummary: "Delivery status",
                 accessRequestsAdminNotificationTypeProvisioningFailed: "Provisioning failed",
                 accessRequestsAdminNotificationRecipientTypeRealmRole: "Realm role",
                 accessRequestsAdminNotificationRecipientTypeUser: "User",
@@ -113,18 +108,13 @@ describe("NotificationDeliveryPage", () => {
         mocks.api.retryNotificationDelivery.mockReset().mockResolvedValue(undefined);
     });
 
-    it("shows operational counts, preserves the failed delivery metadata, and requeues after confirmation", async () => {
+    it("focuses on actionable failed deliveries without displaying misleading email totals", async () => {
         renderPage();
 
         expect(await screen.findByText("Request submitted")).toBeInTheDocument();
-        expect(screen.getByText("3")).toBeInTheDocument();
         expect(screen.getByText("10")).toBeInTheDocument();
-        const summary = screen.getByRole("group", { name: "Delivery status" });
-        expect(summary).toHaveClass("access-requests-delivery-summary");
-        expect(summary.querySelectorAll(".access-requests-delivery-summary__item")).toHaveLength(5);
-        for (const label of ["Pending", "Processing", "Failed deliveries", "Delivered", "Discarded"]) {
-            expect(within(summary).getByText(label)).toBeVisible();
-        }
+        expect(screen.queryByRole("group", { name: "Delivery status" })).not.toBeInTheDocument();
+        expect(mocks.api.notificationDeliverySummary).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByRole("button", { name: "Retry delivery" }));
         const dialog = await screen.findByRole("dialog", { name: "Retry delivery" });
@@ -135,18 +125,13 @@ describe("NotificationDeliveryPage", () => {
         await waitFor(() => expect(mocks.api.notificationDeliveries).toHaveBeenCalledTimes(2));
     });
 
-    it("keeps the newest delivery page and summary when an older response finishes last", async () => {
+    it("keeps the newest delivery page when an older response finishes last", async () => {
         const olderDeliveries = deferred<{ items: typeof failedDelivery[]; total: number }>();
-        const olderSummary = deferred<{ pending: number; processing: number; failed: number; delivered: number; discarded: number }>();
         mocks.api.notificationDeliveries.mockReset()
             .mockResolvedValueOnce({ items: [failedDelivery], total: 40 })
             .mockReturnValueOnce(olderDeliveries.promise)
             .mockResolvedValueOnce({ items: [{ ...failedDelivery, id: "delivery-current", requestId: "request-current",
                 requestName: "Current access" }], total: 40 });
-        mocks.api.notificationDeliverySummary.mockReset()
-            .mockResolvedValueOnce({ pending: 3, processing: 1, failed: 1, delivered: 8, discarded: 2 })
-            .mockReturnValueOnce(olderSummary.promise)
-            .mockResolvedValueOnce({ pending: 17, processing: 1, failed: 1, delivered: 8, discarded: 2 });
         renderPage();
 
         await screen.findByText("Request: Finance access");
@@ -154,16 +139,13 @@ describe("NotificationDeliveryPage", () => {
         await waitFor(() => expect(mocks.api.notificationDeliveries).toHaveBeenCalledWith({ page: 1, size: 20 }));
         fireEvent.click(screen.getAllByRole("button", { name: "Go to previous page" })[0]);
         expect(await screen.findByText("Request: Current access")).toBeVisible();
-        expect(screen.getByText("17")).toBeVisible();
 
         await act(async () => {
-            olderSummary.resolve({ pending: 99, processing: 1, failed: 1, delivered: 8, discarded: 2 });
             olderDeliveries.resolve({ items: [{ ...failedDelivery, id: "delivery-stale", requestId: "request-stale" }], total: 40 });
         });
         expect(screen.getByText("Request: Current access")).toBeVisible();
-        expect(screen.getByText("17")).toBeVisible();
         expect(screen.queryByText("Request: Stale access")).not.toBeInTheDocument();
-        expect(screen.queryByText("99")).not.toBeInTheDocument();
+        expect(mocks.api.notificationDeliverySummary).not.toHaveBeenCalled();
     });
 
     it("hides previous-page deliveries and retry actions while the next page loads", async () => {

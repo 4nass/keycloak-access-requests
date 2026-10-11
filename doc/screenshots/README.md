@@ -10,7 +10,7 @@ These images are captured in a browser against Keycloak with the built extension
 | Admin · Catalog | [Empty](admin-catalog-empty-light.png) | [Light](admin-catalog-light.png), [dark](admin-catalog-dark.png) |
 | Admin · Approval assurance | — | [Light](admin-approval-assurance-light.png), [dark](admin-approval-assurance-dark.png) |
 | Admin · Provisioning failures | [Open, empty](admin-failed-provisioning-light.png), [closed, empty](admin-provisioning-failures-closed-empty-light.png) | [Open failure](admin-provisioning-failures-filled-light.png), [closed failure](admin-provisioning-failures-closed-light.png) |
-| Admin · Email notifications | [Light](admin-email-notifications-light.png), [dark](admin-email-notifications-dark.png) | [Summary and failed deliveries](admin-email-notifications-filled-light.png) |
+| Admin · Email notifications | [Light](admin-email-notifications-light.png), [dark](admin-email-notifications-dark.png) | [Failed deliveries](admin-email-notifications-filled-light.png) |
 | Admin · Revocation failures | [Open, empty](admin-revocation-failures-light.png), [open, dark](admin-revocation-failures-dark.png), [resolved, empty](admin-revocation-failures-resolved-empty-light.png) | [Open incident](admin-revocation-failures-filled-light.png), [resolved incident](admin-revocation-failures-resolved-filled-light.png) |
 | Admin · Events | [Empty search](admin-events-light.png) | [Event history](admin-events-filled-light.png), [request details](workflow-admin-request-history.png) |
 

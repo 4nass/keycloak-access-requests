@@ -272,6 +272,37 @@ class JpaAccessRequestNotificationOutboxRepositoryTest {
     }
 
     @Test
+    void summaryCountsRecipientEmailsButNotCompletedRoleExpansionInstructions() {
+        Instant queuedAt = Instant.parse("2026-09-22T10:00:00Z");
+        try (EntityManager entityManager = entityManagerFactory.createEntityManager()) {
+            entityManager.getTransaction().begin();
+            JpaAccessRequestNotificationOutboxRepository outbox =
+                    new JpaAccessRequestNotificationOutboxRepository(entityManager);
+            outbox.enqueue(notification(), AccessRequestNotificationRecipientType.REALM_ROLE,
+                    "approver-role", queuedAt);
+            outbox.enqueue(notification(), AccessRequestNotificationRecipientType.REALM_ROLE,
+                    "missing-approver-role", queuedAt);
+            outbox.enqueue(notification(), AccessRequestNotificationRecipientType.USER,
+                    "approver-1", queuedAt);
+            outbox.enqueue(notification(), AccessRequestNotificationRecipientType.USER,
+                    "approver-2", queuedAt);
+            for (AccessRequestNotificationOutboxEntity entry : outbox.claimDue(
+                    queuedAt, Duration.ofMinutes(5), "processor-1", 4)) {
+                if (entry.recipientId().equals("approver-role") || entry.recipientId().equals("approver-1")) {
+                    outbox.markDelivered(entry.id(), "processor-1", queuedAt.plusSeconds(1));
+                } else {
+                    outbox.markFailed(entry.id(), "processor-1", queuedAt.plusSeconds(1), 1);
+                }
+            }
+            assertEquals(new JpaAccessRequestNotificationOutboxRepository.NotificationOutboxSummary(
+                    0, 0, 1, 0, 1), outbox.summarize("realm-1"));
+            assertEquals(2, outbox.findFailed("realm-1", 0, 20).total(),
+                    "Failed role expansion must remain actionable even though it is not an e-mail.");
+            entityManager.getTransaction().commit();
+        }
+    }
+
+    @Test
     void requeuesOnlyTerminalFailuresWithANewRetryBudget() {
         Instant queuedAt = Instant.parse("2026-09-22T10:00:00Z");
         String failedDeliveryId;

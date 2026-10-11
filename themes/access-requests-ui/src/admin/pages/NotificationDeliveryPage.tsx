@@ -33,12 +33,10 @@ import { useTranslation } from "react-i18next";
 
 import {
     presentEntitlementsAdminError,
-    type NotificationDelivery,
-    type NotificationDeliverySummary
+    type NotificationDelivery
 } from "../api/EntitlementsAdminApi";
 import { useEntitlementsAdminApi } from "../api/useEntitlementsAdminApi";
 import { AccessRequestsAdminTabs } from "./AccessRequestsAdminTabs";
-import "./NotificationDeliveryPage.css";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50].map((value) => ({ title: String(value), value }));
 
@@ -46,7 +44,6 @@ export function NotificationDeliveryPage() {
     const { t } = useTranslation();
     const api = useEntitlementsAdminApi();
     const [deliveries, setDeliveries] = useState<{ items: NotificationDelivery[]; total: number; page: number; size: number }>();
-    const [summary, setSummary] = useState<NotificationDeliverySummary>();
     const [page, setPage] = useState(0);
     const [size, setSize] = useState(20);
     const [loading, setLoading] = useState(true);
@@ -62,12 +59,8 @@ export function NotificationDeliveryPage() {
         setLoading(true);
         setRefreshError(undefined);
         try {
-            const [nextSummary, failedDeliveries] = await Promise.all([
-                api.notificationDeliverySummary(),
-                api.notificationDeliveries({ page, size })
-            ]);
+            const failedDeliveries = await api.notificationDeliveries({ page, size });
             if (loadId === latestLoad.current) {
-                setSummary(nextSummary);
                 setDeliveries({ items: failedDeliveries.items, total: failedDeliveries.total, page, size });
             }
         } catch (error) {
@@ -145,7 +138,6 @@ export function NotificationDeliveryPage() {
                         className="pf-v5-u-mb-lg"
                     />
                 )}
-                {summary && <DeliverySummary summary={summary} />}
                 <Toolbar aria-label={t("accessRequestsAdminNotificationDelivery")}>
                     <ToolbarContent>
                         <ToolbarItem>
@@ -206,29 +198,6 @@ export function NotificationDeliveryPage() {
                 />
             )}
         </>
-    );
-}
-
-function DeliverySummary({ summary }: { summary: NotificationDeliverySummary }) {
-    const { t } = useTranslation();
-    const statuses = [
-        { key: "pending", label: t("accessRequestsAdminNotificationDeliveryPending"), count: summary.pending, color: "blue" },
-        { key: "processing", label: t("accessRequestsAdminNotificationDeliveryProcessing"), count: summary.processing, color: "orange" },
-        { key: "failed", label: t("accessRequestsAdminNotificationDeliveryFailed"), count: summary.failed, color: "red" },
-        { key: "delivered", label: t("accessRequestsAdminNotificationDeliveryDelivered"), count: summary.delivered, color: "green" },
-        { key: "discarded", label: t("accessRequestsAdminNotificationDeliveryDiscarded"), count: summary.discarded, color: "grey" }
-    ] as const;
-
-    return (
-        <div aria-label={t("accessRequestsAdminNotificationDeliverySummary")}
-            className="access-requests-delivery-summary" role="group">
-            {statuses.map((status) => (
-                <div className="access-requests-delivery-summary__item" key={status.key}>
-                    <span>{status.label}</span>
-                    <Label color={status.color}>{status.count}</Label>
-                </div>
-            ))}
-        </div>
     );
 }
 

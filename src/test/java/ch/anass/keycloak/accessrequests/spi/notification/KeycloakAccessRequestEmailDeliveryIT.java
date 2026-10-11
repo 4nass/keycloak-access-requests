@@ -146,6 +146,14 @@ class KeycloakAccessRequestEmailDeliveryIT {
                     "Une nouvelle demande d’accès a été soumise.",
                     "I need read-only finance reports.",
                     "Approved Finance Reports");
+            HttpResponse<String> deliverySummary = HTTP_CLIENT.send(
+                    adminRequest(keycloak,
+                            "/realms/master/access-requests/admin/notification-deliveries/summary",
+                            adminToken).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, deliverySummary.statusCode(), deliverySummary.body());
+            assertEquals(2, JSON.readTree(deliverySummary.body()).path("delivered").asInt(),
+                    "Completed role fan-out is not a third email in Mailpit.");
             approve(keycloak, approver.token(), approvedRequestId);
             assertDeliveredMessage(
                     approvedRequester.email(),

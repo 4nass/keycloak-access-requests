@@ -171,8 +171,8 @@ public final class JpaAccessRequestNotificationOutboxRepository {
     }
 
     /**
-     * Produces low-cardinality operational counts for one realm. These values are intentionally suitable for
-     * the administration view and for an authenticated monitoring poller.
+     * Counts recipient e-mail deliveries, not role fan-out instructions. A completed role instruction queues
+     * individual recipient rows but does not itself send an e-mail.
      */
     public NotificationOutboxSummary summarize(String realmId) {
         String requiredRealmId = requireRealmId(realmId);
@@ -185,9 +185,11 @@ public final class JpaAccessRequestNotificationOutboxRepository {
                         select entry.state, count(entry)
                           from AccessRequestNotificationOutboxEntity entry
                          where entry.realmId = :realmId
+                           and entry.recipientType = :recipientType
                          group by entry.state
                         """, Object[].class)
                 .setParameter("realmId", requiredRealmId)
+                .setParameter("recipientType", AccessRequestNotificationRecipientType.USER)
                 .getResultList()
                 .forEach(row -> counts.put((AccessRequestNotificationOutboxState) row[0], (Long) row[1]));
         return new NotificationOutboxSummary(

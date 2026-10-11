@@ -263,8 +263,8 @@ The notification endpoints are realm-scoped and require Keycloak administrator a
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | /admin/notification-deliveries | List failed lifecycle e-mail deliveries |
-| GET | /admin/notification-deliveries/summary | Return low-cardinality delivery counts by state |
+| GET | /admin/notification-deliveries | List failed e-mail deliveries and role-recipient expansion jobs |
+| GET | /admin/notification-deliveries/summary | Return recipient e-mail delivery counts by state |
 | POST | /admin/notification-deliveries/{deliveryId}/retry | Put one failed delivery back in the retry queue |
 
 The delivery list accepts the standard page and size parameters (default 0 and 20, maximum
@@ -273,9 +273,13 @@ identifier, notification type, attempt count, and last-attempt time. It never re
 e-mail address.
 
 The summary returns the fixed set of counters pending, processing, delivered, discarded, and
-failed. These are intentionally low-cardinality operational metrics: they are safe to render in
-the Admin Console or poll with an authenticated monitoring client. They are distinct from
-Keycloak's platform management metrics endpoint.
+failed for individual `USER` recipient rows only. A `REALM_ROLE` row merely expands a role into
+recipient deliveries: completing it does not send an additional e-mail and is never included in
+these counters. Role-expansion failures remain visible in the failed-delivery list for retry.
+`delivered` means the SMTP sender reported success, not that a recipient received or read the
+message. Mailpit counts can also differ if messages are deleted or retained for a different
+period. These low-cardinality counters are available to authenticated monitoring clients, but
+the Admin Console focuses on actionable failures rather than displaying aggregate totals.
 
 The retry operation returns 204 No Content when it atomically requeues a row that remains FAILED.
 Its attempt budget is reset so the worker can make up to ten new attempts. It returns 404 Not Found
