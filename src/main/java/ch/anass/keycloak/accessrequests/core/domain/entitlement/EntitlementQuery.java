@@ -3,12 +3,16 @@ package ch.anass.keycloak.accessrequests.core.domain.entitlement;
 import java.util.Objects;
 
 /**
- * A paginated administrative query for all entitlements in one realm, including drafts.
+ * A paginated administrative query for either the current catalog or its archive in one realm.
  */
-public record EntitlementQuery(String realmId, int page, int size) {
+public record EntitlementQuery(String realmId, int page, int size, boolean archived) {
 
     public static final int DEFAULT_PAGE_SIZE = 20;
     public static final int MAX_PAGE_SIZE = 100;
+
+    public EntitlementQuery(String realmId, int page, int size) {
+        this(realmId, page, size, false);
+    }
 
     public EntitlementQuery {
         realmId = requireText(realmId, "realmId");

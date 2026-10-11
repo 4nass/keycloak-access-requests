@@ -36,7 +36,7 @@ class AccessRequestRouteContractTest {
                 "GET catalog | consumes=- | produces=application/json | params=query:page=0,query:riskLevel,"
                         + "query:search,query:size=20,query:type",
                 "OPTIONS catalog | consumes=- | produces=- | params=-",
-                "GET admin/entitlements | consumes=- | produces=application/json | params=query:page=0,query:size=20",
+                "GET admin/entitlements | consumes=- | produces=application/json | params=query:archived=false,query:page=0,query:size=20",
                 "POST admin/entitlements | consumes=application/json | produces=application/json | params=body",
                 "POST admin/access-packages | consumes=application/json | "
                         + "produces=application/json | params=body",

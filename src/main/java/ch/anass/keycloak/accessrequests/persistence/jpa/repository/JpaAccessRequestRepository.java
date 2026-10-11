@@ -42,14 +42,21 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
         this.entityManager = entityManager;
     }
 
-    /** A role change must not reinterpret an existing request or a later provisioning retry. */
-    public boolean hasRequestsForEntitlement(String realmId, String entitlementId) {
+    /** Pending decisions and open provisioning failures can still use the package's current roles. */
+    public boolean hasUnfinishedRequestsForEntitlement(String realmId, String entitlementId) {
         return !entityManager.createQuery("""
                         select entity.id from AccessRequestEntity entity
                          where entity.realmId = :realmId and entity.entitlementId = :entitlementId
+                           and (entity.decisionStatus = :pending
+                                or (entity.decisionStatus = :approved
+                                    and entity.provisioningStatus <> :succeeded
+                                    and entity.provisioningClosedTimestamp is null))
                         """, String.class)
                 .setParameter("realmId", realmId)
                 .setParameter("entitlementId", entitlementId)
+                .setParameter("pending", DecisionStatus.PENDING)
+                .setParameter("approved", DecisionStatus.APPROVED)
+                .setParameter("succeeded", ProvisioningStatus.SUCCEEDED)
                 .setMaxResults(1)
                 .getResultList().isEmpty();
     }

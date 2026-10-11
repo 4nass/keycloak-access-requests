@@ -64,6 +64,7 @@ public final class KeycloakEntitlementAdminEventPublisher {
                 .resourcePath("access-requests", "entitlements", entitlement.id())
                 .operation(operation)
                 .detail("requestable", Boolean.toString(entitlement.requestable()))
+                .detail("archived", Boolean.toString(entitlement.archived()))
                 .detail("riskLevel", entitlement.riskLevel().name())
                 .detail("approverRoleId", entitlement.approverRoleId())
                 .detail("defaultDurationSeconds", Long.toString(entitlement.durationPolicy().defaultDuration().toSeconds()))

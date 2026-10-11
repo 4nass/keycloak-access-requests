@@ -73,7 +73,7 @@ public final class AuditDto {
             String type, String actorId, String occurredAt,
             ProvisioningFailureCode failureCode, String closureReason,
             GrantRevocationFailureCode revocationFailureCode, String revocationResolutionReason,
-            String actorName, ApprovalAssuranceEvidence assurance) {
+            String actorName, ApprovalAssuranceEvidence assurance, Long entitlementVersion) {
         public static AdminRequestHistoryEntryResponse from(AccessRequestEvent event) {
             return from(event, null);
         }
@@ -89,7 +89,8 @@ public final class AuditDto {
                     ? event.comment() : null;
             return new AdminRequestHistoryEntryResponse(event.type().name(), event.actorId(),
                     event.occurredAt().toString(), failureCode, closureReason,
-                    revocationFailureCode, revocationResolutionReason, actorName, event.assuranceEvidence());
+                    revocationFailureCode, revocationResolutionReason, actorName, event.assuranceEvidence(),
+                    event.entitlementVersion());
         }
     }
 

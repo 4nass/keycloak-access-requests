@@ -77,11 +77,12 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
 
     public Response listCatalogEntitlements(
             int page,
-            int size) {
+            int size,
+            boolean archived) {
         AccessRequestManager manager = requireAccessRequestManager();
         try {
             EntitlementPage entitlementPage = entitlementRepository().findAll(
-                    new EntitlementQuery(manager.realm().getId(), page, size));
+                    new EntitlementQuery(manager.realm().getId(), page, size, archived));
             AdminDisplayNameResolver names = adminNames(manager.realm());
             return Response.ok(EntitlementListResponse.from(entitlementPage,
                     entitlement -> present(entitlement, names))).build();
@@ -186,12 +187,11 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
                     missing ? null : KeycloakReferenceSearch.roleDisplayName(mapping.type(), role), missing);
         }).toList();
         boolean configurationValid = isPackageConfigured(group, accessPackage);
-        boolean roleEditingAllowed = configurationValid && !entitlement.requestable()
-                && !requestRepository().hasRequestsForEntitlement(manager.realm().getId(), packageId)
-                && group.getSubGroupsStream().findAny().isEmpty() && !hasGroupMembers(manager.realm(), group);
+        String roleEditingBlockReason = roleEditingBlockReason(manager.realm(), entitlement, group,
+                configurationValid);
         return new AccessPackageResponse(packageId, accessPackage.groupId(), accessPackage.groupName(),
                 group != null && accessPackage.groupName().equals(group.getName()),
-                configurationValid, roleEditingAllowed, roles);
+                configurationValid, roleEditingBlockReason == null, roleEditingBlockReason, roles);
     }
 
     public Response updateAccessPackageRoles(String packageId, AccessPackageRoleUpdate submission) {
@@ -213,20 +213,16 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
                         .findByEntitlementId(manager.realm().getId(), packageId)
                         .orElseThrow(() -> new NotFoundException("Access package not found: " + packageId));
                 GroupModel group = session.groups().getGroupById(manager.realm(), accessPackage.groupId());
-                if (entitlement.requestable() || entitlement.resourceType() != ResourceType.GROUP
-                        || !entitlement.resourceId().equals(accessPackage.groupId())
-                        || !isPackageConfigured(group, accessPackage)
-                        || group.getSubGroupsStream().findAny().isPresent()) {
+                if (entitlement.resourceType() != ResourceType.GROUP
+                        || !entitlement.resourceId().equals(accessPackage.groupId())) {
                     return error(Response.Status.CONFLICT, "INVALID_ACCESS_PACKAGE_CONFIGURATION",
-                            "Close requests and restore the package group before editing its roles", null);
+                            "The package binding does not match its entitlement", null);
                 }
-                if (requestRepository().hasRequestsForEntitlement(manager.realm().getId(), packageId)) {
-                    return error(Response.Status.CONFLICT, "ACCESS_PACKAGE_ALREADY_USED",
-                            "A package with request history cannot change its granted roles", null);
-                }
-                if (hasGroupMembers(manager.realm(), group)) {
-                    return error(Response.Status.CONFLICT, "ACCESS_PACKAGE_HAS_MEMBERS",
-                            "Remove all current package members before editing its roles", null);
+                String blockReason = roleEditingBlockReason(manager.realm(), entitlement, group,
+                        isPackageConfigured(group, accessPackage));
+                if (blockReason != null) {
+                    return error(Response.Status.CONFLICT, "ACCESS_PACKAGE_ROLES_" + blockReason,
+                            "The package is not ready for role changes: " + blockReason, null);
                 }
                 List<AccessPackage.RoleMapping> mappings;
                 try {
@@ -276,8 +272,8 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
                 Entitlement current = entitlementRepository()
                         .findByIdForUpdate(manager.realm().getId(), entitlementId)
                         .orElseThrow(() -> new NotFoundException("Entitlement not found: " + entitlementId));
-                if (current.requestable()) {
-                    persistEntitlementUpdate(current.unpublish(Instant.now()), current.version(), manager);
+                if (!current.archived()) {
+                    persistEntitlementUpdate(current.archive(Instant.now()), current.version(), manager);
                 }
                 return Response.noContent().build();
             });
@@ -298,6 +294,27 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
         }
     }
 
+    private String roleEditingBlockReason(RealmModel realm, Entitlement entitlement, GroupModel group,
+            boolean configurationValid) {
+        String realmId = realm.getId();
+        String packageId = entitlement.id();
+        if (!configurationValid) return "INVALID_CONFIGURATION";
+        if (entitlement.archived()) return "ARCHIVED";
+        if (entitlement.requestable()) return "OPEN_TO_REQUESTS";
+        if (requestRepository().hasUnfinishedRequestsForEntitlement(realmId, packageId)) {
+            return "HAS_UNFINISHED_REQUESTS";
+        }
+        if (accessGrantRepository().hasOutstandingGrantsForEntitlement(realmId, packageId)) {
+            return "HAS_OUTSTANDING_GRANTS";
+        }
+        if (accessGrantRepository().hasOpenRevocationFailuresForEntitlement(realmId, packageId)) {
+            return "HAS_REVOCATION_FAILURES";
+        }
+        if (group.getSubGroupsStream().findAny().isPresent()) return "HAS_CHILD_GROUPS";
+        if (hasGroupMembers(realm, group)) return "HAS_MEMBERS";
+        return null;
+    }
+
     public Response getEntitlement(String entitlementId) {
         AccessRequestManager manager = requireAccessRequestManager();
         return Response.ok(present(findEntitlement(manager.realm(), entitlementId),
@@ -311,6 +328,10 @@ final class AccessRequestCatalogHandler extends AccessRequestHandlerSupport {
         EntitlementUpdate validatedSubmission = requireEntitlementUpdate(submission);
         validateApproverRole(manager.realm(), validatedSubmission.approverRoleId());
         Entitlement current = findEntitlement(manager.realm(), entitlementId);
+        if (current.archived()) {
+            return error(Response.Status.CONFLICT, "ENTITLEMENT_ARCHIVED",
+                    "An archived entitlement cannot be edited", null);
+        }
         if (validatedSubmission.requestable()) {
             var binding = accessPackageRepository().findByEntitlementId(manager.realm().getId(), entitlementId);
             if (binding.isEmpty() || current.resourceType() != ResourceType.GROUP

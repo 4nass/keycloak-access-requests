@@ -74,6 +74,9 @@ public class EntitlementAuditEventEntity {
     @Column(name = "AUTO_APPROVE", nullable = false)
     private boolean autoApprove;
 
+    @Column(name = "ARCHIVED", nullable = false)
+    private boolean archived;
+
     @Column(name = "DEFAULT_DURATION_SECONDS", nullable = false)
     private long defaultDurationSeconds;
 
@@ -114,6 +117,7 @@ public class EntitlementAuditEventEntity {
         this.approverRoleId = event.approverRoleId();
         this.requestable = event.requestable();
         this.autoApprove = event.autoApprove();
+        this.archived = event.archived();
         this.defaultDurationSeconds = event.durationPolicy().defaultDuration().toSeconds();
         this.maxDurationSeconds = event.durationPolicy().maxDuration().toSeconds();
         this.allowPermanent = event.durationPolicy().allowPermanent();

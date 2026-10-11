@@ -19,6 +19,7 @@ public final class AccessRequestEvent {
     private final Long requestVersion;
     private final Long revocationAttempt;
     private final ApprovalAssuranceEvidence assuranceEvidence;
+    private final Long entitlementVersion;
 
     private AccessRequestEvent(
             String id,
@@ -44,6 +45,14 @@ public final class AccessRequestEvent {
             String id, String requestId, String realmId, AccessRequestEventType type, String actorId,
             Instant occurredAt, String comment, String metadata, Long requestVersion, Long revocationAttempt,
             ApprovalAssuranceEvidence assuranceEvidence) {
+        this(id, requestId, realmId, type, actorId, occurredAt, comment, metadata, requestVersion,
+                revocationAttempt, assuranceEvidence, null);
+    }
+
+    private AccessRequestEvent(
+            String id, String requestId, String realmId, AccessRequestEventType type, String actorId,
+            Instant occurredAt, String comment, String metadata, Long requestVersion, Long revocationAttempt,
+            ApprovalAssuranceEvidence assuranceEvidence, Long entitlementVersion) {
         this.id = requireText(id, "id");
         this.requestId = requireText(requestId, "requestId");
         this.realmId = requireText(realmId, "realmId");
@@ -62,6 +71,11 @@ public final class AccessRequestEvent {
             throw new IllegalArgumentException("Assurance evidence belongs to an approval event");
         }
         this.assuranceEvidence = assuranceEvidence;
+        if (entitlementVersion != null && (type != AccessRequestEventType.REQUEST_APPROVED
+                || entitlementVersion < 0)) {
+            throw new IllegalArgumentException("An entitlement revision belongs to an approval event");
+        }
+        this.entitlementVersion = entitlementVersion;
     }
 
     public static AccessRequestEvent created(AccessRequest request, String actorId, Instant occurredAt) {
@@ -89,6 +103,14 @@ public final class AccessRequestEvent {
         return new AccessRequestEvent(UUID.randomUUID().toString(), request.id(), request.realmId(),
                 AccessRequestEventType.REQUEST_APPROVED, actorId, occurredAt, comment, null, request.version(),
                 null, evidence);
+    }
+
+    public static AccessRequestEvent approved(AccessRequest request, String actorId, Instant occurredAt,
+            String comment, ApprovalAssuranceEvidence evidence, long entitlementVersion) {
+        Objects.requireNonNull(request, "request must not be null");
+        return new AccessRequestEvent(UUID.randomUUID().toString(), request.id(), request.realmId(),
+                AccessRequestEventType.REQUEST_APPROVED, actorId, occurredAt, comment, null, request.version(),
+                null, evidence, entitlementVersion);
     }
 
     public static AccessRequestEvent rejected(
@@ -194,8 +216,16 @@ public final class AccessRequestEvent {
             String id, String requestId, String realmId, AccessRequestEventType type,
             String actorId, Instant occurredAt, String comment, String metadata, Long requestVersion,
             Long revocationAttempt, ApprovalAssuranceEvidence evidence) {
+        return rehydrate(id, requestId, realmId, type, actorId, occurredAt, comment, metadata,
+                requestVersion, revocationAttempt, evidence, null);
+    }
+
+    public static AccessRequestEvent rehydrate(
+            String id, String requestId, String realmId, AccessRequestEventType type,
+            String actorId, Instant occurredAt, String comment, String metadata, Long requestVersion,
+            Long revocationAttempt, ApprovalAssuranceEvidence evidence, Long entitlementVersion) {
         return new AccessRequestEvent(id, requestId, realmId, type, actorId, occurredAt, comment, metadata,
-                requestVersion, revocationAttempt, evidence);
+                requestVersion, revocationAttempt, evidence, entitlementVersion);
     }
 
     private static AccessRequestEvent from(
@@ -247,6 +277,10 @@ public final class AccessRequestEvent {
 
     public String metadata() {
         return metadata;
+    }
+
+    public Long entitlementVersion() {
+        return entitlementVersion;
     }
 
     public Long requestVersion() {

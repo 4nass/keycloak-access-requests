@@ -54,24 +54,26 @@ public final class JpaEntitlementRepository implements EntitlementRepository {
                 .map(EntitlementEntity::toDomain);
     }
 
-    /**
-     * Returns both published and draft entitlements for realm administration.
-     */
+    /** Returns active or archived entitlements for realm administration. */
     public EntitlementPage findAll(EntitlementQuery query) {
         long total = entityManager.createQuery("""
                         select count(entity)
                           from EntitlementEntity entity
                          where entity.realmId = :realmId
+                           and entity.archived = :archived
                         """, Long.class)
                 .setParameter("realmId", query.realmId())
+                .setParameter("archived", query.archived())
                 .getSingleResult();
         List<Entitlement> items = entityManager.createQuery("""
                         select entity
                           from EntitlementEntity entity
                          where entity.realmId = :realmId
+                           and entity.archived = :archived
                          order by entity.displayName asc, entity.id asc
                         """, EntitlementEntity.class)
                 .setParameter("realmId", query.realmId())
+                .setParameter("archived", query.archived())
                 .setFirstResult(query.offset())
                 .setMaxResults(query.size())
                 .getResultList()
@@ -108,6 +110,7 @@ public final class JpaEntitlementRepository implements EntitlementRepository {
                                entity.riskLevel = :riskLevel,
                                entity.approverRoleId = :approverRoleId,
                                entity.requestable = :requestable,
+                               entity.archived = :archived,
                                entity.autoApprove = :autoApprove,
                                entity.defaultDurationSeconds = :defaultDurationSeconds,
                                entity.maxDurationSeconds = :maxDurationSeconds,
@@ -123,6 +126,7 @@ public final class JpaEntitlementRepository implements EntitlementRepository {
                 .setParameter("riskLevel", entitlement.riskLevel())
                 .setParameter("approverRoleId", entitlement.approverRoleId())
                 .setParameter("requestable", entitlement.requestable())
+                .setParameter("archived", entitlement.archived())
                 .setParameter("autoApprove", entitlement.autoApprove())
                 .setParameter("defaultDurationSeconds", entitlement.durationPolicy().defaultDuration().toSeconds())
                 .setParameter("maxDurationSeconds", entitlement.durationPolicy().maxDuration().toSeconds())

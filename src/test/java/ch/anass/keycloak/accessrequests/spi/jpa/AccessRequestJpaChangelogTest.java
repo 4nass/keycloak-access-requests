@@ -27,15 +27,16 @@ class AccessRequestJpaChangelogTest {
     private static final String CHANGELOG_LOCATION = "META-INF/access-requests-changelog.xml";
 
     @Test
-    void createsTheCompleteSchemaWithAnIdempotentDurationMigration() throws Exception {
+    void createsTheCompleteSchemaWithIdempotentMigrations() throws Exception {
         String databaseUrl = databaseUrl();
 
         applyChangelog(databaseUrl);
         applyChangelog(databaseUrl);
 
         try (Connection connection = DriverManager.getConnection(databaseUrl)) {
-            assertEquals("2", valueOf(connection, "select count(*) from DATABASECHANGELOG"));
-            assertEquals(Set.of("initial-schema", "entitlement-duration-policy"),
+            assertEquals("4", valueOf(connection, "select count(*) from DATABASECHANGELOG"));
+            assertEquals(Set.of("initial-schema", "entitlement-duration-policy", "entitlement-archive",
+                            "approval-package-revision-audit"),
                     changelogIds(connection));
             assertEquals(
                     Set.of(
@@ -70,6 +71,7 @@ class AccessRequestJpaChangelogTest {
                             "ACTOR_ID",
                             "EVENT_TIMESTAMP",
                             "REQUEST_VERSION",
+                            "ENTITLEMENT_VERSION",
                             "REVOCATION_ATTEMPT",
                             "COMMENT",
                             "METADATA",
@@ -93,6 +95,7 @@ class AccessRequestJpaChangelogTest {
                             "RISK_LEVEL",
                             "APPROVER_ROLE_ID",
                             "REQUESTABLE",
+                            "ARCHIVED",
                             "AUTO_APPROVE",
                             "DEFAULT_DURATION_SECONDS",
                             "MAX_DURATION_SECONDS",
@@ -116,6 +119,7 @@ class AccessRequestJpaChangelogTest {
                             "RISK_LEVEL",
                             "APPROVER_ROLE_ID",
                             "REQUESTABLE",
+                            "ARCHIVED",
                             "AUTO_APPROVE",
                             "DEFAULT_DURATION_SECONDS",
                             "MAX_DURATION_SECONDS",
@@ -156,6 +160,8 @@ class AccessRequestJpaChangelogTest {
                     columnsOf(connection, "AR_ACCESS_PACKAGE_ROLE"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
                     .contains("IDX_ACCESS_REQUEST_REQUESTER_CREATED"));
+            assertTrue(indexNamesOf(connection, "AR_ENTITLEMENT")
+                    .contains("IDX_ENTITLEMENT_REALM_ARCHIVED_NAME"));
             assertTrue(indexNamesOf(connection, "AR_ACCESS_REQUEST")
                     .contains("IDX_ACCESS_REQUEST_APPROVAL_QUEUE"));
             assertEquals(java.util.List.of("REALM_ID", "ENTITLEMENT_ID"),

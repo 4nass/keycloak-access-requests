@@ -24,6 +24,7 @@ public final class EntitlementAuditEvent {
     private final String approverRoleId;
     private final boolean requestable;
     private final boolean autoApprove;
+    private final boolean archived;
     private final DurationPolicy durationPolicy;
     private final long version;
     private final List<AccessPackage.RoleMapping> roleMappingsBefore;
@@ -44,6 +45,7 @@ public final class EntitlementAuditEvent {
             String approverRoleId,
             boolean requestable,
             boolean autoApprove,
+            boolean archived,
             DurationPolicy durationPolicy,
             long version,
             List<AccessPackage.RoleMapping> roleMappingsBefore,
@@ -62,6 +64,7 @@ public final class EntitlementAuditEvent {
         this.approverRoleId = requireText(approverRoleId, "approverRoleId");
         this.requestable = requestable;
         this.autoApprove = autoApprove;
+        this.archived = archived;
         this.durationPolicy = Objects.requireNonNull(durationPolicy, "durationPolicy must not be null");
         if (version < 0) {
             throw new IllegalArgumentException("version must not be negative");
@@ -128,6 +131,7 @@ public final class EntitlementAuditEvent {
                 entitlement.approverRoleId(),
                 entitlement.requestable(),
                 entitlement.autoApprove(),
+                entitlement.archived(),
                 entitlement.durationPolicy(),
                 entitlement.version(), roleMappingsBefore, roleMappingsAfter);
     }
@@ -186,6 +190,10 @@ public final class EntitlementAuditEvent {
 
     public boolean autoApprove() {
         return autoApprove;
+    }
+
+    public boolean archived() {
+        return archived;
     }
 
     public DurationPolicy durationPolicy() {

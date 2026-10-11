@@ -337,7 +337,7 @@ public final class RequestService {
         requireRepresentableExpiry(candidate, decidedAt);
         AccessRequest approved = updateOrThrow(candidate, request.version());
         AccessRequestEvent approvalEvent = AccessRequestEvent.approved(
-                approved, approverId, decidedAt, decisionComment, evidence);
+                approved, approverId, decidedAt, decisionComment, evidence, entitlement.version());
         publish(approvalEvent, approved, entitlement);
         publish(AccessRequestEvent.provisioningStarted(approved, approverId, decidedAt), approved, entitlement);
 

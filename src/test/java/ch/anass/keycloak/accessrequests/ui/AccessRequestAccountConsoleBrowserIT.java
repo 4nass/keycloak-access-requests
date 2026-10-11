@@ -129,12 +129,17 @@ class AccessRequestAccountConsoleBrowserIT {
                     assertFalse(driver.getPageSource().contains("name=\"otp\""),
                             "Initial Account Console login must use LoA 1 without OTP.");
                     navigateToPendingApproval(driver);
-                    clickApproval(driver);
                     WebElement verify = waitFor(driver).until(ExpectedConditions.elementToBeClickable(
-                            By.xpath("//button[normalize-space()='Verify identity']")));
-                    assertExpectedStepUpDenied(driver);
-                    AccessRequestBrowserScreenshots.capture(driver, "workflow-approval-step-up-required");
+                            By.xpath("//button[normalize-space()='Review request']")));
+                    assertTrue(driver.findElements(By.xpath("//button[normalize-space()='Approve']")).isEmpty(),
+                            "Approval must not be offered before the required step-up.");
                     verify.click();
+                    waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                            By.xpath("//div[@role='dialog']//button[normalize-space()='Verify identity']")));
+                    assertNoJavaScriptErrors(driver);
+                    AccessRequestBrowserScreenshots.capture(driver, "workflow-approval-step-up-required");
+                    driver.findElement(By.xpath("//div[@role='dialog']//button[normalize-space()='Verify identity']"))
+                            .click();
 
                     WebElement otp = waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.id("otp")));
                     assertTrue(driver.findElements(By.id("password")).isEmpty(),
@@ -144,7 +149,8 @@ class AccessRequestAccountConsoleBrowserIT {
                     driver.findElement(By.id("kc-login")).click();
 
                     assertPageHeading(driver, "Approvals");
-                    navigateToPendingApproval(driver);
+                    waitFor(driver).until(ExpectedConditions.elementToBeClickable(
+                            By.xpath("//button[normalize-space()='Approve']")));
                     clickApproval(driver);
                     waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
                             By.xpath("//*[contains(text(),'Access request approved')]")));
@@ -435,15 +441,6 @@ class AccessRequestAccountConsoleBrowserIT {
                 .filter(entry -> entry.getLevel().intValue() >= Level.SEVERE.intValue())
                 .toList();
         assertTrue(severeEntries.isEmpty(), () -> "Browser JavaScript errors: " + severeEntries);
-    }
-
-    private void assertExpectedStepUpDenied(WebDriver driver) {
-        List<LogEntry> severeEntries = driver.manage().logs().get(LogType.BROWSER).getAll().stream()
-                .filter(entry -> entry.getLevel().intValue() >= Level.SEVERE.intValue())
-                .toList();
-        assertTrue(severeEntries.stream().allMatch(entry ->
-                        entry.getMessage().contains("/approve") && entry.getMessage().contains("403")),
-                () -> "Only the expected pre-MFA approval denial may appear in the browser log: " + severeEntries);
     }
 
     private WebDriverWait waitFor(WebDriver driver) {

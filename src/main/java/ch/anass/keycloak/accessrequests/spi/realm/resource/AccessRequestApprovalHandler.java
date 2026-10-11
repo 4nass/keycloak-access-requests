@@ -14,6 +14,8 @@ import ch.anass.keycloak.accessrequests.core.service.RequestService;
 import ch.anass.keycloak.accessrequests.core.service.InvalidRequestedDurationException;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.CapabilitiesResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.AssuranceErrorResponse;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.AssuranceState;
+import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.AssuranceStatus;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.DecisionSubmission;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApprovalDto.PendingRequestListResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.RequestDto.RequestResponse;
@@ -41,8 +43,20 @@ final class AccessRequestApprovalHandler extends AccessRequestHandlerSupport {
                     authenticatedRequest.user().getId(),
                     page,
                     size);
+            var verifier = new KeycloakApprovalAssuranceVerifier(authenticatedRequest.realm(),
+                    authenticatedRequest.authentication(), Clock.systemUTC());
             return Response.ok(PendingRequestListResponse.from(requestPage,
-                    new AccessRequestUserNameResolver(session, authenticatedRequest.realm())::resolve)).build();
+                    new AccessRequestUserNameResolver(session, authenticatedRequest.realm())::resolve,
+                    riskLevel -> {
+                        try {
+                            return new AssuranceStatus(verifier.verify(riskLevel) == null
+                                    ? AssuranceState.NOT_REQUIRED : AssuranceState.SATISFIED, null);
+                        } catch (ApprovalAssuranceException exception) {
+                            return "STEP_UP_REQUIRED".equals(exception.code())
+                                    ? new AssuranceStatus(AssuranceState.STEP_UP_REQUIRED, exception.requiredAcr())
+                                    : new AssuranceStatus(AssuranceState.UNAVAILABLE, null);
+                        }
+                    })).build();
         } catch (IllegalArgumentException exception) {
             return error(Response.Status.BAD_REQUEST, "INVALID_REQUEST_QUERY", exception.getMessage(), null);
         }

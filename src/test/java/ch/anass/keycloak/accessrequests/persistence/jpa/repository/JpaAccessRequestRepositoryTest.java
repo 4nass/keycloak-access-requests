@@ -98,6 +98,47 @@ class JpaAccessRequestRepositoryTest {
     }
 
     @Test
+    void blocksRoleEditsOnlyWhileARequestCanStillBeDecidedOrProvisioned() {
+        JpaAccessRequestRepository repository = new JpaAccessRequestRepository(entityManager);
+        Instant now = Instant.parse("2026-09-01T10:00:00Z");
+        AccessRequest pending = request("realm-edit", "requester-pending", "edit-pending", "package-1");
+        transaction().execute(() -> repository.createIfNoPending(pending).orElseThrow());
+        assertTrue(repository.hasUnfinishedRequestsForEntitlement("realm-edit", "package-1"));
+        assertFalse(repository.hasUnfinishedRequestsForEntitlement("other-realm", "package-1"));
+
+        pending.cancel("requester-pending", now);
+        transaction().execute(() -> repository.updateIfVersionMatches(pending, 0).orElseThrow());
+        assertFalse(repository.hasUnfinishedRequestsForEntitlement("realm-edit", "package-1"));
+
+        AccessRequest failed = request("realm-edit", "requester-failed", "edit-failed", "package-1");
+        failed.approve("approver", "Approved", now);
+        failed.markProvisioningFailed(now.plusSeconds(1));
+        transaction().execute(() -> repository.createIfNoPending(failed).orElseThrow());
+        assertTrue(repository.hasUnfinishedRequestsForEntitlement("realm-edit", "package-1"));
+
+        failed.closeFailedProvisioning("manager", "Resource is permanently unavailable.", now.plusSeconds(2));
+        transaction().execute(() -> repository.updateIfVersionMatches(failed, 0).orElseThrow());
+        assertFalse(repository.hasUnfinishedRequestsForEntitlement("realm-edit", "package-1"));
+    }
+
+    @Test
+    void preservesTheApprovedCatalogRevisionForHistoricalRoleMappings() {
+        AccessRequest request = request("realm-audit", "requester", "approval-revision", "package-1");
+        request.approve("approver", "Approved", Instant.parse("2026-09-01T10:00:00Z"));
+        AccessRequestEvent event = AccessRequestEvent.approved(request, "approver", request.decidedAt(),
+                "Approved", null, 7);
+        transaction().execute(() -> {
+            new JpaAccessRequestEventPublisher(entityManager).publish(event);
+            return null;
+        });
+        entityManager.clear();
+
+        AccessRequestEvent reloaded = entityManager.find(AccessRequestEventEntity.class, event.id()).toDomain();
+        assertEquals(7L, reloaded.entitlementVersion());
+        assertEquals(AccessRequestEventType.REQUEST_APPROVED, reloaded.type());
+    }
+
+    @Test
     void preservesLifecycleMetadataAndLongDecisionComments() {
         Instant createdAt = Instant.parse("2026-08-29T10:15:30Z");
         Instant decidedAt = Instant.parse("2026-08-29T10:20:30Z");

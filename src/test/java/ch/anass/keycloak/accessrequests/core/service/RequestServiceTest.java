@@ -208,6 +208,8 @@ class RequestServiceTest {
                         AccessRequestEventType.PROVISIONING_STARTED, AccessRequestEventType.PROVISIONING_SUCCEEDED),
                 events.published().stream().map(AccessRequestEvent::type).toList());
         assertEquals(AUTO_APPROVER_ID, events.published().get(1).actorId());
+        assertEquals(entitlements.findById("realm-1", "entitlement-1").orElseThrow().version(),
+                events.published().get(1).entitlementVersion());
         assertEquals(AUTO_APPROVER_ID, events.published().get(2).actorId());
         assertEquals(AUTO_APPROVER_ID, events.published().get(3).actorId());
         assertEquals(List.of(AccessRequestNotificationType.REQUEST_APPROVED),

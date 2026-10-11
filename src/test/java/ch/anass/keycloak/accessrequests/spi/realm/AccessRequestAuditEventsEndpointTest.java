@@ -117,7 +117,8 @@ class AccessRequestAuditEventsEndpointTest {
                 "requesterName", "entitlementName", "approverName", "grant"),
                 fields(AuditDto.AdminRequestDetailResponse.class));
         assertEquals(java.util.List.of("type", "actorId", "occurredAt", "failureCode", "closureReason",
-                        "revocationFailureCode", "revocationResolutionReason", "actorName", "assurance"),
+                        "revocationFailureCode", "revocationResolutionReason", "actorName", "assurance",
+                        "entitlementVersion"),
                 fields(AuditDto.AdminRequestHistoryEntryResponse.class));
         assertTrue(!fields(RequestDto.RequestDetailResponse.class).contains("requesterId"));
         assertTrue(!fields(RequestDto.RequestHistoryEntryResponse.class).contains("actorId"));

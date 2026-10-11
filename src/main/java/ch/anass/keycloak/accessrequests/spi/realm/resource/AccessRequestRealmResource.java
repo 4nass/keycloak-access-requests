@@ -70,8 +70,9 @@ public final class AccessRequestRealmResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listCatalogEntitlements(
             @DefaultValue("0") @QueryParam("page") int page,
-            @DefaultValue("20") @QueryParam("size") int size) {
-        return catalogHandler.listCatalogEntitlements(page, size);
+            @DefaultValue("20") @QueryParam("size") int size,
+            @DefaultValue("false") @QueryParam("archived") boolean archived) {
+        return catalogHandler.listCatalogEntitlements(page, size, archived);
     }
 
     @POST

@@ -100,6 +100,26 @@ class JpaAccessGrantRepositoryTest {
     }
 
     @Test
+    void allowsRoleEditsOnlyAfterAllOwnedGrantsAndRevocationFailuresAreResolved() {
+        AccessGrant active = packageGrant("edit-active", GrantRevocationState.AUTHORIZED);
+        inTransaction(() -> repository.create(active));
+        assertTrue(repository.hasOutstandingGrantsForEntitlement("realm-1", "entitlement-1"));
+        assertFalse(repository.hasOutstandingGrantsForEntitlement("other-realm", "entitlement-1"));
+        inTransaction(() -> new JpaGrantRevocationFailureRepository(entityManager).record(
+                active.realmId(), active.requestId(),
+                ch.anass.keycloak.accessrequests.core.domain.grant.GrantRevocationFailureCode.REMOVAL_FAILED,
+                active.expiresAt()));
+        assertTrue(repository.hasOpenRevocationFailuresForEntitlement("realm-1", "entitlement-1"));
+
+        inTransaction(() -> revocationRepository().updateIfVersionMatches(active.markRevoked(), 0).orElseThrow());
+        assertFalse(repository.hasOutstandingGrantsForEntitlement("realm-1", "entitlement-1"));
+        assertTrue(repository.hasOpenRevocationFailuresForEntitlement("realm-1", "entitlement-1"));
+        inTransaction(() -> new JpaGrantRevocationFailureRepository(entityManager).resolve(
+                active.realmId(), active.requestId(), active.expiresAt().plusSeconds(1)));
+        assertFalse(repository.hasOpenRevocationFailuresForEntitlement("realm-1", "entitlement-1"));
+    }
+
+    @Test
     void refusesToPersistANewTemporaryGrantWithoutAnAccessPackage() {
         Instant recordedAt = Instant.parse("2026-09-01T10:15:30Z");
         AccessGrant direct = new AccessGrant("request-direct", "realm-1", "user-1", "entitlement-1",

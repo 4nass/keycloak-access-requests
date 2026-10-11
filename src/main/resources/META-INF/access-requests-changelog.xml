@@ -461,4 +461,32 @@
         <addNotNullConstraint tableName="AR_ENTITLEMENT_HISTORY" columnName="MAX_DURATION_SECONDS" columnDataType="BIGINT"/>
         <addNotNullConstraint tableName="AR_ENTITLEMENT_HISTORY" columnName="ALLOW_PERMANENT" columnDataType="BOOLEAN"/>
     </changeSet>
+    <changeSet id="entitlement-archive" author="4nass">
+        <addColumn tableName="AR_ENTITLEMENT">
+            <column name="ARCHIVED" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <addColumn tableName="AR_ENTITLEMENT_HISTORY">
+            <column name="ARCHIVED" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <createIndex indexName="IDX_ENTITLEMENT_REALM_ARCHIVED_NAME" tableName="AR_ENTITLEMENT">
+            <column name="REALM_ID"/>
+            <column name="ARCHIVED"/>
+            <column name="DISPLAY_NAME"/>
+        </createIndex>
+    </changeSet>
+    <changeSet id="approval-package-revision-audit" author="4nass">
+        <addColumn tableName="AR_ACCESS_REQUEST_HISTORY">
+            <column name="ENTITLEMENT_VERSION" type="BIGINT"/>
+        </addColumn>
+        <createIndex indexName="IDX_ACCESS_GRANT_ENTITLEMENT_STATE" tableName="AR_ACCESS_GRANT">
+            <column name="REALM_ID"/>
+            <column name="ENTITLEMENT_ID"/>
+            <column name="GRANT_ORIGIN"/>
+            <column name="REVOCATION_STATE"/>
+        </createIndex>
+    </changeSet>
 </databaseChangeLog>

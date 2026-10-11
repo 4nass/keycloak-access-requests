@@ -57,7 +57,7 @@ public final class CatalogDto {
 
     public record AccessPackageResponse(
             String entitlementId, String groupId, String groupName, boolean groupExists, boolean configurationValid,
-            boolean roleEditingAllowed, List<AccessPackageRoleResponse> roleMappings) {
+            boolean roleEditingAllowed, String roleEditingBlockReason, List<AccessPackageRoleResponse> roleMappings) {
     }
 
     public record AccessPackageRoleResponse(ResourceType type, String roleId, String name, boolean missing) {
@@ -74,7 +74,7 @@ public final class CatalogDto {
             String description, RiskLevel riskLevel, String approverRoleId, boolean requestable,
             String createdAt, String updatedAt, long version,
             long defaultDurationSeconds, long maxDurationSeconds, boolean allowPermanent,
-            String resourceName, String approverRoleName, boolean autoApprove) {
+            String resourceName, String approverRoleName, boolean autoApprove, boolean archived) {
         public static EntitlementResponse from(Entitlement entitlement,
                 String resourceName, String approverRoleName) {
             return new EntitlementResponse(entitlement.id(), entitlement.resourceType(),
@@ -84,7 +84,7 @@ public final class CatalogDto {
                     entitlement.version(), entitlement.durationPolicy().defaultDuration().toSeconds(),
                     entitlement.durationPolicy().maxDuration().toSeconds(),
                     entitlement.durationPolicy().allowPermanent(), resourceName, approverRoleName,
-                    entitlement.autoApprove());
+                    entitlement.autoApprove(), entitlement.archived());
         }
     }
 

@@ -46,7 +46,7 @@ List endpoints return:
 | `GET` | `/mine` | List the caller's requests |
 | `GET` | `/mine/{requestId}` | Get a request, its decision, and history for its owner |
 | `POST` | `/{requestId}/cancel` | Cancel the caller's pending request |
-| `GET` | `/pending` | List pending requests the caller may decide |
+| `GET` | `/pending` | List pending requests the caller may decide, including each request's approval-assurance state |
 | `GET` | `/capabilities` | Return whether the caller can approve at least one entitlement |
 | `POST` | `/{requestId}/approve` | Approve and synchronously provision a request |
 | `POST` | `/{requestId}/reject` | Reject a request |
@@ -107,7 +107,7 @@ The decision endpoints return `200 OK` with the updated request. Approval return
 
 The server returns `403 Forbidden` when a caller tries to cancel another user's request, approve their own request, or decide without the entitlement's approver role. A stale or completed request returns `409 Conflict`.
 
-HIGH and CRITICAL approval additionally requires the realm's approval-assurance policy. If Keycloak has no matching LoA condition or ACR mapping, or the LoA condition's Max Age is zero or exceeds the policy limit, approval returns `503 ASSURANCE_NOT_CONFIGURED`. When the approver's token or session lacks the required level or its timestamp is stale, approval returns `403 STEP_UP_REQUIRED` with a `requiredAcr` field. A higher LoA is accepted only if the token ACR maps to it and Keycloak has a fresh timestamp for that level. The client requests the required ACR without forcing full reauthentication and asks the approver to confirm the decision again; it must not use a client-supplied LoA as proof. See [realm configuration](configuration.md#configure-approval-assurance-for-high-and-critical).
+HIGH and CRITICAL approval additionally requires the realm's approval-assurance policy. Each `/pending` item contains `assurance.state` (`NOT_REQUIRED`, `SATISFIED`, `STEP_UP_REQUIRED`, or `UNAVAILABLE`) and `assurance.requiredAcr` when step-up is needed. The Account Console offers identity verification before its approval action and returns to the same queue page; after verification, the approver explicitly confirms the decision. If Keycloak has no matching LoA condition or ACR mapping, or the LoA condition's Max Age is zero or exceeds the policy limit, approval returns `503 ASSURANCE_NOT_CONFIGURED`. When the approver's token or session lacks the required level or its timestamp is stale, approval returns `403 STEP_UP_REQUIRED` with a `requiredAcr` field. A higher LoA is accepted only if the token ACR maps to it and Keycloak has a fresh timestamp for that level. The client requests the required ACR without forcing full reauthentication; the server always checks the actual assurance at decision time and never trusts a client-supplied LoA. See [realm configuration](configuration.md#configure-approval-assurance-for-high-and-critical).
 
 For CRITICAL approvals, the administrative request-detail history includes an `assurance` object on `REQUEST_APPROVED` with the configured and observed ACR/LoA, freshness limit, authentication time, token issue time, and verification time (Unix seconds). Requester history does not expose these fields. This audit record is not protected against direct database tampering.
 
@@ -121,14 +121,14 @@ Read-only catalog endpoints accept operational managers. Every catalog mutation 
 | `GET` | `/admin/assurance-policy` | Read the realm's HIGH/CRITICAL approval-assurance policy; realm-admin only |
 | `PUT` | `/admin/assurance-policy` | Update that policy within product safety bounds; realm-admin only |
 | `GET` | `/admin/references` | Search selectable Keycloak roles or groups |
-| `GET` | `/admin/entitlements` | List all entitlement drafts and published entitlements |
+| `GET` | `/admin/entitlements` | List current drafts and published entitlements; use `archived=true` for the archive |
 | `POST` | `/admin/entitlements` | Create an API-only direct draft; it cannot be published |
 | `POST` | `/admin/access-packages` | Create a draft package with its dedicated group and role bindings |
 | `GET` | `/admin/entitlements/{entitlementId}` | Get one entitlement |
 | `GET` | `/admin/access-packages/{packageId}` | Inspect the bound group, roles, and configuration health |
-| `PUT` | `/admin/access-packages/{packageId}` | Replace the roles of an unused, closed package |
+| `PUT` | `/admin/access-packages/{packageId}` | Replace the roles of a closed package with no unfinished requests, outstanding grants, revocation failures, or group members |
 | `PUT` | `/admin/entitlements/{entitlementId}` | Update metadata and requestable state |
-| `DELETE` | `/admin/entitlements/{entitlementId}` | Remove an entitlement from the request catalog without erasing history |
+| `DELETE` | `/admin/entitlements/{entitlementId}` | Close and archive an entitlement without erasing history |
 
 ### `GET /admin/references`
 
@@ -181,15 +181,15 @@ publish its entitlement separately.
 still leaves the package unpublished. Admin entitlement responses include the stored policy.
 
 `GET /admin/access-packages/{packageId}` returns the group ID/name, `groupExists`,
-`configurationValid`, `roleEditingAllowed`, and each bound role's type, ID, name, and `missing` flag. It returns 404 for
+`configurationValid`, `roleEditingAllowed`, a `roleEditingBlockReason` when editing is blocked, and each bound role's type, ID, name, and `missing` flag. It returns 404 for
 an entitlement without an access-package binding. Publishing an unbound entitlement or an invalid package through the
 entitlement `PUT` returns 409;
 unpublishing remains possible.
 
 `PUT /admin/access-packages/{packageId}` replaces the complete role list using
-`{"version":3,"roleMappings":[{"type":"REALM_ROLE","roleId":"..."}]}`. One to 100 distinct existing realm or client roles are required. The package must be closed to new requests, unused by any request, have no group members or child groups, and match its stored binding. Otherwise the server returns `409 Conflict`. A stale entitlement version also returns `409`. The group mappings, binding, entitlement version, and audit event are updated in the Keycloak transaction. A package already used in a request must be replaced by a new package rather than silently changing what an approval or provisioning retry grants.
+`{"version":3,"roleMappings":[{"type":"REALM_ROLE","roleId":"..."}]}`. One to 100 distinct existing realm or client roles are required. The package must be closed to new requests, have no pending request or retryable provisioning failure, no extension-owned grant awaiting confirmed removal, no open revocation failure, and no group members or child groups. Its stored binding must still match the Keycloak group. Otherwise the server returns `409 Conflict`; a stale entitlement version also returns `409`. Historical requests alone do not block an edit after their grants are revoked. The group mappings, binding, entitlement version, and before/after role audit snapshot are updated in the same Keycloak transaction.
 
-Package creation records an empty `before` list and the initial ordered role type/ID list as `after`. Every successful role replacement then stores the lists before and after the change in the extension's entitlement history. The matching Keycloak Admin Events include the same snapshots when realm Admin Events are enabled. This allows the initial selection and subsequently removed roles to be identified even if a source role is later deleted.
+Package creation records an empty `before` list and the initial ordered role type/ID list as `after`. Every successful role replacement then stores the lists before and after the change in the extension's entitlement history. The matching Keycloak Admin Events include the same snapshots when realm Admin Events are enabled. Approval history records the entitlement version used for the decision, so it can be correlated with these role snapshots; older approval events may have no version. This allows the initial selection and subsequently removed roles to be identified even if a source role is later deleted.
 
 ### `PUT /admin/entitlements/{entitlementId}`
 
@@ -208,9 +208,9 @@ Package creation records an empty `before` list and the initial ordered role typ
 }
 ```
 
-The resource type and resource ID are intentionally absent: the target resource is immutable. The client must send the version returned by the most recent read. Duration values must be positive whole seconds with default no greater than maximum. A concurrent modification returns `409 Conflict`; reload the entitlement before retrying. Setting `requestable=false` is the supported soft-disable operation.
+The resource type and resource ID are intentionally absent: the target resource is immutable. The client must send the version returned by the most recent read. Duration values must be positive whole seconds with default no greater than maximum. A concurrent modification returns `409 Conflict`; reload the entitlement before retrying. Setting `requestable=false` closes new requests while keeping the entitlement in the current Admin catalog.
 
-`DELETE /admin/entitlements/{entitlementId}` is an idempotent shortcut for that soft-disable: it returns `204 No Content` even when the entitlement is already closed. It does not delete the entitlement, package, existing grants, requests, or audit history. The Admin Console calls this action **Remove from catalog**; the entitlement remains visible to administrators and can be reopened through `PUT`.
+`DELETE /admin/entitlements/{entitlementId}` closes and archives the entitlement, returning `204 No Content` even if it is already archived. It does not delete the entitlement, package, existing grants, requests, or audit history. Archived entitlements disappear from the default Admin list but remain readable through `GET /admin/entitlements?archived=true` and by ID; they cannot be edited or republished. The Admin Console calls this action **Remove from catalog** and offers a read-only archive view.
 
 `autoApprove=true` enables immediate approval and provisioning for new requests to a
 published `LOW`-risk package. Omitting the field on update preserves the current policy, except

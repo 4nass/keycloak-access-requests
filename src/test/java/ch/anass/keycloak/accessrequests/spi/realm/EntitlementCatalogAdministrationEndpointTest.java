@@ -157,7 +157,7 @@ class EntitlementCatalogAdministrationEndpointTest {
                         "id", "resourceType", "resourceId", "displayName", "description", "riskLevel",
                         "approverRoleId", "requestable", "createdAt", "updatedAt", "version",
                         "defaultDurationSeconds", "maxDurationSeconds", "allowPermanent",
-                        "resourceName", "approverRoleName", "autoApprove"},
+                        "resourceName", "approverRoleName", "autoApprove", "archived"},
                 Arrays.stream(CatalogDto.EntitlementResponse.class.getRecordComponents())
                         .map(RecordComponent::getName)
                         .toArray(String[]::new));
@@ -199,12 +199,15 @@ class EntitlementCatalogAdministrationEndpointTest {
     }
 
     private static void assertPaginationParameters(Method handler) {
-        assertEquals(2, handler.getParameterCount());
+        assertEquals(3, handler.getParameterCount());
         assertEquals(int.class, handler.getParameterTypes()[0]);
         assertEquals("page", handler.getParameters()[0].getAnnotation(QueryParam.class).value());
         assertEquals("0", handler.getParameters()[0].getAnnotation(DefaultValue.class).value());
         assertEquals(int.class, handler.getParameterTypes()[1]);
         assertEquals("size", handler.getParameters()[1].getAnnotation(QueryParam.class).value());
         assertEquals("20", handler.getParameters()[1].getAnnotation(DefaultValue.class).value());
+        assertEquals(boolean.class, handler.getParameterTypes()[2]);
+        assertEquals("archived", handler.getParameters()[2].getAnnotation(QueryParam.class).value());
+        assertEquals("false", handler.getParameters()[2].getAnnotation(DefaultValue.class).value());
     }
 }

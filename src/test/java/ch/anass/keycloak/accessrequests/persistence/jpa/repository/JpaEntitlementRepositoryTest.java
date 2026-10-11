@@ -329,6 +329,45 @@ class JpaEntitlementRepositoryTest {
     }
 
     @Test
+    void keepsClosedEntitlementsInTheCatalogButListsArchivedEntitlementsSeparately() {
+        persist(published("open", "realm-1", ResourceType.REALM_ROLE, "open-role", "Open",
+                "Open access.", RiskLevel.LOW));
+        persist(unpublished("closed", "realm-1", ResourceType.REALM_ROLE, "closed-role", "Closed",
+                "Closed access.", RiskLevel.LOW));
+        persist(unpublished("archived", "realm-1", ResourceType.REALM_ROLE, "archived-role", "Archived",
+                "Archived access.", RiskLevel.LOW).archive(CREATED_AT.plusSeconds(1)));
+
+        EntitlementPage catalog = repository.findAll(new EntitlementQuery("realm-1", 0, 20));
+        EntitlementPage archive = repository.findAll(new EntitlementQuery("realm-1", 0, 20, true));
+
+        assertEquals(2, catalog.total());
+        assertEquals(List.of("Closed", "Open"), catalog.items().stream().map(Entitlement::displayName).toList());
+        assertEquals(1, archive.total());
+        assertEquals("archived", archive.items().getFirst().id());
+        assertTrue(archive.items().getFirst().archived());
+        assertFalse(archive.items().getFirst().requestable());
+        assertEquals(0, repository.findRequestable(new CatalogQuery("realm-1", null, "Archived", null, 0, 20)).total());
+    }
+
+    @Test
+    void archivesAnExistingPublishedEntitlementWithOptimisticLocking() {
+        persist(published("to-archive", "realm-1", ResourceType.GROUP, "package-group", "Package",
+                "Published package.", RiskLevel.LOW));
+        Entitlement current = repository.findById("realm-1", "to-archive").orElseThrow();
+
+        EntityTransactionSupport.execute(entityManager, () -> assertTrue(repository.updateIfVersionMatches(
+                current.archive(CREATED_AT.plusSeconds(1)), current.version()).isPresent()));
+        entityManager.clear();
+
+        Entitlement archived = repository.findById("realm-1", "to-archive").orElseThrow();
+        assertTrue(archived.archived());
+        assertFalse(archived.requestable());
+        assertEquals(current.version() + 1, archived.version());
+        assertTrue(repository.findAll(new EntitlementQuery("realm-1", 0, 20)).items().isEmpty());
+        assertEquals(1, repository.findAll(new EntitlementQuery("realm-1", 0, 20, true)).total());
+    }
+
+    @Test
     void identifiesOnlyRequestableApproverRolesWithinTheCurrentRealm() {
         persist(Entitlement.create(
                 "entitlement-finance", "realm-1", ResourceType.REALM_ROLE, "role-finance", "Finance Reader",

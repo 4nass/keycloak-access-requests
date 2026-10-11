@@ -17,6 +17,7 @@ public final class Entitlement {
     private final boolean requestable;
     private final boolean exclusiveJit;
     private final boolean autoApprove;
+    private final boolean archived;
     private final Instant createdAt;
     private final Instant updatedAt;
     private final long version;
@@ -34,6 +35,7 @@ public final class Entitlement {
             boolean requestable,
             boolean exclusiveJit,
             boolean autoApprove,
+            boolean archived,
             Instant createdAt,
             Instant updatedAt,
             long version) {
@@ -52,6 +54,10 @@ public final class Entitlement {
             throw new IllegalArgumentException("Auto-approval is only available for LOW risk");
         }
         this.autoApprove = autoApprove;
+        if (archived && requestable) {
+            throw new IllegalArgumentException("An archived entitlement cannot be requestable");
+        }
+        this.archived = archived;
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
         if (updatedAt.isBefore(createdAt)) {
@@ -98,6 +104,7 @@ public final class Entitlement {
                 riskLevel,
                 approverRoleId,
                 durationPolicy,
+                false,
                 false,
                 false,
                 false,
@@ -151,6 +158,7 @@ public final class Entitlement {
                 requestable,
                 false,
                 false,
+                false,
                 createdAt,
                 updatedAt,
                 version);
@@ -183,7 +191,18 @@ public final class Entitlement {
             boolean autoApprove, Instant createdAt, Instant updatedAt, long version) {
         return new Entitlement(id, realmId, resourceType, resourceId, displayName, description,
                 riskLevel, approverRoleId, durationPolicy, requestable, exclusiveJit, autoApprove,
+                false,
                 createdAt, updatedAt, version);
+    }
+
+    public static Entitlement rehydrate(
+            String id, String realmId, ResourceType resourceType, String resourceId,
+            String displayName, String description, RiskLevel riskLevel, String approverRoleId,
+            DurationPolicy durationPolicy, boolean requestable, boolean exclusiveJit,
+            boolean autoApprove, boolean archived, Instant createdAt, Instant updatedAt, long version) {
+        return new Entitlement(id, realmId, resourceType, resourceId, displayName, description,
+                riskLevel, approverRoleId, durationPolicy, requestable, exclusiveJit, autoApprove,
+                archived, createdAt, updatedAt, version);
     }
 
     public String id() {
@@ -234,6 +253,10 @@ public final class Entitlement {
         return autoApprove;
     }
 
+    public boolean archived() {
+        return archived;
+    }
+
     public Instant createdAt() {
         return createdAt;
     }
@@ -248,6 +271,9 @@ public final class Entitlement {
 
     public Entitlement publish(Instant occurredAt) {
         Instant timestamp = requireLifecycleTimestamp(occurredAt);
+        if (archived) {
+            throw new IllegalStateException("An archived entitlement cannot be published");
+        }
         if (requestable) {
             return this;
         }
@@ -260,6 +286,16 @@ public final class Entitlement {
             return this;
         }
         return copy(false, timestamp, version);
+    }
+
+    public Entitlement archive(Instant occurredAt) {
+        Instant timestamp = requireLifecycleTimestamp(occurredAt);
+        if (archived) {
+            return this;
+        }
+        return new Entitlement(id, realmId, resourceType, resourceId, displayName, description,
+                riskLevel, approverRoleId, durationPolicy, false, exclusiveJit, autoApprove,
+                true, createdAt, timestamp, version);
     }
 
     /** Declaration that this entitlement targets a resource reserved for extension-managed JIT access. */
@@ -314,6 +350,7 @@ public final class Entitlement {
                 requestable,
                 exclusiveJit,
                 autoApprove && riskLevel == RiskLevel.LOW,
+                archived,
                 createdAt,
                 timestamp,
                 version);
@@ -346,6 +383,7 @@ public final class Entitlement {
                 requestable,
                 exclusiveJit,
                 autoApprove,
+                archived,
                 createdAt,
                 updatedAt,
                 version);

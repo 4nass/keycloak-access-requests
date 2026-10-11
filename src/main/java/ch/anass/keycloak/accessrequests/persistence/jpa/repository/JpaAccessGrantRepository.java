@@ -24,6 +24,36 @@ public final class JpaAccessGrantRepository implements AccessGrantRevocationRepo
         this.entityManager = Objects.requireNonNull(entityManager, "entityManager must not be null");
     }
 
+    /** Any grant not yet confirmed as removed keeps the package's role mappings fixed. */
+    public boolean hasOutstandingGrantsForEntitlement(String realmId, String entitlementId) {
+        return !entityManager.createQuery("""
+                        select grant.requestId from AccessGrantEntity grant
+                         where grant.realmId = :realmId and grant.entitlementId = :entitlementId
+                           and grant.origin = :createdByExtension
+                           and grant.revocationState <> :revoked
+                        """, String.class)
+                .setParameter("realmId", realmId)
+                .setParameter("entitlementId", entitlementId)
+                .setParameter("createdByExtension", GrantOrigin.CREATED_BY_EXTENSION)
+                .setParameter("revoked", GrantRevocationState.REVOKED)
+                .setMaxResults(1)
+                .getResultList().isEmpty();
+    }
+
+    public boolean hasOpenRevocationFailuresForEntitlement(String realmId, String entitlementId) {
+        return !entityManager.createQuery("""
+                        select failure.requestId from GrantRevocationFailureEntity failure,
+                             AccessGrantEntity grant
+                         where failure.requestId = grant.requestId and failure.realmId = grant.realmId
+                           and failure.realmId = :realmId and grant.entitlementId = :entitlementId
+                           and failure.resolvedTimestamp is null
+                        """, String.class)
+                .setParameter("realmId", realmId)
+                .setParameter("entitlementId", entitlementId)
+                .setMaxResults(1)
+                .getResultList().isEmpty();
+    }
+
     @Override
     public void create(AccessGrant grant) {
         Objects.requireNonNull(grant, "grant must not be null");

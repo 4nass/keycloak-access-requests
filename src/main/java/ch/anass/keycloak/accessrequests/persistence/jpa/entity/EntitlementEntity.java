@@ -60,6 +60,9 @@ public class EntitlementEntity {
     @Column(name = "REQUESTABLE", nullable = false)
     private boolean requestable;
 
+    @Column(name = "ARCHIVED", nullable = false)
+    private boolean archived;
+
     @Column(name = "AUTO_APPROVE", nullable = false)
     private boolean autoApprove;
 
@@ -103,6 +106,7 @@ public class EntitlementEntity {
         this.riskLevel = entitlement.riskLevel();
         this.approverRoleId = entitlement.approverRoleId();
         this.requestable = entitlement.requestable();
+        this.archived = entitlement.archived();
         this.autoApprove = entitlement.autoApprove();
         this.defaultDurationSeconds = entitlement.durationPolicy().defaultDuration().toSeconds();
         this.maxDurationSeconds = entitlement.durationPolicy().maxDuration().toSeconds();
@@ -126,6 +130,7 @@ public class EntitlementEntity {
                 requestable,
                 false,
                 autoApprove,
+                archived,
                 Instant.ofEpochMilli(createdTimestamp),
                 Instant.ofEpochMilli(updatedTimestamp),
                 version);
