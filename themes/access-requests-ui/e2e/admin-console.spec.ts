@@ -71,19 +71,17 @@ test("keeps Access requests tabs in the active realm", async ({ page }) => {
     const realm = new URL(adminConsoleUrl).pathname.split("/")[2];
     const base = `/${realm}/access-requests`;
     await page.goto(`${adminConsoleUrl}#${base}`);
-    await expect(page.getByRole("tab")).toHaveCount(6);
+    await expect(page.getByRole("tab")).toHaveCount(4);
 
     for (const [index, suffix] of [
         [1, "/assurance-policy"],
-        [2, "/notification-deliveries"],
-        [3, "/provisioning-failures"],
-        [4, "/revocation-failures"],
-        [5, "/events"],
+        [2, "/incidents"],
+        [3, "/events"],
         [0, ""]
     ] as const) {
         await page.getByRole("tab").nth(index).click();
         await expect(page).toHaveURL(`${adminConsoleUrl}#${base}${suffix}`);
-        await expect(page.getByRole("tab")).toHaveCount(6);
+        await expect(page.getByRole("tab")).toHaveCount(4);
         await expect(page.getByRole("tab").nth(index)).toHaveAttribute("aria-selected", "true");
     }
 });
@@ -96,6 +94,11 @@ test("keeps select labels clear of their carets across Admin pages", async ({ pa
     await page.goto(`${adminConsoleUrl}#${base}`);
     await expect(page.getByRole("combobox", { name: "Catalog view" })).toBeVisible();
     await expectSelectTextClearOfCaret(page, 'select[aria-label="Catalog view"]');
+
+    await page.goto(`${adminConsoleUrl}#${base}/incidents`);
+    await expect(page.locator("#incident-type")).toBeVisible();
+    await expectSelectTextClearOfCaret(page, "#incident-type");
+    await expectSelectTextClearOfCaret(page, "#incident-state");
 
     await page.goto(`${adminConsoleUrl}#${base}/provisioning-failures`);
     await expect(page.locator("#provisioning-failure-status")).toBeVisible();
