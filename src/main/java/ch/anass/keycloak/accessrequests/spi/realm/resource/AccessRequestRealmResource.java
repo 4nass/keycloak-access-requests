@@ -214,6 +214,19 @@ public final class AccessRequestRealmResource {
     }
 
     @GET
+    @Path("admin/incidents")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listIncidents(
+            @DefaultValue("ALL") @QueryParam("type") String type,
+            @DefaultValue("OPEN") @QueryParam("state") String state,
+            @QueryParam("from") String from,
+            @QueryParam("to") String to,
+            @QueryParam("cursor") String cursor,
+            @DefaultValue("20") @QueryParam("size") int size) {
+        return adminHandler.listIncidents(type, state, from, to, cursor, size);
+    }
+
+    @GET
     @Path("admin/provisioning-failures")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listFailedProvisioningRequests(

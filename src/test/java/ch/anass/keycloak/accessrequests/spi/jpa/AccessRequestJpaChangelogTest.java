@@ -34,9 +34,9 @@ class AccessRequestJpaChangelogTest {
         applyChangelog(databaseUrl);
 
         try (Connection connection = DriverManager.getConnection(databaseUrl)) {
-            assertEquals("4", valueOf(connection, "select count(*) from DATABASECHANGELOG"));
+            assertEquals("5", valueOf(connection, "select count(*) from DATABASECHANGELOG"));
             assertEquals(Set.of("initial-schema", "entitlement-duration-policy", "entitlement-archive",
-                            "approval-package-revision-audit"),
+                            "approval-package-revision-audit", "admin-incidents-index"),
                     changelogIds(connection));
             assertEquals(
                     Set.of(

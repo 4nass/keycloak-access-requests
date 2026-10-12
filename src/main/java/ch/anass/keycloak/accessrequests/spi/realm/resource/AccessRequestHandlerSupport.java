@@ -9,6 +9,7 @@ import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequ
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestNotificationOutboxRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessGrantRepository;
+import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAdminIncidentReader;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaGrantRevocationFailureRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlementRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaEntitlementAuditEventPublisher;
@@ -123,6 +124,10 @@ abstract class AccessRequestHandlerSupport {
 
     protected JpaAccessRequestNotificationOutboxRepository notificationOutboxRepository() {
         return services.notificationOutboxRepository();
+    }
+
+    protected JpaAdminIncidentReader adminIncidentReader() {
+        return services.adminIncidentReader();
     }
 
     protected JpaEntitlementAuditEventPublisher entitlementAuditEventPublisher() {

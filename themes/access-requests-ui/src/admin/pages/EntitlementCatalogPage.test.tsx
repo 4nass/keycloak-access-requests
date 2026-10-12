@@ -80,16 +80,16 @@ describe("EntitlementCatalogPage", () => {
             <EntitlementCatalogPage />
         </MemoryRouter>);
 
-        expect(await screen.findByRole("tab", { name: "accessRequestsAdminCatalogTab" })).toHaveAttribute(
+        expect(await screen.findByRole("tab", { name: "accessRequestsAdminEvents" })).toHaveAttribute(
+            "href", "/master/access-requests/events"
+        );
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminCatalogTab" })).toHaveAttribute(
             "aria-selected", "true"
         );
         expect(screen.getByRole("heading", { level: 1, name: "accessRequestsAdminCatalogTab" })).toBeVisible();
-        expect(screen.getByRole("tab", { name: "accessRequestsAdminEvents" })).toHaveAttribute(
-            "href", "/master/access-requests/events"
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminIncidents" })).toHaveAttribute(
+            "href", "/master/access-requests/incidents"
         );
-        expect(screen.getByRole("tab", { name: "accessRequestsAdminNotificationDelivery" })).toBeVisible();
-        expect(screen.getByRole("tab", { name: "accessRequestsAdminFailedProvisioning" })).toBeVisible();
-        expect(screen.getByRole("tab", { name: "accessRequestsAdminRevocationFailures" })).toBeVisible();
     });
 
     it("renders the complete administrative metadata using native list affordances", async () => {

@@ -31,11 +31,13 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.lang.reflect.Method;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.sql.Connection;
@@ -267,6 +269,11 @@ class AccessRequestAdminConsoleBrowserIT {
                 AccessRequestBrowserGalleryFixture.Incidents incidents =
                         AccessRequestBrowserGalleryFixture.seed(postgres, requestId,
                                 openRequesterId, closedRequesterId, approverId, manager.approverRoleId());
+                assertNoJavaScriptErrors(driver);
+                driver.quit();
+                driver = new RemoteWebDriver(webDriverUri(chrome).toURL(), chromeOptions(false));
+                configureDriver(driver);
+                logInToAdminConsole(keycloak, driver, "admin", "admin");
                 verifyPopulatedAdminPages(keycloak, driver, galleryAdminToken, incidents,
                         requestId, requesterId);
                 assertNoJavaScriptErrors(driver);
@@ -627,9 +634,9 @@ class AccessRequestAdminConsoleBrowserIT {
                         configureDriver(driver);
                         logInToAdminConsole(keycloak, driver, fixture.managerUsername(), fixture.managerPassword());
                         openAccessRequests(driver);
-                        openFailedProvisioning(driver);
-                        assertPageHeading(driver, "Provisioning failures");
-                        retryFailedProvisioningInBrowser(
+                        driver.navigate().to(adminConsoleUri() + "#/master/access-requests/incidents");
+                        assertPageHeading(driver, "Incidents");
+                        retryFailedProvisioningFromIncidents(
                                 driver, failure, "The resource no longer matches the entitlement type.");
                         assertApiRequestStatus(
                                 driver, "/admin/requests/" + failure.requestId() + "/provisioning/retry", 200);
@@ -847,6 +854,14 @@ class AccessRequestAdminConsoleBrowserIT {
                     assertApiRequestStatus(driver, "requesterId=", 200);
                 }
 
+                driver.navigate().to(adminConsoleUri() + "#/master/access-requests/incidents");
+                assertPageHeading(driver, "Incidents");
+                waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                        "//h2[normalize-space()='No incidents match these filters.']")));
+                assertApiRequestStatus(driver, "/access-requests/admin/incidents?", 200);
+                AccessRequestBrowserScreenshots.capture(driver,
+                        darkMode ? "admin-incidents-empty-dark" : "admin-incidents-empty-light");
+
                 openFailedProvisioning(driver);
                 assertPageHeading(driver, "Provisioning failures");
                 waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
@@ -863,9 +878,9 @@ class AccessRequestAdminConsoleBrowserIT {
                 }
 
                 driver.navigate().to(adminConsoleUri() + "#/master/access-requests/notification-deliveries");
-                assertPageHeading(driver, "Email notifications");
+                assertPageHeading(driver, "Notification failures");
                 waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
-                        "//h2[normalize-space()='There are no failed notification emails.']")));
+                        "//h2[normalize-space()='There are no failed notifications.']")));
                 assertApiRequestStatus(driver, "/access-requests/admin/notification-deliveries?page=", 200);
                 assertTrue(apiRequests(driver).stream().noneMatch(request ->
                                 ((String) request.get("url")).contains("/notification-deliveries/summary")),
@@ -923,12 +938,67 @@ class AccessRequestAdminConsoleBrowserIT {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, notificationResponse.statusCode(), notificationResponse.body());
         assertTrue(notificationResponse.body().contains(incidents.openProvisioningRequestId()));
+        HttpResponse<String> unifiedResponse = HTTP_CLIENT.send(
+                adminRequest(keycloak, base + "incidents?type=ALL&state=OPEN&size=20", adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, unifiedResponse.statusCode(), unifiedResponse.body());
+        assertTrue(unifiedResponse.body().contains("\"type\":\"NOTIFICATION\""), unifiedResponse.body());
+        assertTrue(unifiedResponse.body().contains("\"type\":\"PROVISIONING\""), unifiedResponse.body());
+        assertTrue(unifiedResponse.body().contains("\"type\":\"REVOCATION\""), unifiedResponse.body());
+        HttpResponse<String> firstIncidentPage = HTTP_CLIENT.send(
+                adminRequest(keycloak, base + "incidents?type=ALL&state=OPEN&size=2", adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, firstIncidentPage.statusCode(), firstIncidentPage.body());
+        JsonNode firstIncidents = JSON.readTree(firstIncidentPage.body());
+        assertEquals(2, firstIncidents.path("items").size());
+        String cursor = firstIncidents.path("nextCursor").asText();
+        assertFalse(cursor.isBlank());
+        HttpResponse<String> secondIncidentPage = HTTP_CLIENT.send(
+                adminRequest(keycloak, base + "incidents?type=ALL&state=OPEN&size=2&cursor="
+                        + URLEncoder.encode(cursor, StandardCharsets.UTF_8), adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, secondIncidentPage.statusCode(), secondIncidentPage.body());
+        JsonNode secondIncidents = JSON.readTree(secondIncidentPage.body()).path("items");
+        assertTrue(secondIncidents.size() > 0);
+        for (JsonNode item : secondIncidents) {
+            for (JsonNode previous : firstIncidents.path("items")) {
+                assertFalse(item.path("type").asText().equals(previous.path("type").asText())
+                        && item.path("id").asText().equals(previous.path("id").asText()));
+            }
+        }
+        HttpResponse<String> futureIncidentPage = HTTP_CLIENT.send(
+                adminRequest(keycloak, base + "incidents?from=2100-01-01T00%3A00%3A00Z", adminToken)
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, futureIncidentPage.statusCode(), futureIncidentPage.body());
+        assertEquals(0, JSON.readTree(futureIncidentPage.body()).path("items").size());
         driver.manage().window().setSize(new org.openqa.selenium.Dimension(1920, 1400));
 
+        driver.navigate().to(adminConsoleUri() + "#/master/access-requests/incidents");
+        assertPageHeading(driver, "Incidents");
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                By.id("incident-provisioning-" + incidents.openProvisioningRequestId())));
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                By.id("incident-revocation-" + grantedRequestId)));
+        assertApiRequestStatus(driver, "/access-requests/admin/incidents?", 200);
+        AccessRequestBrowserScreenshots.capture(driver, "admin-incidents-filled-light");
+        new Select(driver.findElement(By.id("incident-type"))).selectByValue("PROVISIONING");
+        waitFor(driver).until(ExpectedConditions.invisibilityOfElementLocated(
+                By.id("incident-revocation-" + grantedRequestId)));
+        assertTrue(driver.findElements(By.id("incident-provisioning-"
+                + incidents.openProvisioningRequestId())).size() == 1);
+        new Select(driver.findElement(By.id("incident-state"))).selectByValue("CLOSED");
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                By.id("incident-provisioning-" + incidents.closedProvisioningRequestId())));
+        AccessRequestBrowserScreenshots.capture(driver, "admin-incidents-closed-light");
+
         driver.navigate().to(adminConsoleUri() + "#/master/access-requests/notification-deliveries");
-        assertPageHeading(driver, "Email notifications");
+        assertPageHeading(driver, "Notification failures");
         waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
-                "//button[normalize-space()='Retry sending']")));
+                "//*[@role='tab' and normalize-space()='Catalog']")));
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                "//*[@role='tab' and normalize-space()='Approval assurance']")));
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
+                "//button[normalize-space()='Retry notification']")));
         AccessRequestBrowserScreenshots.capture(driver, "admin-email-notifications-filled-light");
 
         driver.navigate().to(adminConsoleUri() + "#/master/access-requests/provisioning-failures");
@@ -985,6 +1055,24 @@ class AccessRequestAdminConsoleBrowserIT {
                 By.id("revocation-failure-" + grantedRequestId)));
         AccessRequestBrowserScreenshots.capture(driver, "admin-revocation-failures-resolved-filled-light");
 
+        // Exercise a real recovery action from the unified operational tab, not only legacy deep links.
+        driver.navigate().to(adminConsoleUri() + "#/master/access-requests/incidents");
+        assertPageHeading(driver, "Incidents");
+        new Select(driver.findElement(By.id("incident-type"))).selectByValue("PROVISIONING");
+        waitFor(driver).until(ExpectedConditions.elementToBeClickable(By.xpath(
+                "//*[@id='incident-provisioning-" + incidents.openProvisioningRequestId()
+                        + "']/ancestor::li//button[normalize-space()='Close failure']"))).click();
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.id("incident-reason")))
+                .sendKeys("The failed access request is no longer needed.");
+        driver.findElement(By.xpath("//*[@role='dialog']//button[normalize-space()='Close failure']")).click();
+        waitFor(driver).until(ExpectedConditions.invisibilityOfElementLocated(
+                By.id("incident-provisioning-" + incidents.openProvisioningRequestId())));
+        assertApiRequestStatus(driver, "/access-requests/admin/requests/"
+                + incidents.openProvisioningRequestId() + "/provisioning/close", 200);
+        new Select(driver.findElement(By.id("incident-state"))).selectByValue("CLOSED");
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                By.id("incident-provisioning-" + incidents.openProvisioningRequestId())));
+
         driver.navigate().to(adminConsoleUri() + "#/master/access-requests/events");
         assertPageHeading(driver, "Events");
         waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
@@ -1005,6 +1093,10 @@ class AccessRequestAdminConsoleBrowserIT {
                 assertTrue(driver.findElements(By.xpath("//button[normalize-space()='Create access package']")).isEmpty(),
                         "An administrator without manage-access-requests must not see catalog write controls.");
                 assertApiRequestStatus(driver, "/access-requests/admin/capabilities", 403);
+                driver.navigate().to(adminConsoleUri() + "#/master/access-requests/incidents");
+                assertPageHeading(driver, "Incidents");
+                assertPermissionDenied(driver);
+                assertTrue(driver.findElements(By.xpath("//button[normalize-space()='Retry revocation']")).isEmpty());
                 driver.navigate().to(adminConsoleUri() + "#/master/access-requests/provisioning-failures");
                 assertPageHeading(driver, "Provisioning failures");
                 assertPermissionDenied(driver);
@@ -1099,27 +1191,26 @@ class AccessRequestAdminConsoleBrowserIT {
     }
 
     private void openFailedProvisioning(WebDriver driver) {
-        By failedProvisioning = By.xpath("//*[@role='tab' and normalize-space()='Provisioning failures']");
-        WebElement link = waitFor(driver).until(ExpectedConditions.elementToBeClickable(failedProvisioning));
-        ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView({block: 'center'});", link);
-        link.click();
+        // Keep exercising the legacy deep link even though the visible operational tab is now Incidents.
+        driver.navigate().to(adminConsoleUri() + "#/master/access-requests/provisioning-failures");
     }
 
-    private void retryFailedProvisioningInBrowser(
+    private void retryFailedProvisioningFromIncidents(
             WebDriver driver, FailedProvisioningFixture failure, String expectedCause) {
         WebDriverWait wait = waitFor(driver);
-        String itemXPath = "//*[contains(@class, 'pf-v5-c-data-list__item') and .//h3[normalize-space()="
-                + xpathLiteral(failure.displayName()) + "]]";
+        new Select(wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("incident-type"))))
+                .selectByValue("PROVISIONING");
+        String itemXPath = "//*[@id='incident-provisioning-" + failure.requestId() + "']/ancestor::li";
         WebElement item = wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath(itemXPath)));
-        assertTrue(item.getText().contains(failure.requestId()));
+        assertTrue(item.getText().contains(failure.displayName()));
         assertTrue(item.getText().contains(failure.requesterUsername()));
         assertTrue(item.getText().contains(expectedCause));
         assertFalse(item.getText().contains("The configured Keycloak role no longer exists."));
         item.findElement(By.xpath(".//button[normalize-space()='Retry provisioning']")).click();
 
         WebElement dialog = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[role='dialog']")));
-        assertTrue(dialog.getText().contains(failure.requestId()),
-                "The retry dialog must identify the failed request.");
+        assertTrue(dialog.getText().contains(failure.displayName()),
+                "The retry dialog must identify the failed entitlement.");
         wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
                 "//*[@role='dialog']//button[normalize-space()='Retry provisioning']"))).click();
 
@@ -1132,10 +1223,9 @@ class AccessRequestAdminConsoleBrowserIT {
                     .formatted(driver.findElement(By.tagName("body")).getText(), apiRequests(driver),
                             browserLog(driver)), exception);
         }
-        wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath(
-                "//h2[normalize-space()='There are no failed provisioning requests.']")));
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(By.xpath(itemXPath)));
         assertTrue(driver.findElements(By.xpath(itemXPath)).isEmpty(),
-                "The recovered request must disappear from the failed provisioning list.");
+                "The recovered request must disappear from open incidents.");
     }
 
     private void closeFailedProvisioningInBrowser(WebDriver driver, FailedProvisioningFixture failure) {

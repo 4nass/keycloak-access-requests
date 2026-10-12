@@ -251,6 +251,25 @@ export type NotificationDeliveryPage = {
     total: number;
 };
 
+export type IncidentType = "ALL" | "NOTIFICATION" | "PROVISIONING" | "REVOCATION";
+export type IncidentState = "OPEN" | "CLOSED" | "ALL";
+
+export type AdminIncident = {
+    type: Exclude<IncidentType, "ALL">;
+    id: string;
+    occurredAt: string;
+    state: Exclude<IncidentState, "ALL">;
+    notification: NotificationDelivery | null;
+    provisioning: FailedProvisioningRequest | null;
+    revocation: RevocationFailure | null;
+};
+
+export type AdminIncidentPage = {
+    items: AdminIncident[];
+    size: number;
+    nextCursor: string | null;
+};
+
 export type NotificationDeliverySummary = {
     pending: number;
     processing: number;
@@ -281,6 +300,8 @@ export type EntitlementsAdminApi = {
     auditUsers(search: string, signal?: AbortSignal): Promise<{ items: AuditUser[] }>;
     auditRequest(id: string, query?: { page?: number; size?: number }): Promise<AdminAuditRequestDetails>;
     notificationDeliveries(query?: { page?: number; size?: number }): Promise<NotificationDeliveryPage>;
+    incidents(query?: { type?: IncidentType; state?: IncidentState; from?: string; to?: string;
+        cursor?: string; size?: number }): Promise<AdminIncidentPage>;
     notificationDeliverySummary(): Promise<NotificationDeliverySummary>;
     failedProvisioningRequests(query?: { page?: number; size?: number; state?: "OPEN" | "CLOSED" }): Promise<FailedProvisioningRequestPage>;
     retryFailedProvisioning(id: string): Promise<ProvisioningRetryResult>;
@@ -401,6 +422,15 @@ export function createEntitlementsAdminApi({ serverBaseUrl, realm, getAccessToke
         auditRequest: (id, query) => request(`/admin/requests/${encodeURIComponent(id)}`
             + `?historyPage=${query?.page ?? 0}&historySize=${query?.size ?? 20}`),
         notificationDeliveries: (query) => request(`/admin/notification-deliveries?${pageQuery(query)}`),
+        incidents: (query) => {
+            const parameters = new URLSearchParams({
+                type: query?.type ?? "ALL", state: query?.state ?? "OPEN", size: String(query?.size ?? 20)
+            });
+            if (query?.from) parameters.set("from", query.from);
+            if (query?.to) parameters.set("to", query.to);
+            if (query?.cursor) parameters.set("cursor", query.cursor);
+            return request(`/admin/incidents?${parameters}`);
+        },
         notificationDeliverySummary: () => request("/admin/notification-deliveries/summary"),
         failedProvisioningRequests: (query) => request(
             `/admin/provisioning-failures?${pageQuery(query)}&state=${query?.state ?? "OPEN"}`

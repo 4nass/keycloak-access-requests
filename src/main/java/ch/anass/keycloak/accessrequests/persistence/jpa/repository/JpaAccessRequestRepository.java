@@ -136,6 +136,26 @@ public final class JpaAccessRequestRepository implements AccessRequestRepository
         return findProvisioningFailures(realmId, page, size, true);
     }
 
+    /** Hydrates one incident selected by the cross-source administrative worklist. */
+    public Optional<FailedProvisioningRequest> findProvisioningFailureById(String realmId, String requestId) {
+        AccessRequestEntity entity = entityManager.find(AccessRequestEntity.class, requestId);
+        if (entity == null || !realmId.equals(entity.realmId())) {
+            return Optional.empty();
+        }
+        AccessRequest request = entity.toDomain();
+        if (request.decisionStatus() != DecisionStatus.APPROVED
+                || request.provisioningStatus() != ProvisioningStatus.FAILED) {
+            return Optional.empty();
+        }
+        return Optional.of(new FailedProvisioningRequest(request.id(), request.requesterId(),
+                request.entitlementId(), request.resourceType(), request.resourceNameSnapshot(),
+                request.decisionStatus(), request.provisioningStatus(), request.updatedAt(),
+                latestFailureCodes(realmId, List.of(requestId))
+                        .getOrDefault(requestId, ProvisioningFailureCode.UNKNOWN),
+                request.provisioningClosedAt(), request.provisioningClosedBy(),
+                request.provisioningClosureReason()));
+    }
+
     private FailedProvisioningPage findProvisioningFailures(String realmId, int page, int size, boolean closed) {
         if (realmId == null || realmId.isBlank()) {
             throw new IllegalArgumentException("realmId must not be blank");

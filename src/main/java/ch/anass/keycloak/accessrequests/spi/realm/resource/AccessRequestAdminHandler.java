@@ -11,6 +11,8 @@ import ch.anass.keycloak.accessrequests.core.service.ConcurrentRequestModificati
 import ch.anass.keycloak.accessrequests.core.service.RequestNotFoundException;
 import ch.anass.keycloak.accessrequests.core.service.InvalidRequestedDurationException;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestRepository;
+import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAdminIncidentReader.IncidentState;
+import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAdminIncidentReader.IncidentType;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestNotificationOutboxRepository;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.ApiDto.AdminCapabilitiesResponse;
 import ch.anass.keycloak.accessrequests.spi.realm.dto.AuditDto.AuditUserListResponse;
@@ -144,6 +146,19 @@ final class AccessRequestAdminHandler extends AccessRequestHandlerSupport {
                     adminNames(manager.realm()))).build();
         } catch (IllegalArgumentException exception) {
             return error(Response.Status.BAD_REQUEST, "INVALID_NOTIFICATION_DELIVERY_QUERY", exception.getMessage(), null);
+        }
+    }
+
+    public Response listIncidents(String type, String state, String from, String to, String cursor, int size) {
+        AccessRequestManager manager = requireAccessRequestManager();
+        try {
+            var result = adminIncidentReader().findPage(manager.realm().getId(),
+                    parseEnum(IncidentType.class, type, "type"),
+                    parseEnum(IncidentState.class, state, "state"),
+                    parseInstant(from, "from"), parseInstant(to, "to"), cursor, size);
+            return Response.ok(AdminResponseMapper.incidents(result, adminNames(manager.realm()))).build();
+        } catch (IllegalArgumentException exception) {
+            return error(Response.Status.BAD_REQUEST, "INVALID_INCIDENT_QUERY", exception.getMessage(), null);
         }
     }
 

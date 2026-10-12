@@ -489,4 +489,13 @@
             <column name="REVOCATION_STATE"/>
         </createIndex>
     </changeSet>
+    <changeSet id="admin-incidents-index" author="4nass">
+        <createIndex indexName="IDX_ACCESS_REQUEST_INCIDENTS" tableName="AR_ACCESS_REQUEST">
+            <column name="REALM_ID"/>
+            <column name="DECISION_STATUS"/>
+            <column name="PROVISIONING_STATUS"/>
+            <column name="PROVISIONING_CLOSED_TIMESTAMP"/>
+            <column name="UPDATED_TIMESTAMP" descending="true"/>
+        </createIndex>
+    </changeSet>
 </databaseChangeLog>

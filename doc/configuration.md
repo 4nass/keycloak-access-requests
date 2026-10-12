@@ -33,9 +33,9 @@ E-mail delivery is configured independently for every realm. Deploying the provi
    - make a customer e-mail theme inherit from `access-requests` when its existing inheritance chain permits it.
 4. Enable [localization](#localization) and select the supported locales when localized e-mails are required.
 
-Keycloak resolves e-mail templates from the realm's selected e-mail theme and its single parent chain; it has no automatic multi-theme composition. The selected theme must therefore expose the four access-request HTML/text templates and their message keys. If the template integration or SMTP configuration is missing, the access-request transaction still succeeds: the notification outbox retries delivery in the background and eventually records the entry as `FAILED`. Use the Email notifications tab to inspect and replay failed deliveries; Keycloak logs remain the source for delivery error diagnostics.
+Keycloak resolves e-mail templates from the realm's selected e-mail theme and its single parent chain; it has no automatic multi-theme composition. The selected theme must therefore expose the four access-request HTML/text templates and their message keys. If the template integration or SMTP configuration is missing, the access-request transaction still succeeds: the notification outbox retries delivery in the background and eventually records the entry as `FAILED`. Use the Incidents tab with the Notification type filter to inspect and retry failed jobs; Keycloak logs remain the source for delivery error diagnostics.
 
-Use **Access requests → Email notifications** in the bundled Admin Console to inspect and retry
+Use **Access requests → Incidents**, filtered to **Notification**, in the bundled Admin Console to inspect and retry
 failed e-mail deliveries and role-recipient expansion jobs without exposing recipient e-mail
 addresses. The page omits aggregate counters so operators can focus on actionable failures.
 An authenticated monitoring client can use GET /admin/notification-deliveries/summary for

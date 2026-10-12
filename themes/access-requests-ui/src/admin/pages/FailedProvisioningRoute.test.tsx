@@ -46,11 +46,11 @@ describe("FailedProvisioningRoute", () => {
         </MemoryRouter>);
 
         expect(screen.getByRole("heading", { level: 1, name: "accessRequestsAdminFailedProvisioning" })).toBeVisible();
-        expect(screen.getByRole("tab", { name: "accessRequestsAdminFailedProvisioning" })).toBeDisabled();
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminIncidents" })).toBeDisabled();
         await act(async () => finish({ canManageProvisioningFailures: false }));
         expect(await screen.findByRole("heading", { name: "accessRequestsAdminErrorForbidden" })).toBeVisible();
         expect(screen.getByRole("heading", { level: 1, name: "accessRequestsAdminFailedProvisioning" })).toBeVisible();
-        expect(screen.getByRole("tab", { name: "accessRequestsAdminFailedProvisioning" })).toBeDisabled();
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminIncidents" })).toBeDisabled();
         expect(api.failedProvisioningRequests).not.toHaveBeenCalled();
     });
 

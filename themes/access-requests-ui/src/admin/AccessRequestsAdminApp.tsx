@@ -32,6 +32,7 @@ type RouteHandle = {
 
 const accessRequestPages: { path: string; active: AdminTab; titleKey: string; descriptionKey: string }[] = [
     { path: "/assurance-policy", active: "assurance", titleKey: "accessRequestsAdminAssurancePolicy", descriptionKey: "accessRequestsAdminAssuranceDescription" },
+    { path: "/incidents", active: "incidents", titleKey: "accessRequestsAdminIncidents", descriptionKey: "accessRequestsAdminIncidentsDescription" },
     { path: "/notification-deliveries", active: "notifications", titleKey: "accessRequestsAdminNotificationDelivery", descriptionKey: "accessRequestsAdminNotificationDeliveryDescription" },
     { path: "/provisioning-failures", active: "provisioning", titleKey: "accessRequestsAdminFailedProvisioning", descriptionKey: "accessRequestsAdminFailedProvisioningDescription" },
     { path: "/revocation-failures", active: "revocations", titleKey: "accessRequestsAdminRevocationFailures", descriptionKey: "accessRequestsAdminRevocationFailuresDescription" },

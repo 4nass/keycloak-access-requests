@@ -21,6 +21,11 @@ const NotificationDeliveryRoute = lazy(async () => {
     return { default: module.NotificationDeliveryRoute };
 });
 
+const IncidentsRoute = lazy(async () => {
+    const module = await import("./pages/IncidentsRoute");
+    return { default: module.IncidentsRoute };
+});
+
 const FailedProvisioningRoute = lazy(async () => {
     const module = await import("./pages/FailedProvisioningRoute");
 
@@ -78,6 +83,15 @@ const notificationDeliveryRoute: AdminRoute = {
     }
 };
 
+const incidentsRoute: AdminRoute = {
+    path: "/:realm/access-requests/incidents",
+    element: <IncidentsRoute />,
+    handle: {
+        access: "anyone",
+        breadcrumb: (translate) => translate("accessRequestsAdminIncidents")
+    }
+};
+
 const failedProvisioningRoute: AdminRoute = {
     path: "/:realm/access-requests/provisioning-failures",
     element: <FailedProvisioningRoute />,
@@ -126,7 +140,7 @@ export const routes: RouteObject[] = [
         path: "/",
         element: <AccessRequestsAdminApp />,
         children: [entitlementCatalogRoute, approvalAssurancePolicyRoute, auditEventsRoute,
-            notificationDeliveryRoute, failedProvisioningRoute, revocationFailuresRoute,
+            incidentsRoute, notificationDeliveryRoute, failedProvisioningRoute, revocationFailuresRoute,
             ...standardRoutes, ...notFoundRoute]
     }
 ];

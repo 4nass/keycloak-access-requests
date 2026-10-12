@@ -41,7 +41,7 @@ await i18n.init({
                 accessRequestsAdminCatalog: "Access requests",
                 accessRequestsAdminFailedProvisioning: "Provisioning failures",
                 accessRequestsAdminRevocationFailures: "Revocation failures",
-                accessRequestsAdminNotificationDelivery: "Notification delivery",
+                accessRequestsAdminNotificationDelivery: "Notification failures",
                 configure: "Configure",
                 currentRealm: "Current realm"
             }
@@ -80,16 +80,16 @@ describe("Access Request Admin Console navigation", () => {
         expect(screen.getByRole("region", { name: "Configure" })).toContainElement(
             screen.getByRole("link", { name: "Access requests" })
         );
-        expect(screen.queryByRole("link", { name: "Notification delivery" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("link", { name: "Notification failures" })).not.toBeInTheDocument();
         expect(screen.queryByRole("link", { name: "Provisioning failures" })).not.toBeInTheDocument();
         expect(screen.queryByRole("link", { name: "Revocation failures" })).not.toBeInTheDocument();
     });
 
     it.each([
         [{ canManageCatalog: false, canManageNotifications: true, canManageProvisioningFailures: false },
-            "/master/access-requests/notification-deliveries"],
+            "/master/access-requests/incidents"],
         [{ canManageCatalog: false, canManageNotifications: false, canManageProvisioningFailures: true },
-            "/master/access-requests/provisioning-failures"],
+            "/master/access-requests/incidents"],
         [{ canManageCatalog: false, canViewEvents: true, canManageNotifications: false, canManageProvisioningFailures: false },
             "/master/access-requests/events"]
     ])("opens the first authorized operational tab without catalog access", async (capabilities, href) => {

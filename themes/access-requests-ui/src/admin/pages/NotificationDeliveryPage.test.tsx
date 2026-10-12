@@ -34,19 +34,20 @@ await i18n.init({
                 accessRequestsAdminErrorUnavailable: "The service is unavailable.",
                 accessRequestsAdminErrorUnexpected: "The action could not be completed.",
                 accessRequestsAdminNotAvailable: "Not available",
-                accessRequestsAdminNotificationDelivery: "Notification delivery",
+                accessRequestsAdminNotificationDelivery: "Notification failures",
                 accessRequestsAdminNotificationDeliveryAttempts: "Attempts",
-                accessRequestsAdminNotificationDeliveryDescription: "Monitor delivery.",
-                accessRequestsAdminNotificationDeliveryEmpty: "No failed deliveries.",
+                accessRequestsAdminNotificationDeliveryDescription: "Review and retry failed access-request notifications.",
+                accessRequestsAdminNotificationDeliveryEmpty: "There are no failed notifications.",
                 accessRequestsAdminNotificationDeliveryEntitlementId: "Entitlement ID",
-                accessRequestsAdminNotificationDeliveryFailed: "Failed deliveries",
+                accessRequestsAdminNotificationDeliveryFailed: "Failed notifications",
+                accessRequestsAdminNotificationDeliveryFailedStatus: "Failed",
                 accessRequestsAdminNotificationDeliveryLastAttempt: "Last attempt",
                 accessRequestsAdminNotificationDeliveryRecipient: "Recipient",
                 accessRequestsAdminNotificationDeliveryRecipientType: "Recipient type",
                 accessRequestsAdminNotificationDeliveryRequestId: "Request",
-                accessRequestsAdminNotificationDeliveryRetry: "Retry delivery",
-                accessRequestsAdminNotificationDeliveryRetryDescription: "The delivery will return to the queue.",
-                accessRequestsAdminNotificationDeliveryRetryQueued: "Notification delivery queued for retry.",
+                accessRequestsAdminNotificationDeliveryRetry: "Retry notification",
+                accessRequestsAdminNotificationDeliveryRetryDescription: "The notification will return to the queue.",
+                accessRequestsAdminNotificationDeliveryRetryQueued: "Notification queued for retry.",
                 accessRequestsAdminNotificationTypeProvisioningFailed: "Provisioning failed",
                 accessRequestsAdminNotificationRecipientTypeRealmRole: "Realm role",
                 accessRequestsAdminNotificationRecipientTypeUser: "User",
@@ -113,16 +114,32 @@ describe("NotificationDeliveryPage", () => {
 
         expect(await screen.findByText("Request submitted")).toBeInTheDocument();
         expect(screen.getByText("10")).toBeInTheDocument();
+        expect(screen.getByText("Failed")).toBeInTheDocument();
         expect(screen.queryByRole("group", { name: "Delivery status" })).not.toBeInTheDocument();
         expect(mocks.api.notificationDeliverySummary).not.toHaveBeenCalled();
 
-        fireEvent.click(screen.getByRole("button", { name: "Retry delivery" }));
-        const dialog = await screen.findByRole("dialog", { name: "Retry delivery" });
-        fireEvent.click(within(dialog).getByRole("button", { name: "Retry delivery" }));
+        fireEvent.click(screen.getByRole("button", { name: "Retry notification" }));
+        const dialog = await screen.findByRole("dialog", { name: "Retry notification" });
+        fireEvent.click(within(dialog).getByRole("button", { name: "Retry notification" }));
 
         await waitFor(() => expect(mocks.api.retryNotificationDelivery).toHaveBeenCalledWith("delivery-1"));
-        expect(await screen.findByText("Notification delivery queued for retry.")).toBeInTheDocument();
+        expect(await screen.findByText("Notification queued for retry.")).toBeInTheDocument();
         await waitFor(() => expect(mocks.api.notificationDeliveries).toHaveBeenCalledTimes(2));
+    });
+
+    it("treats a failed recipient-role expansion as a notification failure, not a sent email", async () => {
+        mocks.api.notificationDeliveries.mockResolvedValue({
+            items: [{ ...failedDelivery, recipientId: "role-1", recipientName: "Approvers", recipientType: "REALM_ROLE" }],
+            page: 0,
+            size: 20,
+            total: 1
+        });
+        renderPage();
+
+        expect(await screen.findByText("Realm role")).toBeInTheDocument();
+        expect(screen.getByText("Failed")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Retry notification" })).toBeInTheDocument();
+        expect(screen.queryByText("Failed emails")).not.toBeInTheDocument();
     });
 
     it("keeps the newest delivery page when an older response finishes last", async () => {
@@ -159,7 +176,7 @@ describe("NotificationDeliveryPage", () => {
         fireEvent.click(screen.getAllByRole("button", { name: "Go to next page" })[0]);
         await waitFor(() => expect(mocks.api.notificationDeliveries).toHaveBeenCalledWith({ page: 1, size: 20 }));
         expect(screen.queryByText("Request: Finance access")).not.toBeInTheDocument();
-        expect(screen.queryByRole("button", { name: "Retry delivery" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Retry notification" })).not.toBeInTheDocument();
         expect(screen.getByLabelText("Loading")).toBeVisible();
 
         await act(async () => nextPage.resolve({
@@ -176,9 +193,9 @@ describe("NotificationDeliveryPage", () => {
         ));
         renderPage();
 
-        fireEvent.click(await screen.findByRole("button", { name: "Retry delivery" }));
-        const dialog = await screen.findByRole("dialog", { name: "Retry delivery" });
-        fireEvent.click(within(dialog).getByRole("button", { name: "Retry delivery" }));
+        fireEvent.click(await screen.findByRole("button", { name: "Retry notification" }));
+        const dialog = await screen.findByRole("dialog", { name: "Retry notification" });
+        fireEvent.click(within(dialog).getByRole("button", { name: "Retry notification" }));
 
         expect(await within(dialog).findByText("The delivery was changed by another administrator.")).toBeInTheDocument();
     });

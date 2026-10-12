@@ -817,7 +817,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertAutoApprovalColumnDefaultsToDisabled(connection, "ar_entitlement");
             assertAutoApprovalColumnDefaultsToDisabled(connection, "ar_entitlement_history");
             assertTrue(tableExists(connection, "ar_notification_outbox"));
-            assertEquals(4, providerChangeSetCount(connection));
+            assertEquals(5, providerChangeSetCount(connection));
         }
     }
 

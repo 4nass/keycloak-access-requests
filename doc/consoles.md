@@ -25,8 +25,13 @@ The navigation is not an authorization mechanism. The API remains responsible fo
 ## Admin Console
 
 The Admin Console owns entitlement configuration. **Configure → Access requests** is a single
-navigation entry with **Catalog**, **Approval assurance**, **Events**, **Email notifications**,
-**Provisioning failures**, and **Revocation failures** tabs. Tabs appear only when the manager has the corresponding server-side capability. **Approval assurance** is restricted to realm administrators because changing it can weaken approval security.
+navigation entry with **Catalog**, **Approval assurance**, **Incidents**, and **Events** tabs.
+The Incidents tab combines notification, provisioning, and revocation failures in one globally
+paginated worklist, with Type, Status, and date filters. Previous/Next navigation uses an opaque
+server cursor, so older archived incidents remain reachable. Each incident keeps its own contextual recovery
+action; the underlying retry and closure APIs remain distinct. Tabs appear only when the manager
+has the corresponding server-side capability. **Approval assurance** is restricted to realm
+administrators because changing it can weaken approval security.
 The Events tab keeps requester and event actor separate. Managers search people by name or username,
 while the API filters by their stable IDs before pagination; an automatic expiration can also be
 selected as an actor.
@@ -58,7 +63,7 @@ the package binding and identify its dedicated Keycloak group. Remove only the a
 membership in that group through Keycloak, verify it is absent, and then use **Confirm removal** in
 Access Requests. The confirmation checks the absence again; it does not remove access itself.
 
-**Access requests → Provisioning failures** lists approved requests whose Keycloak grant failed. It shows a
+**Access requests → Incidents**, filtered to **Provisioning**, lists approved requests whose Keycloak grant failed. It shows a
 localized, safe cause and guidance without exposing technical failure details. A manager
 can review the request, requester, entitlement, resource, and failure time, then confirm a manual
 retry. The page reports whether that retry succeeded or failed again.
@@ -67,7 +72,7 @@ For unrecoverable cases, a manager can close the failed provisioning item with a
 operational reason. Closure grants no access, removes the item from the active failure list,
 prevents further retry, and preserves the audit trail. The requester and current entitlement
 approvers are notified by e-mail when deliverable; deleted users cannot receive mail.
-The **Closed failures** tab keeps the closure date, manager ID, and reason available to realm
+The **Closed or resolved** status filter keeps the closure date, manager ID, and reason available to realm
 managers. Archived cases are read-only and do not appear in the active retry queue.
 
 ### Recover from a deleted role or group
@@ -77,8 +82,8 @@ Keycloak receives a new ID, even if it has the same name. The entitlement and ap
 retain the old ID; retrying that approval must not grant the replacement resource.
 
 1. In Keycloak, recreate the role or group and note its new ID.
-2. In **Provisioning failures**, close the old failure with a reason explaining the replacement.
-   Confirm that it appears under **Closed failures**; the original request and history remain
+2. In **Incidents**, filter to **Provisioning**, then close the old failure with a reason explaining the replacement.
+   Confirm that it appears under **Closed or resolved**; the original request and history remain
    available, and closure does not grant access.
 3. In **Access requests**, set the old entitlement to not requestable. Its resource ID cannot be
    edited. Create and publish a new entitlement targeting the new Keycloak ID.
@@ -95,7 +100,9 @@ console to correlate the Keycloak server log entry. The service logs the request
 exception; the Keycloak grant adapter logs the requester ID and full exception. Exception details
 remain in server logs, not in the realm API or console.
 
-**Access requests → Email notifications** handles failed lifecycle e-mail deliveries.
+**Access requests → Incidents**, filtered to **Notification**, handles failed notification jobs, including
+recipient-role expansion failures and e-mail delivery failures. Successful deliveries do not
+appear in this worklist.
 
 **Access requests → Events** lists request activity. Selecting a request opens its audit detail
 in a PatternFly dialog over the list; close it with **Close**, the close icon, or Escape to return

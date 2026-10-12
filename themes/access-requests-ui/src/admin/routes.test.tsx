@@ -3,9 +3,10 @@ import { describe, expect, it } from "vitest";
 import { routes } from "./routes";
 
 describe("Administration Console routes", () => {
-    it("registers catalog and notification operations as first-class Admin Console routes without declarative-ui", () => {
+    it("registers the unified incident worklist and preserves legacy action routes", () => {
         const children = routes[0].children ?? [];
         const catalogIndex = children.findIndex((route) => route.path === "/:realm/access-requests");
+        const incidentsIndex = children.findIndex((route) => route.path === "/:realm/access-requests/incidents");
         const notificationDeliveryIndex = children.findIndex(
             (route) => route.path === "/:realm/access-requests/notification-deliveries"
         );
@@ -23,6 +24,8 @@ describe("Administration Console routes", () => {
 
         expect(catalogIndex).toBeGreaterThanOrEqual(0);
         expect(catalogIndex).toBeLessThan(notFoundIndex);
+        expect(incidentsIndex).toBeGreaterThanOrEqual(0);
+        expect(incidentsIndex).toBeLessThan(notFoundIndex);
         expect(notificationDeliveryIndex).toBeGreaterThanOrEqual(0);
         expect(notificationDeliveryIndex).toBeLessThan(notFoundIndex);
         expect(failedProvisioningIndex).toBeGreaterThanOrEqual(0);

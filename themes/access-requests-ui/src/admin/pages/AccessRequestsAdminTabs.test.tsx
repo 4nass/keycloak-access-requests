@@ -12,7 +12,7 @@ function CurrentLocation() {
     return <output>{useLocation().pathname}</output>;
 }
 
-function renderTabs(active: "catalog" | "assurance" | "events" | "notifications" | "provisioning" | "revocations",
+function renderTabs(active: "catalog" | "assurance" | "events" | "incidents" | "notifications" | "provisioning" | "revocations",
     realm = "master") {
     return render(<MemoryRouter initialEntries={[`/${realm}/access-requests/events`]}>
         <Routes><Route path="/:realm/access-requests/*" element={<>
@@ -39,21 +39,16 @@ describe("Access requests Admin tabs", () => {
         expect(screen.getByRole("tab", { name: "accessRequestsAdminEvents" })).toHaveAttribute("aria-selected", "true");
         expect(screen.getByRole("tab", { name: "accessRequestsAdminAssurancePolicy" }))
             .toHaveAttribute("href", "/master/access-requests/assurance-policy");
-        expect(screen.getByRole("tab", { name: "accessRequestsAdminNotificationDelivery" }))
-            .toHaveAttribute("href", "/master/access-requests/notification-deliveries");
-        expect(screen.getByRole("tab", { name: "accessRequestsAdminFailedProvisioning" }))
-            .toHaveAttribute("href", "/master/access-requests/provisioning-failures");
-        expect(screen.getByRole("tab", { name: "accessRequestsAdminRevocationFailures" }))
-            .toHaveAttribute("href", "/master/access-requests/revocation-failures");
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminIncidents" }))
+            .toHaveAttribute("href", "/master/access-requests/incidents");
         expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
             "accessRequestsAdminCatalogTab", "accessRequestsAdminAssurancePolicy",
-            "accessRequestsAdminNotificationDelivery",
-            "accessRequestsAdminFailedProvisioning", "accessRequestsAdminRevocationFailures",
+            "accessRequestsAdminIncidents",
             "accessRequestsAdminEvents"
         ]);
 
-        await userEvent.click(screen.getByRole("tab", { name: "accessRequestsAdminNotificationDelivery" }));
-        expect(screen.getByText("/master/access-requests/notification-deliveries")).toBeVisible();
+        await userEvent.click(screen.getByRole("tab", { name: "accessRequestsAdminIncidents" }));
+        expect(screen.getByText("/master/access-requests/incidents")).toBeVisible();
     });
 
     it("hides tabs the server has not authorized", async () => {
@@ -62,11 +57,11 @@ describe("Access requests Admin tabs", () => {
         });
         renderTabs("provisioning");
 
-        await waitFor(() => expect(screen.getByRole("tab", { name: "accessRequestsAdminFailedProvisioning" })).not.toHaveAttribute("aria-disabled", "true"));
+        await waitFor(() => expect(screen.getByRole("tab", { name: "accessRequestsAdminIncidents" })).not.toHaveAttribute("aria-disabled", "true"));
         expect(screen.queryByRole("tab", { name: "accessRequestsAdminCatalogTab" })).not.toBeInTheDocument();
         expect(screen.getByRole("tab", { name: "accessRequestsAdminEvents" })).toBeVisible();
+        expect(screen.getByRole("tab", { name: "accessRequestsAdminIncidents" })).toHaveAttribute("aria-selected", "true");
         expect(screen.queryByRole("tab", { name: "accessRequestsAdminNotificationDelivery" })).not.toBeInTheDocument();
-        expect(screen.getByRole("tab", { name: "accessRequestsAdminRevocationFailures" })).toBeVisible();
     });
 
     it("keeps the complete realm name when it contains access-requests", async () => {
@@ -79,9 +74,7 @@ describe("Access requests Admin tabs", () => {
         const destinations = [
             ["accessRequestsAdminCatalogTab", ""],
             ["accessRequestsAdminAssurancePolicy", "/assurance-policy"],
-            ["accessRequestsAdminNotificationDelivery", "/notification-deliveries"],
-            ["accessRequestsAdminFailedProvisioning", "/provisioning-failures"],
-            ["accessRequestsAdminRevocationFailures", "/revocation-failures"],
+            ["accessRequestsAdminIncidents", "/incidents"],
             ["accessRequestsAdminEvents", "/events"]
         ];
 

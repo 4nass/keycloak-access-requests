@@ -244,7 +244,7 @@ function NotificationDeliveryListItem({
                         </DescriptionList>
                     </DataListCell>,
                     <DataListCell key="state" width={1}>
-                        <Label color="red">{t("accessRequestsAdminNotificationDeliveryFailed")}</Label>
+                        <Label color="red">{t("accessRequestsAdminNotificationDeliveryFailedStatus")}</Label>
                     </DataListCell>
                 ]} />
                 <DataListAction

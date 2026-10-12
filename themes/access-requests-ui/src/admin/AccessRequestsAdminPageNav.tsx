@@ -140,11 +140,9 @@ export function AccessRequestsAdminPageNav() {
                                 || capabilities.canManageProvisioningFailures) && (
                                 <AccessRequestsNavItem path={capabilities.canManageCatalog
                                     ? "/access-requests"
-                                    : capabilities.canManageNotifications
-                                        ? "/access-requests/notification-deliveries"
-                                        : capabilities.canManageProvisioningFailures
-                                            ? "/access-requests/provisioning-failures"
-                                            : "/access-requests/events"} />
+                                    : capabilities.canManageNotifications || capabilities.canManageProvisioningFailures
+                                        ? "/access-requests/incidents"
+                                        : "/access-requests/events"} />
                             )}
                         </NavGroup>
                     )}

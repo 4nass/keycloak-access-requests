@@ -261,6 +261,17 @@ the request does not exist in the selected realm.
 The notification endpoints are realm-scoped and require Keycloak administrator access plus
 `manage-access-requests`, or realm-administrator access.
 
+The Admin Console's unified incident worklist uses `GET /admin/incidents` with `type`
+(`ALL`, `NOTIFICATION`, `PROVISIONING`, `REVOCATION`), `state` (`OPEN`, `CLOSED`, `ALL`),
+optional `from`/`to` ISO-8601 instants, an opaque `cursor`, and `size` (default 20, maximum 100).
+The response includes `nextCursor`; pass it unchanged to retrieve the next page. Omit it to
+start again. The cursor is bound to the realm and filters. Dates are inclusive at the database's
+millisecond precision. This keyset pagination has no fixed 10,000-item limit. The server filters
+across all selected sources before returning results. Notification failures have no closed
+archive; `state=CLOSED&type=NOTIFICATION` returns an empty page. The endpoint requires
+`manage-access-requests` and returns `400` for invalid filters, dates, cursors, or page sizes. Existing
+type-specific endpoints remain available for their actions and API clients.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | /admin/notification-deliveries | List failed e-mail deliveries and role-recipient expansion jobs |

@@ -11,6 +11,7 @@ import ch.anass.keycloak.accessrequests.core.service.RequestDetailsService;
 import ch.anass.keycloak.accessrequests.core.service.RequestPolicy;
 import ch.anass.keycloak.accessrequests.core.service.RequestService;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessGrantRepository;
+import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAdminIncidentReader;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaGrantRevocationFailureRepository;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestEventPublisher;
 import ch.anass.keycloak.accessrequests.persistence.jpa.repository.JpaAccessRequestHistoryReader;
@@ -106,6 +107,10 @@ final class AccessRequestServiceFactory {
 
     JpaAccessRequestNotificationOutboxRepository notificationOutboxRepository() {
         return new JpaAccessRequestNotificationOutboxRepository(entityManager());
+    }
+
+    JpaAdminIncidentReader adminIncidentReader() {
+        return new JpaAdminIncidentReader(entityManager());
     }
 
     JpaEntitlementAuditEventPublisher entitlementAuditEventPublisher() {

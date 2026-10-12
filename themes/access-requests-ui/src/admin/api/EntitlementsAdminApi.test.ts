@@ -46,6 +46,23 @@ const entitlement = {
 };
 
 describe("Entitlements administration API client", () => {
+    it("loads the globally paginated incident worklist with server-side filters", async () => {
+        const result = { items: [], size: 10, nextCursor: null };
+        const fetchMock = vi.fn().mockResolvedValue(jsonResponse(result));
+        await expect(createApi(fetchMock).incidents({ type: "REVOCATION", state: "CLOSED",
+            from: "2026-09-24T00:00:00Z", to: "2026-09-25T23:59:59.999Z", cursor: "next-token", size: 10 }))
+            .resolves.toEqual(result);
+        const incidentUrl = new URL(request(fetchMock).url);
+        expect(incidentUrl.pathname).toBe("/realms/finance/access-requests/admin/incidents");
+        expect(Object.fromEntries(incidentUrl.searchParams)).toEqual({
+            type: "REVOCATION", state: "CLOSED", size: "10",
+            from: "2026-09-24T00:00:00Z", to: "2026-09-25T23:59:59.999Z", cursor: "next-token"
+        });
+        expect(request(fetchMock).init.headers).toEqual(expect.objectContaining({
+            authorization: "Bearer admin-console-token"
+        }));
+    });
+
     it("reads and updates the realm approval assurance policy", async () => {
         const policy = {
             high: { acr: "strong", loa: 2, maxAgeSeconds: 1800 },
