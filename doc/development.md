@@ -12,7 +12,7 @@
 | Node.js | 24.18.1, provisioned by Maven |
 | pnpm | 11.18.0, provisioned by Maven |
 
-The current source runtime matrix is pending CI validation. Earlier results for the published 26.8.0-based JAR do not establish compatibility of the rebuilt 26.8.1-based artifact.
+The 1.0.1 runtime matrix passed both CI workflows on commit `b6ada6a`, including integration and packaged console browser tests on all eight runtimes.
 
 Each Maven build removes the previously copied Account/Admin assets from `target/classes` before copying the current Vite output. This prevents stale chunks from being included after an incremental build or a Keycloak UI upgrade. `AccessRequestPackagedThemeIT` checks that the packaged assets exactly match both current Vite distributions.
 
