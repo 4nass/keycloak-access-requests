@@ -6,11 +6,12 @@ It is delivered as one JAR containing the server provider, database migrations, 
 
 ## Compatibility
 
-| Extension version | Verified Keycloak versions | Build baseline |
-| --- | --- | --- |
-| `1.0.0` | 26.7.0–26.7.5, 26.8.0 | 26.8.0 |
+| Extension | Keycloak runtime matrix | Build baseline | Runtime validation |
+| --- | --- | --- | --- |
+| Published `1.0.0` | 26.7.0–26.7.5, 26.8.0 | 26.8.0 | Verified |
+| `1.0.1` (release candidate) | 26.7.0–26.7.5, 26.8.0–26.8.1 | 26.8.1 | Pending CI |
 
-The extension follows its own versioning; the table, rather than its version number, states the tested Keycloak runtimes. Version `1.0.0` uses Keycloak 26.8.0 for compilation, and CI tests that build baseline on every listed runtime. Keycloak 26.5.x and 26.6.x are not supported.
+The extension follows its own versioning. Version `1.0.1` uses Keycloak 26.8.1 for compilation and targets the expanded runtime matrix above. Support for this rebuilt artifact must be confirmed by both CI matrices, including the older runtimes, before release. The published `1.0.0` JAR remains unchanged. Keycloak 26.5.x and 26.6.x are not supported.
 
 ## Quick start
 

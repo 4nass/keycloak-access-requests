@@ -21,6 +21,6 @@ This documentation describes the behavior that is implemented in the current pro
 
 ## Compatibility policy
 
-Version `1.0.0` compiles against Keycloak 26.8.0 and is tested against 26.7.0–26.7.5 and 26.8.0. Extension versions are independent of Keycloak versions; only the [compatibility table](../README.md#compatibility) defines the supported runtimes for an artifact. The build baseline is pinned, not floated automatically. Before adding another Keycloak patch or minor line to that table, run the complete suite against every claimed runtime without changing the build baseline.
+The published `1.0.0` JAR was built against Keycloak 26.8.0. Release candidate `1.0.1` uses Keycloak 26.8.1 and targets 26.7.0–26.7.5 and 26.8.0–26.8.1; runtime verification is pending both CI matrices. Extension versions are independent of Keycloak versions; the [compatibility table](../README.md#compatibility) distinguishes verified releases from the current candidate. The build baseline is pinned, not floated automatically. Before declaring support for an artifact, run the complete suite against every claimed runtime without changing its build baseline.
 
 Keycloak 26.5.x and 26.6.x are not supported.

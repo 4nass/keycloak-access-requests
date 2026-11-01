@@ -6,7 +6,7 @@
 
     <groupId>ch.anass.keycloak.accessrequests</groupId>
     <artifactId>keycloak-access-requests</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <packaging>jar</packaging>
 
     <name>keycloak-access-requests</name>
@@ -57,7 +57,7 @@
         <maven.compiler.release>${java.version}</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <keycloak.version>26.8.0</keycloak.version>
+        <keycloak.version>26.8.1</keycloak.version>
         <keycloak.test.version>${keycloak.version}</keycloak.test.version>
         <quarkus.version>3.40.1</quarkus.version>
         <junit.version>6.1.3</junit.version>
@@ -73,7 +73,7 @@
         <maven.failsafe.version>3.5.6</maven.failsafe.version>
         <maven.assembly.plugin.version>3.8.0</maven.assembly.plugin.version>
         <frontend.maven.plugin.version>2.0.2</frontend.maven.plugin.version>
-        <keycloak.theme.verifier.version>26.8.0</keycloak.theme.verifier.version>
+        <keycloak.theme.verifier.version>26.8.1</keycloak.theme.verifier.version>
         <node.version>v24.18.1</node.version>
         <pnpm.version>11.18.0</pnpm.version>
     </properties>
@@ -233,6 +233,33 @@
             </plugins>
         </pluginManagement>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>remove-previous-console-assets</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <configuration>
+                            <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                            <filesets>
+                                <fileset>
+                                    <directory>${project.build.outputDirectory}/theme/access-requests/account/resources</directory>
+                                    <followSymlinks>false</followSymlinks>
+                                </fileset>
+                                <fileset>
+                                    <directory>${project.build.outputDirectory}/theme/access-requests/admin/resources</directory>
+                                    <followSymlinks>false</followSymlinks>
+                                </fileset>
+                            </filesets>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

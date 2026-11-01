@@ -3,5 +3,5 @@ WORKDIR /workspace
 COPY . .
 RUN mvn --batch-mode --no-transfer-progress -DskipTests package
 
-FROM quay.io/keycloak/keycloak:26.8.0
+FROM quay.io/keycloak/keycloak:26.8.1
 COPY --from=build /workspace/target/keycloak-access-requests.jar /opt/keycloak/providers/keycloak-access-requests.jar

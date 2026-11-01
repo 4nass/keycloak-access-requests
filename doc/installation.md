@@ -2,10 +2,12 @@
 
 ## Requirements
 
-- Keycloak 26.7.0 through 26.7.5 or 26.8.0 for extension `1.0.0` (later versions require verification);
+- Keycloak 26.7.0 through 26.7.5 or 26.8.0 for the published extension `1.0.0`;
 - Java 21;
 - a supported Keycloak database. The provider stores its data in the same database as Keycloak;
 - Maven 3.9 or newer when building from source.
+
+Release candidate `1.0.1` uses Keycloak 26.8.1 and targets the expanded [compatibility matrix](../README.md#compatibility). Runtime validation of this rebuilt artifact, including 26.8.1 and the older versions, is pending CI; the published `1.0.0` JAR is unchanged. The image example below builds from this candidate source.
 
 Use only a Keycloak runtime listed for the exact extension build in the [compatibility table](../README.md#compatibility). Keycloak 26.5.x and 26.6.x are not supported.
 
@@ -53,12 +55,12 @@ The bundle contains the complete `access-requests` e-mail theme and a README exp
 Build the provider first, then add it during the Keycloak image build. This makes the provider part of the optimized image rather than copying it into a running container.
 
 ```dockerfile
-FROM quay.io/keycloak/keycloak:26.8.0 AS builder
+FROM quay.io/keycloak/keycloak:26.8.1 AS builder
 
 COPY target/keycloak-access-requests.jar /opt/keycloak/providers/
 RUN /opt/keycloak/bin/kc.sh build
 
-FROM quay.io/keycloak/keycloak:26.8.0
+FROM quay.io/keycloak/keycloak:26.8.1
 
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
