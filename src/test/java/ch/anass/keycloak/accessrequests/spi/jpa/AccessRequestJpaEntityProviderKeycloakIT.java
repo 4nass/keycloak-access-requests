@@ -878,6 +878,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
         String clientId = "access-package-admin-test-" + UUID.randomUUID();
         createDirectAccessClient(server, adminToken, clientId);
+        addAdminApiScopeIfPresent(server, adminToken, clientId);
         String username = "access-package-viewer-" + UUID.randomUUID();
         String password = "access-package-viewer-password";
         createEnabledUser(server, adminToken, username, password);
