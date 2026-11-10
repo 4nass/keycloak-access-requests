@@ -2569,7 +2569,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         String allowedClientToken = accessToken(server, allowedClientId);
         assertTrue(hasAccessRequestsApiAudience(allowedClientToken));
         String untrustedClientId = "catalog-untrusted-" + UUID.randomUUID();
-        createDirectAccessClient(server, allowedClientToken, untrustedClientId);
+        createDirectAccessClient(server, adminToken, untrustedClientId);
         HttpResponse<Void> forbiddenResponse = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(endpoint)
                         .header("Authorization", "Bearer " + accessToken(server, untrustedClientId))
