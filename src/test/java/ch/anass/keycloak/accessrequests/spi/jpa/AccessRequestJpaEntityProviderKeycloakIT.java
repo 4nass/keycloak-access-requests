@@ -2836,6 +2836,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
         String clientId = "request-approver-" + UUID.randomUUID();
         createDirectAccessClient(server, adminToken, clientId);
         addAccessRequestsAudience(server, adminToken, clientId);
+        addAdminApiScopeIfPresent(server, adminToken, clientId);
 
         String requesterUsername = "approval-requester-" + UUID.randomUUID();
         String requesterPassword = "requester-password";
