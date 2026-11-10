@@ -8,10 +8,9 @@ It is delivered as one JAR containing the server provider, database migrations, 
 
 | Extension | Keycloak runtime matrix | Build baseline | Runtime validation |
 | --- | --- | --- | --- |
-| Published `1.0.0` | 26.7.0–26.7.5, 26.8.0 | 26.8.0 | Verified |
-| `1.0.1` | 26.7.0–26.7.5, 26.8.0–26.8.1 | 26.8.1 | Verified |
+| Candidate `1.0.2` | Target: 26.7.0–26.7.5, 26.8.0–26.8.2 | 26.8.2 | Validation pending |
 
-The extension follows its own versioning. Version `1.0.1` uses Keycloak 26.8.1 for compilation and passed both CI matrices across every listed runtime. The published `1.0.0` JAR remains unchanged. Keycloak 26.5.x and 26.6.x are not supported.
+The current candidate is aligned with Keycloak 26.8.2. Its target matrix includes the previously supported runtimes; the full matrix must pass before compatibility with 26.8.2 is declared. Keycloak 26.5.x and 26.6.x are not supported.
 
 ## Quick start
 

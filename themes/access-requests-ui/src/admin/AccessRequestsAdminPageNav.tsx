@@ -27,8 +27,8 @@ type SelectedItem = {
 };
 
 /**
- * Adapted from Keycloak 26.8.1's PageNav:
- * https://github.com/keycloak/keycloak/blob/26.8.1/js/apps/admin-ui/src/PageNav.tsx
+ * Adapted from Keycloak 26.8.2's PageNav:
+ * https://github.com/keycloak/keycloak/blob/26.8.2/js/apps/admin-ui/src/PageNav.tsx
  *
  * The public PageNav export has no supported contribution point for an additional navigation item.
  * Keep this implementation aligned with that source on every Keycloak minor upgrade; the only
@@ -88,6 +88,7 @@ export function AccessRequestsAdminPageNav() {
     const showWorkflows = hasSomeAccess("realm-admin", "admin") && isFeatureEnabled("WORKFLOWS");
     const showManageRealm = environment.masterRealm === environment.realm;
     const canManageRealms = hasKeycloakRouteAccess("/realms", hasAccess);
+    const currentRealmName = resolveDisplayName(t, realmRepresentation.displayName, realm);
 
     const onSelect = (_event: FormEvent<HTMLInputElement>, item: SelectedItem) => {
         void navigate(item.to);
@@ -99,7 +100,7 @@ export function AccessRequestsAdminPageNav() {
             <PageSidebarBody>
                 <Nav onSelect={onSelect}>
                     <h2 className="pf-v5-c-nav__section-title" style={{ wordWrap: "break-word" }}>
-                        <span data-testid="currentRealm">{realmRepresentation.displayName || realm}</span>{" "}
+                        <span data-testid="currentRealm">{currentRealmName}</span>{" "}
                         <Label color="blue">{t("currentRealm")}</Label>
                     </h2>
                     {showManageRealm && canManageRealms && (
@@ -150,6 +151,14 @@ export function AccessRequestsAdminPageNav() {
             </PageSidebarBody>
         </PageSidebar>
     );
+}
+
+function resolveDisplayName(t: (key: string) => string, displayName?: string, fallback = "") {
+    if (displayName?.includes("${")) {
+        return t(displayName.substring(2, displayName.length - 1));
+    }
+
+    return displayName || fallback;
 }
 
 function KeycloakNavItem({ path, title }: { path: string; title: string }) {

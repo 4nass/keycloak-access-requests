@@ -5,7 +5,8 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-    capabilities: vi.fn()
+    capabilities: vi.fn(),
+    realmRepresentation: {} as { displayName?: string }
 }));
 
 vi.mock("./api/useEntitlementsAdminApi", () => ({
@@ -23,7 +24,7 @@ vi.mock("@keycloak/keycloak-admin-ui", async (importOriginal) => {
             hasSomeAccess: () => false
         }),
         useEnvironment: () => ({ environment: { masterRealm: "master", realm: "master" } }),
-        useRealm: () => ({ realm: "master", realmRepresentation: {} }),
+        useRealm: () => ({ realm: "master", realmRepresentation: mocks.realmRepresentation }),
         useServerInfo: () => ({ features: [] })
     };
 });
@@ -43,7 +44,8 @@ await i18n.init({
                 accessRequestsAdminRevocationFailures: "Revocation failures",
                 accessRequestsAdminNotificationDelivery: "Notification failures",
                 configure: "Configure",
-                currentRealm: "Current realm"
+                currentRealm: "Current realm",
+                realmDisplayName: "Localized realm name"
             }
         }
     }
@@ -62,6 +64,16 @@ function renderNavigation() {
 describe("Access Request Admin Console navigation", () => {
     beforeEach(() => {
         mocks.capabilities.mockReset();
+        mocks.realmRepresentation = {};
+    });
+
+    it("localizes realm display names provided as Keycloak bundle keys", async () => {
+        mocks.capabilities.mockResolvedValue({ canManageCatalog: true });
+        mocks.realmRepresentation = { displayName: "${realmDisplayName}" };
+
+        renderNavigation();
+
+        expect(await screen.findByTestId("currentRealm")).toHaveTextContent("Localized realm name");
     });
 
     it("shows one Access requests entry after the server grants an administrative capability", async () => {

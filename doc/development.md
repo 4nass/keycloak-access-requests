@@ -6,13 +6,13 @@
 | --- | --- |
 | Java | 21 |
 | Maven | 3.9 or newer |
-| Keycloak build baseline | 26.8.1 |
-| Keycloak compatibility test matrix | 26.7.0–26.7.5 and 26.8.0–26.8.1 |
-| Quarkus BOM | 3.40.1 |
+| Keycloak build baseline | 26.8.2 |
+| Keycloak compatibility test matrix | 26.7.0–26.7.5 and 26.8.0–26.8.2 |
+| Quarkus BOM | 3.40.1.1 |
 | Node.js | 24.18.1, provisioned by Maven |
 | pnpm | 11.18.0, provisioned by Maven |
 
-The 1.0.1 runtime matrix passed both CI workflows on commit `b6ada6a`, including integration and packaged console browser tests on all eight runtimes.
+The 1.0.1 runtime matrix passed both CI workflows, including integration and packaged console browser tests on all eight runtimes. The 1.0.2 matrix adds Keycloak 26.8.2 and remains pending until both workflows pass.
 
 Each Maven build removes the previously copied Account/Admin assets from `target/classes` before copying the current Vite output. This prevents stale chunks from being included after an incremental build or a Keycloak UI upgrade. `AccessRequestPackagedThemeIT` checks that the packaged assets exactly match both current Vite distributions.
 
@@ -74,8 +74,8 @@ The UI tests cover success paths and failures such as `401`, `403`, `409`, netwo
 
 Two GitHub Actions workflows protect `main` and pull requests:
 
-- **Build and tests** runs `mvn clean verify` against Keycloak 26.7.0–26.7.5 and 26.8.0–26.8.1 in separate jobs, always compiling against 26.8.1 and uploading the provider JAR from each job.
-- **Console E2E** packages the 26.8.1-based JAR, starts each Keycloak runtime, selects both packaged themes, and runs Playwright in Chromium and Firefox.
+- **Build and tests** runs `mvn clean verify` against Keycloak 26.7.0–26.7.5 and 26.8.0–26.8.2 in separate jobs, always compiling against 26.8.2 and uploading the provider JAR from each job.
+- **Console E2E** packages the 26.8.2-based JAR, starts each Keycloak runtime, selects both packaged themes, and runs Playwright in Chromium and Firefox.
 
 The workflows run when relevant source, theme, Maven, or workflow files change. CodeQL and Dependabot run independently.
 

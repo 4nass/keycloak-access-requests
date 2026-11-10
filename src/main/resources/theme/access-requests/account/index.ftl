@@ -1,3 +1,8 @@
+<#--
+  Adapted from Keycloak 26.8.2's keycloak.v3 Account theme index.ftl.
+  https://github.com/keycloak/keycloak/blob/26.8.2/js/apps/account-ui/maven-resources/theme/keycloak.v3/account/index.ftl
+  The Vite dev entry point is customized for this workspace.
+-->
 <!doctype html>
 <html lang="${locale}" dir="${localeDir}">
   <head>
