@@ -92,6 +92,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             String clientId = "assurance-client-" + UUID.randomUUID();
             createDirectAccessClient(server, adminToken, clientId);
             addAccessRequestsAudience(server, adminToken, clientId);
+            addAdminApiScopeIfPresent(server, adminToken, clientId);
 
             String requester = "assurance-requester-" + UUID.randomUUID();
             createEnabledUser(server, adminToken, requester, "requester-password");
@@ -207,6 +208,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             String clientId = "auto-approval-client-" + UUID.randomUUID();
             createDirectAccessClient(server, adminToken, clientId);
             addAccessRequestsAudience(server, adminToken, clientId);
+            addAdminApiScopeIfPresent(server, adminToken, clientId);
             String requesterOne = "auto-approval-requester-" + UUID.randomUUID();
             createEnabledUser(server, adminToken, requesterOne, "requester-password");
             String requesterOneToken = accessToken(server, clientId, requesterOne, "requester-password");
@@ -1861,6 +1863,7 @@ class AccessRequestJpaEntityProviderKeycloakIT {
 
         String delegatedClientId = "catalog-delegated-" + UUID.randomUUID();
         createDirectAccessClient(server, adminToken, delegatedClientId);
+        addAdminApiScopeIfPresent(server, adminToken, delegatedClientId);
         String delegatedUsername = "catalog-delegated-user-" + UUID.randomUUID();
         String delegatedPassword = "catalog-delegated-password";
         createEnabledUser(server, adminToken, delegatedUsername, delegatedPassword);
@@ -4148,6 +4151,44 @@ class AccessRequestJpaEntityProviderKeycloakIT {
                 HttpResponse.BodyHandlers.discarding());
         assertEquals(204, response.statusCode());
         return clientInternalId;
+    }
+
+    private void addAdminApiScopeIfPresent(GenericContainer<?> server, String adminToken, String clientId)
+            throws Exception {
+        String scopeId = findAdminApiClientScopeId(server, adminToken);
+        if (scopeId == null) {
+            return;
+        }
+
+        String clientInternalId = clientInternalId(server, adminToken, clientId);
+        URI defaultScopeEndpoint = URI.create("http://%s:%d/admin/realms/master/clients/%s/default-client-scopes/%s"
+                .formatted(server.getHost(), server.getMappedPort(8080), clientInternalId, scopeId));
+        HttpResponse<Void> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(defaultScopeEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .PUT(HttpRequest.BodyPublishers.noBody())
+                        .build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertEquals(204, response.statusCode());
+    }
+
+    private String findAdminApiClientScopeId(GenericContainer<?> server, String adminToken) throws Exception {
+        URI clientScopesEndpoint = URI.create("http://%s:%d/admin/realms/master/client-scopes?search=kc-admin-api"
+                .formatted(server.getHost(), server.getMappedPort(8080)));
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(clientScopesEndpoint)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+
+        for (JsonNode scope : new ObjectMapper().readTree(response.body())) {
+            if ("kc-admin-api".equals(scope.path("name").asText())) {
+                return scope.path("id").asText();
+            }
+        }
+        return null;
     }
 
     private void removeAccessRequestsAudience(GenericContainer<?> server, String adminToken, String clientInternalId)
