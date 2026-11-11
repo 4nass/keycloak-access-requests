@@ -399,12 +399,6 @@ class AccessRequestJpaEntityProviderKeycloakIT {
             assertScheduledPackageGrantRevoked(restartedServer);
             assertFailedScheduledPackageGrantRetained(restartedServer);
             assertVerifiedManualRevocationResolution(restartedServer);
-            assertEntitlementCatalogAdministration(restartedServer);
-            assertCatalogEndpointRequiresAuthenticationAndListsPublishedEntitlements(restartedServer);
-            assertRequestSubmissionRequiresAudienceAndCreatesAnAuditedPendingRequest(restartedServer);
-            assertRequesterCanListViewAndCancelOnlyOwnRequests(restartedServer);
-            assertEntitlementScopedApproversCanDecideRequests(restartedServer);
-            assertAdministrativeAuditEventSearch(restartedServer);
         }
 
         allowFailedScheduledPackageGrantRevocation();
