@@ -2,15 +2,12 @@
 
 ## Requirements
 
-- Keycloak 26.7.0 through 26.7.5 or 26.8.0 for extension `1.0.0`;
-- Keycloak 26.7.0 through 26.7.5 or 26.8.0 through 26.8.1 for extension `1.0.1`;
+- Keycloak 26.7.0 through 26.7.5 or 26.8.0 through 26.8.2 for extension `1.0.2`;
 - Java 21;
 - a supported Keycloak database. The provider stores its data in the same database as Keycloak;
 - Maven 3.9 or newer when building from source.
 
-The `1.0.1` compatibility matrix passed both CI workflows, including the Keycloak integration and console browser suites. The published `1.0.0` and `1.0.1` artifacts remain unchanged.
-
-The unreleased `1.0.2` candidate is built against Keycloak 26.8.2 and targets Keycloak 26.7.0–26.7.5 and 26.8.0–26.8.2. Its full runtime matrix is pending validation; do not deploy the candidate until both CI matrices pass. The image example below uses the candidate's 26.8.2 build baseline.
+Extension `1.0.2` is built against Keycloak 26.8.2. Its complete runtime matrix, including the Keycloak integration and console browser suites, passed both CI workflows.
 
 Use only a Keycloak runtime listed for the exact extension build in the [compatibility table](../README.md#compatibility). Keycloak 26.5.x and 26.6.x are not supported.
 

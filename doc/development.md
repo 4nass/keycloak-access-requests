@@ -12,7 +12,7 @@
 | Node.js | 24.18.1, provisioned by Maven |
 | pnpm | 11.18.0, provisioned by Maven |
 
-The 1.0.1 runtime matrix passed both CI workflows, including integration and packaged console browser tests on all eight runtimes. The 1.0.2 matrix adds Keycloak 26.8.2 and remains pending until both workflows pass.
+The `1.0.2` runtime matrix passed both CI workflows, including integration and packaged console browser tests on all nine runtimes.
 
 Each Maven build removes the previously copied Account/Admin assets from `target/classes` before copying the current Vite output. This prevents stale chunks from being included after an incremental build or a Keycloak UI upgrade. `AccessRequestPackagedThemeIT` checks that the packaged assets exactly match both current Vite distributions.
 
