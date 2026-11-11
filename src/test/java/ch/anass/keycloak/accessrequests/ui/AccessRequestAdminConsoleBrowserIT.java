@@ -984,8 +984,8 @@ class AccessRequestAdminConsoleBrowserIT {
         new Select(driver.findElement(By.id("incident-type"))).selectByValue("PROVISIONING");
         waitFor(driver).until(ExpectedConditions.invisibilityOfElementLocated(
                 By.id("incident-revocation-" + grantedRequestId)));
-        assertTrue(driver.findElements(By.id("incident-provisioning-"
-                + incidents.openProvisioningRequestId())).size() == 1);
+        waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
+                By.id("incident-provisioning-" + incidents.openProvisioningRequestId())));
         new Select(driver.findElement(By.id("incident-state"))).selectByValue("CLOSED");
         waitFor(driver).until(ExpectedConditions.visibilityOfElementLocated(
                 By.id("incident-provisioning-" + incidents.closedProvisioningRequestId())));
